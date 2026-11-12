@@ -18,24 +18,37 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from aptl.core.deployment._compose_stateful_constants import (
+    WAZUH_MANAGER_CONFIG_PROVENANCES,
+)
+from aptl.core.deployment._declared_listener_readiness import await_declared_listeners
+from aptl.core.deployment._wazuh_attestation import (
+    AUTHENTICATED_FACT_ID,
+    observe_indexer_declared_facts,
+)
+from aptl.core.deployment._wazuh_attestation import (
+    declared_indexer as _declared_indexer,
+)
+from aptl.core.deployment._wazuh_attestation import (
+    declared_manager_components as _declared_manager_components,
+)
+from aptl.core.deployment._wazuh_attestation import (
+    declares_wazuh_native_service as _declares_wazuh_native_service,
+)
+from aptl.core.deployment._wazuh_attestation import (
+    fact_observation as _fact_observation,
+)
+from aptl.core.deployment._wazuh_attestation import (
+    load_stateful_env as _load_stateful_env,
+)
+from aptl.core.deployment._wazuh_attestation import (
+    readiness_failure as _readiness_failure,
+)
 from aptl.core.deployment._wazuh_identity import (
     WazuhClusterIdentity,
     wazuh_cluster_identity,
 )
-from aptl.core.deployment._compose_stateful_constants import (
-    WAZUH_MANAGER_CONFIG_PROVENANCES,
-)
 from aptl.core.deployment.errors import BackendTimeoutError
-from aptl.core.deployment._wazuh_attestation import (
-    AUTHENTICATED_FACT_ID,
-    declared_indexer as _declared_indexer,
-    declared_manager_components as _declared_manager_components,
-    declares_wazuh_native_service as _declares_wazuh_native_service,
-    fact_observation as _fact_observation,
-    load_stateful_env as _load_stateful_env,
-    observe_indexer_declared_facts,
-    readiness_failure as _readiness_failure,
-)
 from aptl.core.deployment.realization import (
     DeploymentNodeRealization,
     DeploymentRealizationSpec,
@@ -108,6 +121,33 @@ class ReadinessPolling:
 
 class ComposeStatefulReadinessMixin:
     """Observe that realized stateful services accept their credentials."""
+
+    def verify_required_service_readiness(
+        self, realization: DeploymentRealizationSpec
+    ) -> bool:
+        """Read required containers, listeners and configured authenticated APIs.
+
+        This is the ordinary startup owner's readback, without provisioning,
+        credential rendering, seeding, or an optional-service catalog.
+        """
+        return (
+            all(
+                self._required_container_ready(node.container_name)
+                for node in realization.nodes
+                if node.container_name is not None
+            )
+            and not await_declared_listeners(self, realization.nodes, timeout=0)
+            and self._verify_stateful_authenticated_readiness(realization) is None
+        )
+
+    def _required_container_ready(self, name: str) -> bool:
+        """Read the selected container's running and optional health state."""
+        inspected = self.container_inspect(name)
+        state = inspected.get("State", {})
+        health = state.get("Health")
+        return state.get("Running") is True and (
+            health is None or health.get("Status") == "healthy"
+        )
 
     @property
     def authenticated_readiness(self) -> dict[str, bool]:
@@ -194,7 +234,7 @@ class ComposeStatefulReadinessMixin:
         ]
         try:
             result = self.container_exec(container, command, timeout=30)
-        except (BackendTimeoutError, OSError):
+        except BackendTimeoutError, OSError:
             return False
         return result.returncode == 0
 
@@ -271,7 +311,7 @@ class ComposeStatefulReadinessMixin:
         if container:
             try:
                 info = self.container_inspect(container)
-            except (BackendTimeoutError, OSError):
+            except BackendTimeoutError, OSError:
                 info = None
         port = _published_host_port(info, container_port)
         if port is None:
@@ -405,7 +445,7 @@ def _published_host_port(
         value = binding.get("HostPort") if isinstance(binding, dict) else None
         try:
             candidate = int(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             candidate = 0
         if 1 <= candidate <= 65535:
             port = candidate

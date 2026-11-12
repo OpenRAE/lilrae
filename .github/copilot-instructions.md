@@ -1,6 +1,6 @@
 ---
-applyTo: *.*
+applyTo: '*.*'
 ---
 
-Always review for secure coding best practices in addition to other code review.
-Always ensure modern coding practices and patterns are used.
+Review secure coding practices in every code review.
+Check that changes use current coding practices and patterns.

@@ -29,10 +29,10 @@ def test_appliance_transport_checks_freshness_identity_mapping_and_live_probes(
     tmp_path,
     protected,
 ):
-    from aptl.appliance.policy import full_techvault_boundary_policy
+    from tests.seat_policy_fixture import protected_seat_policy
 
     policy_data = (
-        full_techvault_boundary_policy() if protected else _policy()
+        protected_seat_policy() if protected else _policy()
     ).model_dump()
     policy_data.update(
         host_mcp_contract="aptl.restricted-ssh-mcp/v1",

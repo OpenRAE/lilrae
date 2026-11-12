@@ -62,7 +62,27 @@ def _handle(client: socket.socket) -> None:
     threading.Thread(target=_pipe, args=(target, client), daemon=True).start()
 
 
+def _udp_request(server: socket.socket, data: bytes, address) -> None:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as target:
+            target.settimeout(_CONNECT_TIMEOUT_SECONDS)
+            target.connect(TARGET)
+            target.send(data)
+            reply = target.recv(65536)
+            server.sendto(reply, address)
+    except OSError:
+        return
+
+
 def main() -> None:
+    if os.getenv("LILRAE_PROXY_PROTOCOL", "tcp") == "udp":
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(LISTEN)
+            while True:
+                data, address = server.recvfrom(65536)
+                threading.Thread(
+                    target=_udp_request, args=(server, data, address), daemon=True
+                ).start()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind(LISTEN)

@@ -11,9 +11,9 @@ from pathlib import Path
 
 from aptl.backends._raes_participant_models import ParticipantTurnResult
 from aptl.utils.pathsafe import create_exclusive_nofollow
+from aptl.workbench.agent_responses import parse_claude_result
 from aptl.workbench.agent import (
     _admitted_executable,
-    _parse_agent_result,
     _read_private_config,
 )
 from aptl.workbench.process import (
@@ -184,7 +184,7 @@ class ClaudeCodeHostParticipantAdapter:
             )
         if result.returncode != 0:
             raise AgentExecutionError("participant instruction delivery failed")
-        response = _parse_agent_result(result.stdout)
+        response = parse_claude_result(result.stdout)
         payload = json.loads(result.stdout)
         return ParticipantTurnResult(
             session_id=session_id,
@@ -237,13 +237,14 @@ def _render_runtime_profile_config(
     source_config: Path,
     output_dir: Path,
     node_executable: Path,
+    server_ids: tuple[str, ...] | None = None,
 ) -> tuple[Path, tuple[str, ...]]:
     """Render one private MCP config containing only a role's admitted tools."""
 
     source_servers = _load_source_servers(source_config)
     servers: dict[str, object] = {}
     allowed: list[str] = []
-    for server in profile_for(profile).servers:
+    for server in profile_for(profile, server_ids=server_ids).servers:
         server_id, rendered, tools = _render_profile_server(
             server, source_servers, project_dir, node_executable
         )

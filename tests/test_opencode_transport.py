@@ -1,0 +1,734 @@
+"""Real pinned OpenCode launcher against a local, deterministic provider."""
+
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import os
+from pathlib import Path
+from threading import Event, Thread
+
+import pytest
+
+from aptl.core.opencode import OpenRouterRoute
+from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor, OpenCodeOptions
+from aptl.workbench.process import AgentExecutionError
+
+pytestmark = pytest.mark.integration
+
+
+@contextmanager
+def provider(*, status=200, pause=None):
+    requests = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            requests.append((self.path, request))
+            self.send_response(status)
+            self.send_header(
+                "Content-Type",
+                "text/event-stream" if status == 200 else "application/json",
+            )
+            self.end_headers()
+            if status != 200:
+                self.wfile.write(
+                    b'{"error":{"message":"private-test-credential","code":401}}'
+                )
+                return
+            for delta, finish in (
+                ({"role": "assistant", "content": "transport completion"}, None),
+                ({}, "stop"),
+            ):
+                chunk = {
+                    "id": "gen-fixture",
+                    "object": "chat.completion.chunk",
+                    "created": 1,
+                    "model": "test/model",
+                    "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+                    "usage": {
+                        "prompt_tokens": 12,
+                        "completion_tokens": 3,
+                        "total_tokens": 15,
+                    },
+                }
+                self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
+                self.wfile.flush()
+                if pause is not None and finish is None:
+                    pause.wait(60)
+                    return
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/api/v1", requests
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10)
+
+
+@pytest.fixture
+def opencode_binary():
+    selected = os.environ.get("LILRAE_TEST_OPENCODE")
+    if not selected:
+        pytest.skip("real launcher requires the pinned OpenCode qualification binary")
+    return Path(selected).resolve(strict=True)
+
+
+@pytest.mark.parametrize(
+    "mode,role,request_observer",
+    [
+        ("200", "red", False),
+        ("200", "blue", False),
+        ("200", "red", True),
+        ("401", "red", False),
+        ("timeout", "red", False),
+        ("cancelled", "blue", False),
+    ],
+)
+def test_installed_capture_observer_retains_real_provider_transport(
+    tmp_path, opencode_binary, mode, role, request_observer
+):
+    """The shipped plugin runs under the pinned binary, without a live provider."""
+    import subprocess
+    import sys
+    from tests.opencode_fixture import install_wheel
+
+    installed = install_wheel(tmp_path)
+    script = tmp_path / "capture.py"
+    script.write_text("""import sys,json,hashlib
+from dataclasses import replace
+from pathlib import Path
+from threading import Event, Timer
+sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[2])
+from aptl.backends.lilrae_participant_configuration import opencode_manifest, configured_opencode_executor, OpenCodeConfigurationValidator
+from aptl.workbench.lilrae_opencode import OpenCodeOptions
+from aptl.core.opencode import OpenRouterRoute
+from aptl.core.evidence.participant_capture import ParticipantCaptureArchive
+from aptl.core.runstore import LocalRunStore
+from aptl.workbench.process import AgentExecutionError, REASON_TIMEOUT, REASON_CANCELLED
+from aptl.core.experiment.capture_registry import CaptureLimits
+from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
+from raes_contracts.canonical import canonical_contract_digest
+from tests.test_participant_capture import _grant
+import aptl.workbench.opencode_capture as owner
+assert Path(owner.__file__).is_relative_to(Path(sys.argv[1]))
+manifest=opencode_manifest(version="1.0.0")
+endpoint=sys.argv[4]
+mode,role=sys.argv[6:8]
+values={"model":"openrouter/test/model", "prompt_ref":"content.test@v1", "prompt_sha256":hashlib.sha256(b"Return transport completion.").hexdigest(), "timeout_seconds":20 if mode=="timeout" else 60, "gateway_endpoint":endpoint, "serving_provider":"test-provider", "max_output_tokens":128}
+result=realize_participant_configuration(participant_address=f"participant.behavior.{role}", manifest=manifest, manifest_ref="participant-implementation-manifests.opencode.v1", manifest_digest=canonical_contract_digest(manifest), overrides=[ConfigurationOverrideModel(target_id=k,value={"kind":"literal","value":v}) for k,v in values.items()], validator=OpenCodeConfigurationValidator(frozenset({values["model"]})))
+grant=replace(_grant(), participant_address=result.participant_address, configuration_digest=result.configuration_digest)
+grant=replace(grant,binding=replace(grant.binding,limits=CaptureLimits(2*1024*1024,100,120)))
+archive=ParticipantCaptureArchive(LocalRunStore(Path(sys.argv[5])/"runs"),grant)
+options=OpenCodeOptions(executable=Path(sys.argv[3]),work_root=Path(sys.argv[5]),environment={"OPENROUTER_API_KEY":"private-test-credential"},route=OpenRouterRoute(endpoint=endpoint,serving_provider="test-provider"),capture=archive,request_observation_required=sys.argv[8]=="true")
+active=configured_opencode_executor(options=options, configuration=result, manifest=manifest,prompt="Return transport completion.",prompt_ref=values["prompt_ref"],supported_models=frozenset({values["model"]}))
+cancellation=Event()
+timer=Timer(20,cancellation.set) if mode=="cancelled" else None
+if timer: timer.start()
+try:
+    answer=active(f"outer-{role}",cancellation)
+    assert mode=="200" and answer=="transport completion"
+except AgentExecutionError:
+    assert mode in {"401","timeout","cancelled"}
+finally:
+    if timer: timer.cancel()
+retained=archive.fetch("start","end")
+assert retained.records, "observer did not retain source records"
+invocation=retained.records[0]["invocations"][0]
+assert invocation["calls"], invocation
+assert "private-test-credential" not in json.dumps(retained.records)
+assert invocation["calls"][0]["request_controls"]["model"]=="test/model"
+assert invocation["prompt_delivery"]["stdin_sha256"]==hashlib.sha256(b"Return transport completion.").hexdigest()
+if mode=="200":
+    assert retained.status.value=="ok", retained
+    assert retained.records[0]["totals"]["input_tokens"]==12
+    assert retained.records[0]["totals"]["output_tokens"]==3
+    assert any(row["type"]=="text" for row in invocation["cli_events"])
+elif mode=="401":
+    assert invocation["calls"][0]["state"]=="failed"
+else:
+    assert invocation["calls"][0]["state"]=="unsettled"
+    assert invocation["harness_failure_reason"]==({"timeout":REASON_TIMEOUT,"cancelled":REASON_CANCELLED}[mode])
+    assert invocation["records"], invocation
+if sys.argv[8]=="true":
+    assert active.last_evidence.request_observation.status=="observed"
+assert not list(Path(sys.argv[5]).glob("lilrae-participant-*"))
+print(json.dumps({"retained":True}))
+""")
+    pause = Event() if mode in {"timeout", "cancelled"} else None
+    with provider(status=401 if mode == "401" else 200, pause=pause) as (
+        endpoint,
+        requests,
+    ):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                str(script),
+                str(installed),
+                str(Path(__file__).resolve().parents[1]),
+                str(opencode_binary),
+                endpoint,
+                str(tmp_path / "work"),
+                mode,
+                role,
+                "true" if request_observer else "false",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=100,
+        )
+        if pause is not None:
+            pause.set()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert requests
+    assert json.loads(result.stdout)["retained"]
+
+
+@pytest.mark.parametrize("status", [200, 401])
+@pytest.mark.parametrize("output_limit", [16, 128])
+def test_real_launcher_request_and_failure_evidence(
+    tmp_path, opencode_binary, status, monkeypatch, output_limit
+):
+    # Hostile ambient selections must not become the launcher's configuration.
+    monkeypatch.setenv("OPENCODE_CONFIG_CONTENT", '{"model":"unapproved/model"}')
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "unapproved-credential")
+    records = []
+    with provider(status=status) as (endpoint, requests):
+        active = LilraeOpenCodeExecutor(
+            options=OpenCodeOptions(
+                executable=opencode_binary,
+                work_root=tmp_path,
+                environment={"OPENROUTER_API_KEY": "private-test-credential"},
+                route=OpenRouterRoute(
+                    endpoint=endpoint, serving_provider="test-provider"
+                ),
+                evidence_sink=records.append,
+                max_output_tokens=output_limit,
+                request_observation_required=True,
+            ),
+            model="openrouter/test/model",
+            prompt="Return transport completion.",
+            timeout_seconds=90,
+        )
+        if status == 200:
+            assert active("action-transport", Event()) == "transport completion"
+        else:
+            cancellation = Event()
+            with pytest.raises(AgentExecutionError) as error:
+                active("action-transport", cancellation)
+            assert "private-test-credential" not in str(error.value)
+    assert requests
+    assert len(requests) == 1
+    for path, request in requests:
+        assert path == "/api/v1/chat/completions"
+        assert request["model"] == "test/model"
+        assert request["provider"]["only"] == ["test-provider"]
+        assert request["provider"]["allow_fallbacks"] is False
+        assert request["max_tokens"] == output_limit
+    assert records[0].status == ("succeeded" if status == 200 else "failed")
+    observed = records[0].request_observation
+    assert observed.status == ("observed" if status == 200 else "partial")
+    assert len(observed.calls) == 1
+    call = observed.calls[0]
+    assert call.controls.max_tokens == output_limit
+    assert call.state == ("completed" if status == 200 else "failed")
+    if status == 200:
+        assert call.response.generation_id == "gen-fixture"
+        assert call.response.input_tokens == 12
+        assert call.response.output_tokens == 3
+    history = records[0].native_history
+    assert history.status == ("observed" if status == 200 else "partial")
+    assert history.prompt_matches is True
+    assert history.recorded_model == "openrouter/test/model"
+    assert history.user_message_id.startswith("msg_")
+    if status == 200:
+        assert history.steps[0].input_tokens == 12
+        assert history.steps[0].output_tokens == 3
+        assert history.steps[0].reasoning_tokens == 0
+    assert "provider_generation_id" in history.unavailable_fields
+    assert "outgoing_controls" in history.unavailable_fields
+    assert "private-test-credential" not in repr(records)
+    assert not list(tmp_path.glob("lilrae-participant-*"))
+
+
+@pytest.mark.parametrize("fixed", [True, False])
+def test_sealed_trials_deliver_both_roles_with_native_evidence(
+    tmp_path, opencode_binary, fixed
+):
+    from datetime import datetime, timezone
+    from aptl.core.config import ProcessEnvironmentCredentialSource
+    from aptl.workbench.trial_participants import (
+        prepare_trial_participants,
+        managed_trial_participants,
+    )
+    from tests.participant_trial_fixture import (
+        compiled_participants,
+        realized_participants,
+    )
+
+    records = []
+    with provider() as (endpoint, wire):
+        compiled, compilation, owner = compiled_participants(
+            tmp_path, executable=opencode_binary, endpoint=endpoint, fixed=fixed
+        )
+        indices = [0]
+        if not fixed:
+
+            def selections(entry):
+                return tuple(
+                    tuple(
+                        v.value.value
+                        for v in r.configuration.values
+                        if v.target_id in {"model", "context.brief"}
+                    )
+                    for r in entry.participant_configurations
+                )
+
+            entries = list(compiled.plan.entries.values())
+            baseline = selections(entries[0])
+            indices.append(
+                next(
+                    i
+                    for i, e in enumerate(entries)
+                    if all(
+                        all(x != y for x, y in zip(a, b))
+                        for a, b in zip(selections(e), baseline)
+                    )
+                )
+            )
+        for index in indices:
+            request, attempt, scenario, experiment, owner, contents, now = (
+                realized_participants(
+                    compiled,
+                    compilation,
+                    owner,
+                    index=index,
+                    now=datetime.now(timezone.utc),
+                )
+            )
+            prepared = prepare_trial_participants(
+                request=request,
+                attempt=attempt,
+                scenario=scenario,
+                experiment=experiment,
+                owners={a: owner for a in contents},
+                contents=contents,
+                now=now,
+            )
+            options = {
+                a: OpenCodeOptions(
+                    executable=opencode_binary,
+                    work_root=tmp_path,
+                    evidence_sink=records.append,
+                )
+                for a in contents
+            }
+            sources = {
+                a: ProcessEnvironmentCredentialSource(
+                    kind="process-environment", variable="TEST_MODEL_SOURCE"
+                )
+                for a in contents
+            }
+            with managed_trial_participants(
+                prepared,
+                invocation_timeouts={address: 90 for address in prepared.requests},
+                options=options,
+                credential_sources=sources,
+                source_environment={"TEST_MODEL_SOURCE": "private-test-credential"},
+                stop_and_drain=lambda: None,
+            ) as executors:
+                for address, active in executors.items():
+                    assert active(address, Event()) == "transport completion"
+                    native = active.last_evidence.native_history
+                    assert native.status == "observed"
+                    assert native.prompt_matches is True
+                    observed = active.last_evidence.request_observation
+                    observed.require_fields(
+                        frozenset(
+                            {
+                                "outgoing_controls",
+                                "provider_generation_id",
+                                "input_tokens",
+                                "output_tokens",
+                            }
+                        )
+                    )
+                    assert (
+                        native.recorded_model
+                        == prepared.requests[address].profile.model
+                    )
+                    scope = active.last_evidence.trial_scope
+                    assert (
+                        scope.run_id,
+                        scope.execution_attempt_id,
+                        scope.plan_entry_id,
+                    ) == (
+                        request.run_id,
+                        request.execution_attempt_id,
+                        request.plan_entry_id,
+                    )
+                    body = wire[-1][1]
+                    assert body["model"] == prepared.requests[
+                        address
+                    ].profile.model.removeprefix("openrouter/")
+
+                    def message_text(message):
+                        content = message["content"]
+                        return (
+                            content
+                            if isinstance(content, str)
+                            else "".join(p.get("text", "") for p in content)
+                        )
+
+                    assert any(
+                        m["role"] == "user"
+                        and message_text(m).startswith(
+                            prepared.requests[address].prompt
+                        )
+                        for m in body["messages"]
+                    )
+                    assert body["max_tokens"] == 128
+                    assert body["provider"]["allow_fallbacks"] is False
+                    assert body["provider"]["require_parameters"] is True
+                    assert all(
+                        key not in body for key in ("temperature", "top_p", "seed")
+                    )
+    assert len(records) == len(indices) * 2
+    assert len({r.native_history.session_id for r in records}) == len(records)
+    assert not list(tmp_path.glob("lilrae-participant-*"))
+    assert "private-test-credential" not in repr(records)
+
+
+def test_real_mcp_child_cannot_inherit_model_credential(tmp_path, opencode_binary):
+    from dataclasses import replace
+    import sys
+
+    from aptl.backends.participant_tools.session import LilraeToolSession
+    from aptl.workbench.lilrae_opencode import OpenCodeToolProfile
+    from aptl.workbench.profiles import ProfileId, profile_for
+    from tests.test_lilrae_participant_tools import binding, port
+
+    profile = profile_for(ProfileId.RED)
+    inventory = {server.server_id: server.tool_names for server in profile.servers}
+    report = tmp_path / "child-environment-result"
+    child = tmp_path / "mcp.py"
+    child.write_text("""import json,os,sys
+from pathlib import Path
+Path(sys.argv[1]).write_text('isolated' if not any(os.environ.get(k) for k in ('OPENROUTER_API_KEY','LILRAE_OPENCODE_PROVIDER_KEY')) else 'leaked')
+tools=json.loads(sys.argv[2])
+for line in sys.stdin:
+    message=json.loads(line)
+    if 'id' not in message: continue
+    method=message['method']
+    if method=='initialize':
+        result={'protocolVersion':message['params']['protocolVersion'],'serverInfo':{'name':'fixture','version':'1'},'capabilities':{'tools':{}}}
+    elif method=='tools/list':
+        result={'tools':[{'name':name,'description':'fixture tool','inputSchema':{'type':'object','properties':{}}} for name in tools]}
+    else: result={}
+    print(json.dumps({'jsonrpc':'2.0','id':message['id'],'result':result}),flush=True)
+""")
+    servers = {
+        name: {
+            "command": sys.executable,
+            "args": [str(child), str(report), json.dumps(tools)],
+            "env": {},
+        }
+        for name, tools in inventory.items()
+    }
+    config = tmp_path / "profile.json"
+    config.write_text(json.dumps({"mcpServers": servers}))
+    config.chmod(0o600)
+    cancellation = Event()
+    session = LilraeToolSession(
+        port(),
+        tuple(
+            replace(binding(), server_id=name, tool_name=tool)
+            for name, tools in inventory.items()
+            for tool in tools
+        ),
+        cancellation,
+    )
+    with provider() as (endpoint, requests):
+        active = LilraeOpenCodeExecutor(
+            options=OpenCodeOptions(
+                executable=opencode_binary,
+                work_root=tmp_path,
+                environment={"OPENROUTER_API_KEY": "private-test-credential"},
+                route=OpenRouterRoute(
+                    endpoint=endpoint, serving_provider="test-provider"
+                ),
+                tools=OpenCodeToolProfile(
+                    profile=ProfileId.RED,
+                    config=config,
+                    inventory_probe=lambda name, *args: inventory[name],
+                ),
+                request_observation_required=True,
+            ),
+            model="openrouter/test/model",
+            prompt="Return transport completion.",
+            timeout_seconds=90,
+        )
+        assert (
+            active.invoke_with_tools("outer-red", cancellation, session)
+            == "transport completion"
+        )
+    assert requests
+    assert report.read_text() == "isolated"
+
+
+@pytest.mark.parametrize("status", [200, 401])
+def test_installed_wheel_runs_real_transport_outside_checkout(
+    tmp_path, opencode_binary, status
+):
+    import subprocess
+    import sys
+
+    from tests.opencode_fixture import install_wheel
+
+    installed = install_wheel(tmp_path)
+    with provider(status=status) as (endpoint, requests):
+        project = tmp_path / "independent-project"
+        project.mkdir()
+        project_config = project / "aptl.json"
+        project_config.write_text(
+            json.dumps(
+                {
+                    "lab": {"name": "installed-opencode"},
+                    "experiment": {
+                        "participant_models": {"opencode": "openrouter/test/model"},
+                        "participant_credential_sources": {
+                            "opencode": {
+                                "kind": "process-environment",
+                                "variable": "QUALIFICATION_SOURCE",
+                            }
+                        },
+                    },
+                }
+            )
+        )
+        script = """
+import hashlib,os,pathlib,sys
+from threading import Event
+sys.path.insert(0,sys.argv[1])
+import aptl.workbench.lilrae_opencode as implementation
+assert pathlib.Path(implementation.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
+from aptl.core.config import AptlConfig
+from aptl.core.opencode import OpenRouterRoute
+from aptl.backends.lilrae_participant_configuration import opencode_manifest, OpenCodeConfigurationValidator
+from aptl.workbench.opencode_bootstrap import OpenCodeParticipantRequest, managed_opencode_executor
+from aptl.workbench.process import AgentExecutionError
+from aptl.core.experiment.capture_registry import CaptureLimits
+from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
+from raes_contracts.canonical import canonical_contract_digest
+project=AptlConfig.model_validate_json(pathlib.Path(sys.argv[5]).read_bytes())
+model=project.experiment.participant_models.model_for('opencode')
+source=project.experiment.participant_credential_sources.source_for('opencode')
+manifest=opencode_manifest(version='1.0.0')
+prompt='Return transport completion.'
+values={'model':model,'gateway_endpoint':sys.argv[4],'serving_provider':'test-provider',
+    'prompt_ref':'content.installed@v1','prompt_sha256':hashlib.sha256(prompt.encode()).hexdigest(),
+    'timeout_seconds':90,'max_output_tokens':16}
+configuration=realize_participant_configuration(participant_address='participant.behavior.red',
+    manifest=manifest,manifest_ref='participant-implementation-manifests.opencode.v1',
+    manifest_digest=canonical_contract_digest(manifest),
+    overrides=[ConfigurationOverrideModel(target_id=k,value={'kind':'literal','value':v}) for k,v in values.items()],
+    validator=OpenCodeConfigurationValidator(frozenset({model})))
+with managed_opencode_executor(options=implementation.OpenCodeOptions(
+    executable=pathlib.Path(sys.argv[2]),work_root=pathlib.Path(sys.argv[3]),max_output_tokens=16,
+    request_observation_required=True,
+    route=OpenRouterRoute(endpoint=sys.argv[4],serving_provider='test-provider')),
+    request=OpenCodeParticipantRequest(configuration=configuration,manifest=manifest,prompt=prompt,
+        prompt_ref=values['prompt_ref'],supported_models=frozenset({model})),
+    run_id='installed-trial',credential_source=source,
+    source_environment={source.variable:os.environ[source.variable]}) as (active,evidence):
+    if sys.argv[6] == '200':
+        assert active('installed-action',Event()) == 'transport completion'
+        assert active.last_evidence.status == 'succeeded'
+        assert active.last_evidence.request_observation.calls[0].response.generation_id == 'gen-fixture'
+    else:
+        try:
+            active('installed-action',Event())
+        except AgentExecutionError as error:
+            assert os.environ[source.variable] not in str(error)
+        else:
+            raise AssertionError('provider failure was accepted')
+        assert active.last_evidence.status == 'failed'
+        assert os.environ[source.variable] not in repr(active.last_evidence)
+assert evidence.local_cleanup == 'succeeded'
+"""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                script,
+                str(installed),
+                str(opencode_binary),
+                str(tmp_path / "work"),
+                endpoint,
+                str(project_config),
+                str(status),
+            ],
+            env={**os.environ, "QUALIFICATION_SOURCE": "private-test-credential"},
+            cwd=project,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+    assert requests
+
+
+def test_pinned_launchers_execute_both_roles_through_shared_runtime(
+    tmp_path, opencode_binary
+):
+    from dataclasses import replace
+    from raes_contracts.contracts.participant_configuration import (
+        ConfigurationOverrideModel,
+        realize_participant_configuration,
+    )
+    from raes_contracts.canonical import canonical_contract_digest
+    import hashlib
+
+    from aptl.backends.lilrae_participant_configuration import (
+        opencode_manifest,
+        OpenCodeConfigurationValidator,
+        configured_opencode_executor,
+    )
+    from tests.test_lilrae_concurrent_participants import (
+        bindings,
+        manager_for,
+        scenario,
+    )
+
+    records = []
+    installed = []
+    executors = []
+    manifest = opencode_manifest(version="1.0.0")
+    with provider() as (endpoint, requests):
+        for original in bindings({"red": lambda *args: "", "blue": lambda *args: ""}):
+            participant = original.implementation_selection.participant_address
+            prompt = f"Return transport completion for {participant}."
+            values = {
+                "model": "openrouter/test/model",
+                "gateway_endpoint": endpoint,
+                "serving_provider": "test-provider",
+                "max_output_tokens": 128,
+                "prompt_ref": "content.prompt@v1",
+                "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+                "timeout_seconds": 30,
+            }
+            config = realize_participant_configuration(
+                participant_address=participant,
+                manifest=manifest,
+                manifest_ref=original.implementation_selection.manifest_ref,
+                manifest_digest=canonical_contract_digest(manifest),
+                overrides=[
+                    ConfigurationOverrideModel(
+                        target_id=key, value={"kind": "literal", "value": value}
+                    )
+                    for key, value in values.items()
+                ],
+                validator=OpenCodeConfigurationValidator(
+                    frozenset({"openrouter/test/model"})
+                ),
+            )
+            active = configured_opencode_executor(
+                options=OpenCodeOptions(
+                    executable=opencode_binary,
+                    work_root=tmp_path,
+                    environment={"OPENROUTER_API_KEY": "private-test-credential"},
+                    route=OpenRouterRoute(
+                        endpoint=endpoint, serving_provider="test-provider"
+                    ),
+                    evidence_sink=records.append,
+                ),
+                configuration=config,
+                manifest=manifest,
+                prompt=prompt,
+                prompt_ref="content.prompt@v1",
+                supported_models=frozenset({"openrouter/test/model"}),
+            )
+            executors.append(active)
+            selection = original.implementation_selection.model_copy(
+                update={
+                    "implementation_identity": manifest.identity,
+                    "manifest_digest": config.manifest_digest,
+                    "configuration_ref": "participant-implementation-configurations."
+                    + participant.rsplit(".", 1)[1],
+                    "configuration_digest": config.configuration_digest,
+                }
+            )
+            installed.append(
+                replace(
+                    original,
+                    implementation_manifest=manifest,
+                    implementation_selection=selection,
+                    executor=active,
+                )
+            )
+        manager, _ = manager_for(tuple(installed))
+        with manager:
+            applied = manager.apply(manager.plan(scenario()))
+            assert applied.success, applied.diagnostics
+            advanced = manager.advance_time("time.clock.trial", ticks=1)
+            assert advanced.success, advanced.diagnostics
+            history = manager.snapshot.participant_behavior_history
+            for role in ("red", "blue"):
+                assert "transport completion" in str(
+                    list(history[f"participant.behavior.{role}"])
+                )
+    assert len(records) == 2
+    assert all(record.status == "succeeded" for record in records)
+    assert len({record.session_id for record in records}) == 2
+    assert all(active.last_evidence.build.version == "1.19.5" for active in executors)
+    assert len(requests) >= 2
+
+
+@pytest.mark.parametrize("change", ["missing-plugin", "changed-limit"])
+def test_required_observer_refuses_before_any_affected_provider_request(
+    tmp_path, opencode_binary, monkeypatch, change
+):
+    import aptl.workbench.lilrae_opencode as adapter
+
+    original = adapter.install_request_observer
+
+    def tamper(work, config, environment, prompt):
+        child, expected = original(work, config, environment, prompt)
+        if change == "missing-plugin":
+            config["plugin"] = []
+        else:
+            child["OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"] = "64"
+        return child, expected
+
+    monkeypatch.setattr(adapter, "install_request_observer", tamper)
+    with provider() as (endpoint, requests):
+        active = LilraeOpenCodeExecutor(
+            options=OpenCodeOptions(
+                executable=opencode_binary,
+                work_root=tmp_path,
+                environment={"OPENROUTER_API_KEY": "private-test-credential"},
+                route=OpenRouterRoute(
+                    endpoint=endpoint, serving_provider="test-provider"
+                ),
+                request_observation_required=True,
+            ),
+            model="openrouter/test/model",
+            prompt="synthetic observed prompt",
+            timeout_seconds=15,
+        )
+        failure_cancellation = Event()
+        with pytest.raises(AgentExecutionError):
+            active("refused", failure_cancellation)
+    assert requests == []
+    assert active.last_evidence.status == "failed"
+    assert "private-test-credential" not in repr(active.last_evidence)

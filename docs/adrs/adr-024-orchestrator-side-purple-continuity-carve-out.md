@@ -8,9 +8,17 @@ accepted
 
 2026-05-03
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [red-team taxonomy](../red-team-taxonomy.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
-[ADR-021](adr-021-active-response-whitelist-via-wrapper.md) shipped the **in-band** kali-IP carve-out: the standalone `aptl-firewall-drop` AR script consults `/var/ossec/etc/lists/active-response-whitelist` before applying any `iptables -I` and short-circuits when the source IP is whitelisted. That defends against the most common wedge—blue authoring a Wazuh AR rule that fires `firewall-drop` against any kali traffic and ending the loop after iteration 1.
+[ADR-021](adr-021-active-response-whitelist-via-wrapper.md) shipped the **in-band** kali-IP carve-out: the standalone `aptl-firewall-drop` AR script consults `/var/ossec/etc/lists/active-response-whitelist` before applying any `iptables -I` and short-circuits when the source IP is whitelisted. That script prevents an active-response rule from broadly blocking Kali after the first iteration. It does not cover every directly authored firewall rule.
 
 Three classes of bypass slip past the in-band defense:
 
@@ -20,18 +28,18 @@ Three classes of bypass slip past the in-band defense:
 
 In every case, the symptom is the same: a target's `iptables -L INPUT` ends up with a `-A INPUT -s <kali_ip> -j DROP|REJECT` rule that has no port, protocol, payload, or behavior qualifier. That rule wedges the loop.
 
-We need an **out-of-band complement** to ADR-021: an orchestrator-side audit that inspects each target's iptables between iterations, detects blanket kali source-IP drops regardless of how they got installed, removes them, and records each removal in the run archive so the researcher can audit what was undone.
+The selected complement audits target iptables between iterations. It removes broad Kali source-IP drops and records removals in the run archive.
 
 ## Decision
 
-Implement the audit as a callable Python module (`aptl.core.continuity`) plus a thin CLI command (`aptl lab continuity-audit`) that researchers invoke between iterations. The module exposes the same `audit_and_revert` entry point that the future SDL runtime engine's orchestration domain (RTE-001) will call as a post-iteration hook when iteration is wired up.
+Implement the audit as a callable Python module (`aptl.core.continuity`) plus a thin CLI command (`aptl lab continuity-audit`) that researchers invoke between iterations. The module exposes `audit_and_revert` for a post-iteration orchestration hook. This records the intended RTE-001 integration rather than proving every runtime calls it.
 
 The audit is **stateless and idempotent**:
 
 - For each target container, run `iptables -S INPUT` via `backend.container_exec` (the canonical helper from ADR-023; argv only, no shell strings).
 - Parse each `-A INPUT …` line into `(chain, source, action, qualifiers)`.
 - A rule is in scope (revertable) iff *all four* hold:
-  1. Chain is `INPUT` (FORWARD/OUTPUT bans don't wedge red→target ingress).
+  1. Chain is `INPUT` (FORWARD/OUTPUT bans do not wedge red→target ingress).
   2. Action is `DROP` or `REJECT` (the audit only undoes blocks).
   3. Source IP normalizes to one of the kali IPs in the whitelist file (`/32` and bare-IP forms equivalent; `/24` and other masks are out of scope).
   4. **No other matchers exist**—no `-p`, `-m`, `--dport`, `-i`, `-o`, `--state`, `--reject-with`, or any other option flag. Granular rules with any qualifier are valid blue tradecraft and stay.
@@ -56,13 +64,13 @@ The two layers are **complementary**, not redundant. ADR-021 is preventive (refu
 
 ### Why detect only blanket source-IP DROP
 
-Granular rules are valid blue tradecraft. A `-A INPUT -s 172.20.4.30 -p tcp --dport 22 -j DROP` is exactly the kind of behavior-scoped hardening this lab wants to encourage—blue noticed kali brute-forcing SSH and locked that single port, leaving every other service reachable. A `-A INPUT -s 172.20.4.30 -j DROP` is the wedge. The qualifier emptiness check is the line.
+Granular rules are valid blue tradecraft. `-A INPUT -s 172.20.4.30 -p tcp --dport 22 -j DROP` blocks one service. The decision permits that scoped defense while other services remain reachable. A `-A INPUT -s 172.20.4.30 -j DROP` is the wedge. The qualifier emptiness check is the line.
 
-`/24` (and other non-`/32`) source masks are out of scope—they're a different decision class (subnet ban) and indicate the defender intentionally banned a network segment. ADR scope creep avoided.
+`/24` (and other non-`/32`) source masks are out of scope—they are a different decision class (subnet ban) and indicate the defender intentionally banned a network segment. ADR scope creep avoided.
 
 REJECT counts the same as DROP because both block traffic; the wedge symptom is identical to the loop.
 
-### Why we don't infer mode
+### Why we do not infer mode {#why-we-dont-infer-mode}
 
 Codex's preflight guardrail (`docs/sdl/runtime-architecture.md`): runtime
 behavior must not infer purple mode from filenames, legacy fixtures, agents
@@ -88,13 +96,13 @@ The cleaner design is to run the audit **unconditionally**, because every shippe
 ### Cons
 
 - **Researchers running custom scenarios** where they explicitly want a kali ban to stick (for example, emulating a real-pentest defensive win) must avoid invoking `aptl lab continuity-audit`. The CLI is opt-in for now; #263 adds the formal mode gate so this scenario becomes correct-by-default.
-- **`/24` subnet bans pass through.** A defender who puts `iptables -I INPUT -s 172.20.4.0/24 -j DROP` wedges the loop and the audit doesn't catch it. Out of scope by design (different decision class); revisit if research workflows expose the case.
-- **Race with mid-iteration re-installs.** If automation re-installs a wedge rule after the audit runs but before the next iteration starts, the audit doesn't help. Audit cadence is a researcher choice; the in-band ADR-021 defense covers the AR re-install path.
-- **Scope is INPUT only.** A defender's `OUTPUT` or `FORWARD` rule on a target that affects kali ingress through a side channel isn't covered. INPUT is the wedge surface for the standard topology; revisit if topology changes.
+- **`/24` subnet bans pass through.** A defender who puts `iptables -I INPUT -s 172.20.4.0/24 -j DROP` wedges the loop and the audit does not catch it. Out of scope by design (different decision class); revisit if research workflows expose the case.
+- **Race with mid-iteration re-installs.** If automation re-installs a wedge rule after the audit runs but before the next iteration starts, the audit does not help. Audit cadence is a researcher choice; the in-band ADR-021 defense covers the AR re-install path.
+- **Scope is INPUT only.** A defender's `OUTPUT` or `FORWARD` rule on a target that affects kali ingress through a side channel is not covered. INPUT is the wedge surface for the standard topology; revisit if topology changes.
 
 ## Alternatives considered
 
-- **Snapshot-and-diff.** Pre-iteration capture of every target's iptables, post-iteration compare, revert anything new. Rejected: more state to manage, no win in coverage (any blanket-kali-drop rule is suspicious regardless of when it was installed; a clean tree can't *ratify* a coarse rule), and codex's idempotence guardrail prefers stateless audits.
+- **Snapshot-and-diff.** Pre-iteration capture of every target's iptables, post-iteration compare, revert anything new. Rejected: more state to manage, no win in coverage (any blanket-kali-drop rule is suspicious regardless of when it was installed; a clean tree cannot *ratify* a coarse rule), and codex's idempotence guardrail prefers stateless audits.
 - **In-band-only (no out-of-band audit).** Rejected: leaves the bypass classes uncovered. ADR-021 is necessary but not sufficient.
 - **Wait for SDL `mode` (#263) before shipping.** Rejected: the audit is useful unconditionally today (APTL is always purple); blocking on #263 leaves the lab vulnerable to wedges right now. The mode-gate retrofit is a one-line change at the call site.
 

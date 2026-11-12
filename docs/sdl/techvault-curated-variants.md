@@ -1,101 +1,55 @@
 # APTL Research Scenario Fixtures
 
-Issue #534 adds small RAES SDL startup variants for TechVault. Their purpose is
-to prove that APTL realizes Compose profiles from declared RAES node content,
-not from the full TechVault scenario name or a preset.
+Use this How-to guide to change a reduced research fixture from a matching source checkout.
+The [fixture reference](curated-variant-reference.md) owns the current matrix and selection limits.
 
 ## Authorities
 
-- RAES SDL parsing and semantic validation belong to the installed RAES parser
-  and processor/runtime compiler. APTL must not re-model RAES SDL with local
-  Pydantic classes.
-- APTL realization belongs to `aptl.backends.raes_realization` and the Compose
-  profile index in `aptl.backends.raes_profiles`.
-- Dependency expansion belongs to `aptl.backends.raes_dependency_closure`.
-- Research fixture references belong to `scenarios/catalog.json` and
-  `aptl.validation.research_scenario_catalog`. Explicit participant profiles bind
-  these references by path and digest. They are not normal startup aliases.
-- Public startup defaults to the installed `techvault` environment pack.
+Read the [source owner table](curated-variant-reference.md#source-owners).
+Change the existing owner for the selected surface.
+Keep explicit participant-profile path and digest bindings.
 
 ## Guardrails
 
-- Keep variants small: attacker/target, enterprise web, or defensive-minimum
-  slices are valid only when they parse, compile, and realize
-  without APTL-specific diagnostics.
-- Tests must assert selected Compose profiles for each variant through
-  `interpret_provisioning_plan` / `select_backend_profiles`.
-- Tests must prove content-driven behavior by changing declared node content or
-  using differently named scenarios with equivalent content. Scenario ids,
-  filenames, and catalog names must not drive profile selection.
-- Reuse existing TechVault node names, service aliases, networks, and runtime
-  profile hints. Do not add a second profile map, scenario preset table, parser,
-  exception hierarchy, or validation schema.
-- New docs for each variant should state what it includes, omits, and proves.
+1. Keep the fixture small enough to prove one intended realization.
+2. Reuse existing node names, service aliases, networks, and runtime profile hints.
+3. State what the fixture includes, omits, and proves.
+4. Do not create another parser, schema, profile map, or preset table.
+5. After a scenario rename, make sure that equivalent content keeps the same behavior.
 
 ## Curated variants
 
-APTL retains three small RAES SDL fixtures under `scenarios/` for backend
-realization tests and the explicit guided research profile. These files are
-checkout-only inputs, excluded from the default wheel and normal pack catalog.
-The selected profile set is derived from declared node content and dependency
-closure, then gated by the enabled container profiles in configuration. Backend
-capture and OTel apparatus is not authored as scenario nodes and is selected
-only after evidence and scope admission.
+Read the [fixture matrix](curated-variant-reference.md).
+In CI or an approved isolated lab VM, select a fixture explicitly:
 
-| Catalog id | Includes | Omits | Selected profiles | Proves |
-|---|---|---|---|---|
-| `techvault-attacker-target` | Kali host, one monitored victim, Wazuh manager and indexer | Enterprise web tier, wider SOC stack, backend apparatus | `kali`, `victim`, `wazuh` | A red-team host against a monitored target; the victim pulls Wazuh through declared dependency content, not through the scenario name |
-| `techvault-enterprise-web` | The enterprise tier (vulnerable webapp, database, AD, workstation) and Wazuh monitoring core | Wider SOC stack, red-team apparatus, backend observability | `enterprise`, `wazuh` | The enterprise tier realizes with the Wazuh core it requires and no SOC surface |
-| `techvault-defensive-min` | Wazuh manager, indexer, dashboard | Wider SOC stack, attacker and enterprise components, backend observability | `wazuh` | Wazuh monitoring realizes without pulling the full `soc` profile |
-
-From a development checkout, select a fixture explicitly:
-
-```bash
+```shell
 lilrae lab start --scenario-path scenarios/techvault-attacker-target.sdl.yaml
 ```
 
-The static realization proof for these variants lives in
-`tests/test_techvault_curated_variants.py`. It parses, compiles, and realizes
-each variant through `interpret_provisioning_plan` with no error-severity
-`aptl.provisioner.*` diagnostics, asserts the selected Compose profile set for a
-configuration that enables exactly the variant profiles, and proves the result is
-content-driven through anti-collapse and rename checks.
+Run the focused contract checks in that runner:
 
-Live proof for these variants is a separate concern from the static authoring
-proof. Before implementing or recording that evidence, use
-[`docs/raes/techvault-curated-live-validation-preflight.md`](../raes/techvault-curated-live-validation-preflight.md)
-as the boundary guide: compare each booted range to its RAES-realized reduced
-profile set, not to the full TechVault live gate. The recorded live-boot evidence
-and reproduction commands live in the
-[curated live validation gate](../raes/techvault-curated-live-validation-gate.md).
+```shell
+bash tools/run-targeted-tests.sh tests/techvault/test_techvault_curated_variants.py
+```
 
-Because `lilrae lab start` boots with `docker compose --profile <selected>`, which
-activates every service in a selected profile rather than only the declared RAES
-nodes, the provisioner validates that the selected profile set is a valid Compose
-project before starting the backend. When an activated service has a `depends_on`
-target that the selection excludes, the provisioner refuses with an
-`aptl.provisioner.compose-project-invalid` diagnostic instead of failing later
-with a raw Compose error. This is why `techvault-enterprise-web` includes the
-`wazuh` profile: the enterprise `workstation` host depends on `wazuh-manager`, so
-the enterprise tier cannot boot without the Wazuh core.
+Examine parse, compile, realization, selected profiles, and rename behavior.
+Examine missing or configuration-disabled dependencies as failures.
+Use no-start backend wiring for static proof.
+
+For live proof, compare the observed range with the fixture's reduced matrix.
+Do not substitute full-TechVault criteria or historical container counts.
+Before you interpret older results, read the [curated live source record](../raes/techvault-curated-live-validation-gate.md).
 
 ## Security And Runtime Boundaries
 
-- Catalog and explicit paths must remain project-contained and parser-validated.
-- Static proof must use `_NoStartBackend` or equivalent no-start wiring; it must
-  not start Docker while asserting parse/compile/realization behavior.
-- Diagnostics and failures must use the existing RAES diagnostic path and APTL
-  redaction helpers. Do not print raw SDL dumps, backend stderr, secrets, or
-  rendered config.
-- Variants must not introduce new config or environment keys. Durable
-  non-secret knobs belong in `AptlConfig`; secret-bearing runtime artifacts stay
-  under the existing ADR-028 / ADR-029 boundaries.
-- Host port exposure, networks, volumes, and service dependencies remain
-  Compose-owned. A variant can select profiles; it must not redefine Compose.
+1. Keep catalog and explicit paths within the project.
+2. Keep RAES parser validation and bounded diagnostics.
+3. Keep secrets and raw rendered configuration out of reports.
+4. Use existing non-secret configuration and private runtime-artifact owners.
+5. Let the admitted backend own ports, networks, volumes, and service dependencies.
+6. Add only apparatus required by admitted evidence and scopes.
 
 ## Non-Goals
 
-- No dependency closure beyond the curated slices needed here; broad subset
-  closure belongs to #532.
-- No arbitrary app or package installation from RAES feature descriptors.
-- No change to the default operational startup scenario.
+These procedures do not define a general subset catalog or qualify arbitrary software installation.
+They do not change ordinary startup's acquired-pack selection.

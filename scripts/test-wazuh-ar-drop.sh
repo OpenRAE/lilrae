@@ -3,7 +3,7 @@
 # packets when the agent runs in-process on the target (issue #248 AC#3).
 #
 # This script is the manual-runnable counterpart to
-# tests/test_in_process_agents.py. It demonstrates the full prevention
+# tests/techvault/test_in_process_agents.py. It demonstrates the full prevention
 # pipeline that ADR-019 + ADR-020 established:
 #   eve.json / agent log -> Wazuh manager rule -> AR command ->
 #   in-process agent -> iptables -I in target namespace -> drop.

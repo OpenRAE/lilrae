@@ -4,8 +4,10 @@ This inventory lists the byte and identity schemes that the Python
 implementation uses for persisted and compared values, and the vectors that
 define them. The [serialization vectors design](../architecture/issue-1555-serialization-vectors-design.md)
 gives the corpus format. The Python tests in
-`tests/test_serialization_vectors.py` call the owner of each scheme with each
-vector. The Go ports must pass the same vectors.
+`tests/test_serialization_vectors.py` call the owner of each generic scheme with
+each vector. `tests/techvault/test_adapter_serialization_vectors.py` does the
+same for the schemes that the adapter and its fixture code own. The Go ports must
+pass the same vectors.
 
 Two schemes that share a hash or a serializer are different schemes when their
 input, options, framing, or digest spelling differ. A changed scheme is a

@@ -1,5 +1,11 @@
 # Issue #1510: Code Quality Architecture Design
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1510-code-quality-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 This design describes the check that enforces
 [ADR-064](../adrs/adr-064-layered-architecture-and-code-conventions.md). It
 refines the [preflight](issue-1510-code-quality-preflight.md). SYS-009 is the

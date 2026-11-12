@@ -8,6 +8,7 @@ import aptl
 from aptl.cli import (
     config,
     container,
+    containment,
     doctor,
     experiment,
     kill,
@@ -34,6 +35,7 @@ app.add_typer(kill.app, name="kill")
 app.add_typer(experiment.app, name="experiment")
 app.add_typer(seat.app, name="seat")
 app.add_typer(mcp_access.app, name="mcp-access")
+app.add_typer(containment.app, name="containment")
 app.command("doctor")(doctor.doctor)
 
 

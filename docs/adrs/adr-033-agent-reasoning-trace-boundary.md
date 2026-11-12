@@ -8,15 +8,19 @@ accepted
 
 2026-05-17
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [capture explanation](../components/red-side-capture-boundary.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 OBS-003 ("Agent Reasoning Traces") was originally stated as "the platform
 shall capture agent reasoning traces that record why decisions were
-made." Read literally this points at the LLM-conversation boundary
-(prompts, completions, assistant rationale between tool calls) and the
-first preflight draft of this ADR (now superseded by this revision)
-designed around the OpenTelemetry GenAI semantic conventions for
-`gen_ai.prompt.*` / `gen_ai.completion.*` span events.
+made." The first draft interpreted reasoning as prompts, completions, and assistant rationale. It proposed OpenTelemetry `gen_ai.prompt.*` and `gen_ai.completion.*` events. This revision supersedes that draft.
 
 That framing is architecturally wrong for APTL. APTL's "agent" is the
 external MCP client (Claude Code, Cursor, Codex, Aider, or any other
@@ -24,12 +28,9 @@ coding-agent CLI the experimenter picks up). The LLM call happens
 out-of-process; the MCP protocol does not transport the assistant's
 prompt or completion to APTL's MCP servers. The only thing that
 crosses into APTL's address space is `tool_call(name, args)` →
-`tool_response(body)`. Capturing what the agent "reasoned" requires
-either (a) the agent CLI emitting its own OTel + transcript (which
-Claude Code, Codex, and similar CLIs already do natively when
-configured—that is the experimenter's responsibility) or (b) us
-running our own in-repo agent loop (out of scope for OBS-003; it
-would pre-empt EXP-002 onward).
+`tool_response(body)`.
+
+Reasoning capture needs the agent CLI's own configured transcript or an owned agent loop. Agent configuration belongs to the experimenter. An in-repository loop was outside OBS-003 and would pre-empt EXP-002 onward.
 
 What IS in APTL's control is **the agent↔platform boundary and the
 boxes we own**. APTL owns:
@@ -38,16 +39,11 @@ boxes we own**. APTL owns:
 - the Kali container the agent SSHes into, and
 - the lab's docker-compose topology.
 
-Every byte the agent sends across that boundary or types at that
-shell or emits as a network packet can be captured by us, in full,
-with stable correlation, because all three layers are ours.
+The lab owns the command boundary, shell, and network capture path. Those layers can record observed bytes with correlation, subject to the stated capture limits.
 
 There is a second concern. Today's lab routed red-side activity
 (Wazuh agent on Kali + rsyslog → Wazuh manager + `kali_redteam_rules.xml`
-decoder) into the blue defensive stack's SIEM. That gives blue an
-artificial picture of red activity that no real defender would have:
-in a real engagement, blue sees what blue's own sensors detect, not
-what the attacker logs about themselves. For purple-loop experiments
+decoder) into the blue defensive stack's SIEM. Attacker-authored logs would give blue knowledge beyond its sensors. The experiment therefore separates red self-reports from defensive observations. For purple-loop experiments
 where we compare how blue agents reason about partial information,
 that injection contaminates the experiment.
 
@@ -90,22 +86,13 @@ into `.aptl/runs/<run_id>/kali-side/<session_id>/` on the host with
 primitive—a host bind-mount would expose every prior run's
 MCP-side records to the (passwordless-sudo) kali user.
 
-The Kali container is granted `AUDIT_CONTROL` and `AUDIT_WRITE` so
-entrypoint.sh can load the APTL audit ruleset at boot;
-**`CAP_AUDIT_CONTROL` is then dropped** from the sshd-spawning
-process via `capsh --drop=cap_audit_control` so the kali user
-cannot run `sudo auditctl -D` to disable the audit trail
-mid-scenario.
+The earlier Kali design granted `AUDIT_CONTROL` and `AUDIT_WRITE` for boot rules. `capsh --drop=cap_audit_control` then removed audit control from the sshd parent. That design intended to prevent `sudo auditctl -D` during the scenario.
 
 ### 2. Kali process lifecycle and readiness
 
 The Kali entrypoint owns startup of sshd plus the OBS-003 capture
 daemons (`auditd` and process accounting). Because that entrypoint is
-PID 1, it must also own child-process reaping. A plain
-`exec sleep infinity` keepalive is not an acceptable terminal process
-after boot-time children have been spawned: it cannot reap exited
-children and can leave failed startup work hidden behind a healthy,
-long-running container.
+PID 1, it must also own child-process reaping. Plain `exec sleep infinity` cannot reap earlier children. It can hide failed startup work behind a healthy long-running container and is not sufficient supervision.
 
 The canonical fix for Kali lifecycle bugs is either:
 
@@ -120,11 +107,7 @@ the expected invariant is that no Kali Wazuh config exists at all. Wazuh
 agent rendering and placeholder validation for blue/target containers
 belongs to the shared `_wazuh-agent` path recorded in ADR-020.
 
-Kali health/readiness should represent the services and evidence
-surface that make the container usable: sshd must accept connections,
-the ForceCommand wrapper must be present, and capture daemons that are
-advertised as active should either be running or should have produced a
-clear degraded-startup signal. Health checks must not mask a failed
+Kali readiness requires accepting SSH and the ForceCommand wrapper. Advertised capture daemons must run or produce an explicit degraded-startup result. Health checks must not mask a failed
 boot-time child merely because port 22 is open.
 
 ### 3. Per-run aggregation directory
@@ -220,10 +203,7 @@ Capturing the LLM's internal reasoning is the experimenter's
 responsibility. Each coding-agent CLI (Claude Code, Codex, Cursor,
 Cline, Aider) exposes its own OTel and/or transcript surface for
 prompts and completions; experimenters configure those per agent.
-APTL does NOT mirror or ingest those streams—agent-side reasoning
-is out-of-process and tying it to APTL would either pre-empt
-EXP-002+ design or build infrastructure that breaks the moment a new
-agent CLI ships.
+LilRAE does not mirror agent-side reasoning streams. That separate integration would pre-empt EXP-002 design and depend on each agent CLI's changing interface.
 
 ## Security layers
 
@@ -238,10 +218,7 @@ agent CLI ships.
   the experimental record. The toggle defaults off, fails closed
   against any non-truthy value, and never affects production traces
   (it requires explicit env-var set).
-- **Env/config binding**: `APTL_EXPERIMENT_NO_REDACT` is an env-var
-  toggle (not a config-file key) so it doesn't enter the strict
-  `AptlConfig` schema and cannot be accidentally serialized into a
-  shipped config. It's read per-call in both languages.
+- **Env/config binding**: `APTL_EXPERIMENT_NO_REDACT` is an environment toggle outside strict `AptlConfig`. It cannot enter shipped configuration through that model. Both languages read it per call.
 - **OS exposure**: bind-mount target is the host's `.aptl/runs/`
   (gitignored). Container-side captures live in `/var/log/aptl/runs/`
   (root-owned root dir, kali-writable session subdirs created by
@@ -256,20 +233,14 @@ agent CLI ships.
   intentional and acceptable per the non-contamination principle—
   observation tooling is not scenario information.
 - **PID 1 / OS lifecycle**: the Kali container starts child processes
-  during boot. PID 1 must reap children and propagate termination
-  correctly, either through a real init/reaper or through a shell
-  entrypoint that stays PID 1 and waits on the children it starts. A
+  during boot. PID 1 must reap children and propagate termination. A real init or a shell that waits on its own children can supply that boundary. A
   keepalive process that only sleeps is not a lifecycle boundary and
   must not be used to hide failed boot work.
 - **Capture integrity from a sudo-capable kali user** (superseded by
   [ADR-041](adr-041-kali-capture-sidecar-ownership-boundary.md) for
   [issue #305](https://github.com/Brad-Edwards/aptl/issues/305)):
   the original ADR-033 implementation left the capture volume writable
-  from inside the Kali workload container. Because the `kali` user has
-  passwordless sudo for legitimate red-team tooling, root-owned files,
-  ACLs, setuid helpers, or a dedicated in-container capture user are not
-  sufficient tamper-resistance boundaries inside the same writable mount
-  namespace.
+  from inside the Kali workload container. The Kali user has passwordless sudo for lab tools. Root ownership, ACLs, setuid helpers, or another capture user cannot prevent tampering within the same writable namespace.
 
   ADR-041 selects a capture sidecar as the ownership boundary: the
   sidecar shares ONLY Kali's network namespace (not its PID namespace,
@@ -296,14 +267,7 @@ agent CLI ships.
   `PersistentSession.close()` now resolves only after the SSH stream's
   remote `close` event has fired (or a bounded
   `TIMEOUTS.REMOTE_CLOSE_AWAIT` has elapsed with a logged
-  `[SSH] remote close timeout` warning). The kali wrapper's EXIT trap
-  (it stops tcpdump and flushes the `script(1)` typescript) runs
-  on remote channel close, so awaiting that event before the
-  `docker cp` harvest eliminates the truncation race. The
-  `dockerCpWithRetry` helper that previously masked the window with a
-  3 × 250ms backoff has been removed; the missing-source loud-stderr
-  path (which surfaces deletion-by-kali-user as a visible anomaly)
-  remains in place because it is independent of the race fix. Local
+  `[SSH] remote close timeout` warning). The wrapper EXIT trap stops tcpdump and flushes the `script(1)` typescript on remote channel close. Awaiting that event before harvest closes the recorded truncation race. The previous helper used three 250 ms retries to mask the race. It was removed. Missing-source stderr remains necessary to disclose deleted capture sources. Local
   cleanup—rejecting in-flight and queued command promises—is still
   synchronous so command callers are not blocked by the remote-close
   await.
@@ -334,9 +298,7 @@ duplicates:
   + the post-tool-hook architecture from ADR-027 are unchanged; only
   the sink/transport changed (stderr-only → stderr + per-run JSONL,
   no SIEM dispatch).
-- `containers/kali/scripts/aptl-wrap-shell.sh` is the single new
-  shell-wrapping artifact; sshd ForceCommand makes it the only entry
-  point for the kali user, so the capture wiring lives in one place.
+- `containers/kali/scripts/aptl-wrap-shell.sh` is the shared shell wrapper. sshd ForceCommand makes it the Kali entry point, so capture wiring has one owner.
 
 ## Extensibility
 

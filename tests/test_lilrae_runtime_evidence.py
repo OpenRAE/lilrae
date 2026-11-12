@@ -51,6 +51,76 @@ def _unpack(source):
     return json.loads(archive.read("index.json")), archive
 
 
+def test_trial_collection_returns_original_native_owner_artifacts(
+    tmp_path, monkeypatch
+):
+    from aptl.backends.raes_evidence_acquisition import acquire_trial_evidence
+    from aptl.core.experiment.capture_plan import admit_capture_demands
+    from aptl.core.experiment.capture_registry import CollectorRegistry
+    from aptl.utils.pathsafe import read_contained_nofollow
+    from tests.trial_capture_fixture import capture_request
+
+    outcome, _, store, artifacts, _ = _started(tmp_path, monkeypatch)
+    try:
+        request, registration = capture_request(tmp_path / "capture")
+        offer = replace(
+            registration.capture_offer,
+            sensitivity="restricted",
+            redaction_policy=None,
+            disclosure="full",
+        )
+        registration = replace(
+            registration,
+            capture_offer=offer,
+            media_types=offer.media_types,
+            supported_sensitivities=frozenset({"restricted"}),
+            redaction_policies=frozenset(),
+            limits=CaptureLimits(4 * 1024 * 1024, 128, 60),
+        )
+        registry = CollectorRegistry((registration,))
+        demand = replace(
+            request.plan.bindings[0].demand,
+            sensitivity="restricted",
+            redaction_policy=None,
+            disclosure="full",
+        )
+        plan = admit_capture_demands(
+            (demand,), source_identity=request.plan.source_identity, registry=registry
+        )
+        selection = replace(
+            request.capture_selection,
+            registry=registry,
+            contribution=replace(
+                request.capture_selection.contribution, registrations=(registration,)
+            ),
+        )
+        request = replace(
+            request, run_store=store, plan=plan, capture_selection=selection
+        )
+        source = outcome.native_evidence.reference_source(plan.runtime_bindings()[0])
+        result = acquire_trial_evidence(
+            request, attempt_id="run-1", sources={registration.registration_id: source}
+        )
+        assert result.reports[0].status is CollectorStatus.OK
+        retained = read_contained_nofollow(
+            store.get_run_path(request.run_id), result.refs[0].content_uri
+        )
+        reference = json.loads(retained)[0]["native_archive"]
+        assert reference["media_type"] == "application/zip"
+        original = read_contained_nofollow(
+            store.get_run_path(request.run_id), reference["uri"]
+        )
+        assert reference["sha256"] == "sha256:" + hashlib.sha256(original).hexdigest()
+        with zipfile.ZipFile(BytesIO(original)) as archive:
+            index = json.loads(archive.read("index.json"))
+            assert any(
+                archive.read(item["path"]) == artifacts[0][1]
+                for item in index["native_artifacts"]
+            )
+    finally:
+        outcome.runtime_manager.close()
+
+
 def test_public_outcome_retains_original_sdl_snapshot_and_native_bytes(
     tmp_path, monkeypatch
 ):
@@ -73,7 +143,11 @@ def test_public_outcome_retains_original_sdl_snapshot_and_native_bytes(
             }
             for cut in index["cuts"]:
                 assert cut["plan_digest"].startswith("sha256:")
-                assert set(cut["producer_versions"]) == {"lilrae", "raes", "raes-env-packs"}
+                assert set(cut["producer_versions"]) == {
+                    "lilrae",
+                    "raes",
+                    "raes-env-packs",
+                }
                 assert cut["recorded_at"]
                 if cut["phase"] == "evaluation":
                     assert cut["operation"]["operation_id"] == receipt.operation_id
@@ -102,8 +176,11 @@ def test_public_outcome_retains_original_sdl_snapshot_and_native_bytes(
                 archive.read(item["path"]) == artifacts[0][1]
                 for item in index["native_artifacts"]
             )
-            assert any(item["role"] == "realization-source-image-evidence"
-                       for cut in index["cuts"] for item in cut["artifacts"])
+            assert any(
+                item["role"] == "realization-source-image-evidence"
+                for cut in index["cuts"]
+                for item in cut["artifacts"]
+            )
     finally:
         manager.close()
 

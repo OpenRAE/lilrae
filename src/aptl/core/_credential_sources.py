@@ -19,6 +19,7 @@ _CREDENTIAL_SOURCE_VARIABLE_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
 _ENVIRONMENT_VARIABLE_PATTERN = re.compile(r"^[A-Za-z_]\w{0,127}$", flags=re.ASCII)
 # The same shape as other aptl.json names: a pack id or an SDL node name.
 _GRANT_IDENTITY_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+_GOOGLE_PROJECT_PATTERN = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 
 
 class ProcessEnvironmentCredentialSource(BaseModel):
@@ -40,6 +41,38 @@ class ProcessEnvironmentCredentialSource(BaseModel):
 
     def descriptor_digest(self) -> str:
         """Identify this non-secret descriptor without publishing its locator."""
+
+        payload = json.dumps(
+            self.model_dump(mode="json"),
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+class AttachedServiceAccountSource(BaseModel):
+    """Select the host's attached Google service account; no key material exists.
+
+    The participant gets short-lived tokens from the metadata server. Use it
+    only on a host whose attached account has invocation-only Vertex AI access.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["attached-service-account"]
+    project: str = Field(strict=True, min_length=6, max_length=30)
+
+    @field_validator("project")
+    @classmethod
+    def validate_project(cls, value: str) -> str:
+        """Admit one Google Cloud project ID."""
+
+        if not _GOOGLE_PROJECT_PATTERN.fullmatch(value):
+            raise ValueError("attached service account project is invalid")
+        return value
+
+    def descriptor_digest(self) -> str:
+        """Identify this non-secret descriptor."""
 
         payload = json.dumps(
             self.model_dump(mode="json"),
@@ -116,6 +149,7 @@ class EnvironmentGrant(BaseModel):
 
 
 __all__ = (
+    "AttachedServiceAccountSource",
     "EnvironmentGrant",
     "ProcessEnvironmentCredentialSource",
     "ProjectEnvironmentFileSource",

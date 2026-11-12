@@ -20,7 +20,7 @@ from raes_contracts.planning import (
     ProvisionOp,
     PlanScope,
 )
-from raes_contracts.realization_preparation import RealizationPreparation
+from raes_contracts.contracts.realization_preparation import RealizationPreparation
 from raes_contracts.realization_collections import node_collection_members
 from raes_contracts.realization_structure import evaluate_realization_constraint
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry

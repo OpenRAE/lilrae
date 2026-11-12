@@ -3,17 +3,41 @@
 from __future__ import annotations
 
 from collections.abc import Sequence, Mapping
-from subprocess import CompletedProcess
+from subprocess import CompletedProcess, TimeoutExpired
 from typing import TYPE_CHECKING, Protocol
 
 from aptl.core.scenario_bundle import PackIdentity
 from aptl.utils.logging import get_logger
 from aptl.core.lab_types import LabResult
+from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.evidence.adapters.sources import capture_read_timeout
 
 log = get_logger("scenario-runtime-hooks")
 
 if TYPE_CHECKING:
     from aptl.backends.scenario_family import AdmittedFamilyTrial
+
+
+def _raise_partial_read(exc: Exception, timeout: int) -> None:
+    """Preserve accepted output while translating a bounded native read failure."""
+    output = getattr(exc, "stdout", None)
+    stderr = getattr(exc, "stderr", None)
+    if isinstance(exc, TimeoutExpired):
+        raise TimeoutExpired(
+            "runtime-operation", timeout, output=output, stderr=stderr
+        ) from None
+    interrupted = InterruptedError("runtime-operation-interrupted")
+    interrupted.stdout, interrupted.stderr = output, stderr
+    raise interrupted from None
+
+
+def _command_timeout_matches(cause: BaseException | None, cmd: list[str]) -> bool:
+    """Accept partial command output only for this exact native command."""
+    return (
+        isinstance(cause, TimeoutExpired)
+        and isinstance(cause.cmd, list)
+        and cause.cmd[-len(cmd) :] == cmd
+    )
 
 
 def _valid_command(cmd: list[str]) -> bool:
@@ -23,10 +47,90 @@ def _valid_command(cmd: list[str]) -> bool:
         isinstance(cmd, list)
         and 1 <= len(cmd) <= 64
         and all(
-            isinstance(item, str) and bool(item) and len(item) <= 4096 and "\0" not in item
+            isinstance(item, str)
+            and bool(item)
+            and len(item) <= 4096
+            and "\0" not in item
             for item in cmd
         )
     )
+
+
+def _validate_log_timestamp(value: str | None) -> None:
+    """Require a bounded timestamp with an explicit time zone when selected."""
+    from datetime import datetime
+
+    if value is None:
+        return
+    try:
+        if not isinstance(value, str) or len(value) > 64:
+            raise ValueError("timestamp is invalid")
+        instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if instant.tzinfo is None:
+            raise ValueError("timestamp has no time zone")
+    except ValueError:
+        raise ValueError("runtime-operation-invalid") from None
+
+
+#: Admitted-operation refusals. Core raises them before it calls the backend,
+#: so the operation never started.
+RUNTIME_OPERATION_REFUSALS = frozenset(
+    {"runtime-node-not-admitted", "runtime-operation-invalid"}
+)
+
+_MAX_NETWORKS = 16
+_MAX_ALIASES = 32
+_MAX_NAME_LENGTH = 253
+
+
+def _bounded_name(value: object) -> bool:
+    """Accept one bounded, printable network or alias name."""
+
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= _MAX_NAME_LENGTH
+        and value.isprintable()
+    )
+
+
+def _attachment(raw: object) -> dict[str, object]:
+    """Keep only a valid IP address and bounded aliases of one attachment."""
+
+    from ipaddress import ip_address
+
+    projected: dict[str, object] = {}
+    if not isinstance(raw, Mapping):
+        return projected
+    address = raw.get("IPAddress")
+    try:
+        if isinstance(address, str) and address:
+            projected["IPAddress"] = str(ip_address(address))
+    except ValueError:
+        pass
+    aliases = raw.get("Aliases")
+    if isinstance(aliases, list):
+        kept = [alias for alias in aliases if _bounded_name(alias)]
+        if kept:
+            projected["Aliases"] = kept[:_MAX_ALIASES]
+    return projected
+
+
+def _network_attachments(settings: object) -> dict[str, dict[str, object]] | None:
+    """Project network attachments without endpoint, driver, or host fields.
+
+    The projection is whole or absent. When a network name cannot be shown or
+    the count exceeds the bound, it withholds every attachment, so a consumer
+    cannot read a partial set as the complete set.
+    """
+
+    networks = settings.get("Networks") if isinstance(settings, Mapping) else None
+    if (
+        not isinstance(networks, Mapping)
+        or len(networks) > _MAX_NETWORKS
+        or not all(_bounded_name(name) for name in networks)
+    ):
+        return None
+    return {name: _attachment(raw) for name, raw in networks.items()}
 
 
 class ScenarioRuntimeOperations(Protocol):
@@ -40,6 +144,15 @@ class ScenarioRuntimeOperations(Protocol):
     ) -> CompletedProcess[str]: ...
     def container_image_digest(self, name: str) -> str | None: ...
     def container_inspect(self, name: str) -> Mapping[str, object]: ...
+    def container_logs_capture(
+        self,
+        name: str,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+        timeout: int = 30,
+        max_bytes: int | None = None,
+    ) -> CompletedProcess[str]: ...
     def container_restart(self, name: str) -> LabResult: ...
 
 
@@ -75,7 +188,16 @@ class AdmittedRuntimeOperations:
     ) -> CompletedProcess[str]:
         self._validate(name, cmd, timeout)
         try:
-            return self.__backend.container_exec(name, list(cmd), timeout=timeout)
+            return self.__backend.container_exec(
+                name, list(cmd), timeout=capture_read_timeout(timeout)
+            )
+        except BackendTimeoutError as exc:
+            cause = exc.__cause__
+            if _command_timeout_matches(cause, cmd):
+                _raise_partial_read(cause, timeout)
+            raise TimeoutExpired("runtime-operation", timeout) from None
+        except (TimeoutExpired, InterruptedError) as exc:
+            _raise_partial_read(exc, timeout)
         except Exception:
             raise ValueError("runtime-operation-failed") from None
 
@@ -87,7 +209,7 @@ class AdmittedRuntimeOperations:
             raise ValueError("runtime-operation-invalid")
         try:
             return self.__backend.container_exec_with_input(
-                name, list(cmd), payload, timeout=timeout
+                name, list(cmd), payload, timeout=capture_read_timeout(timeout)
             )
         except Exception:
             raise ValueError("runtime-operation-failed") from None
@@ -99,8 +221,38 @@ class AdmittedRuntimeOperations:
         except Exception:
             raise ValueError("runtime-operation-failed") from None
 
+    def container_logs_capture(
+        self,
+        name: str,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+        timeout: int = 30,
+        max_bytes: int | None = None,
+    ) -> CompletedProcess[str]:
+        """Read the existing log interface for an admitted scenario container."""
+        self._validate(name, ["logs"], timeout)
+        for value in (since, until):
+            _validate_log_timestamp(value)
+        try:
+            return self.__backend.container_logs_capture(
+                name,
+                since=since,
+                until=until,
+                timeout=capture_read_timeout(timeout),
+                **({"max_bytes": max_bytes} if max_bytes is not None else {}),
+            )
+        except (TimeoutExpired, InterruptedError) as exc:
+            _raise_partial_read(exc, timeout)
+        except Exception:
+            raise ValueError("runtime-operation-failed") from None
+
     def container_inspect(self, name: str) -> Mapping[str, object]:
-        """Expose bounded process state without environment or host configuration."""
+        """Expose bounded state and network attachments, without host configuration.
+
+        Each attachment keeps only a valid IP address and bounded aliases. An
+        ambiguous attachment set stays visible so the caller can refuse it.
+        """
 
         self._validate(name, ["inspect"], 30)
         try:
@@ -134,6 +286,9 @@ class AdmittedRuntimeOperations:
                     and -255 <= value <= 1_000_000_000
                 ):
                     destination[key] = value
+            networks = _network_attachments(info.get("NetworkSettings"))
+            if networks is not None:
+                result["NetworkSettings"] = {"Networks": networks}
             return result
         except Exception:
             raise ValueError("runtime-operation-failed") from None

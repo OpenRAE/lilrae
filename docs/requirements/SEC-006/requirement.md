@@ -11,6 +11,13 @@ updated_at: 2026-10-31T00:00:00.000000Z
 
 # SEC-006: Verified TLS for SOC Stack Clients via Lab-Managed CA
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/SEC-006/requirement.md).
+
+
 ## Statement
 
 All clients of the SOC stack (MISP, Shuffle), including service daemons (for example, the MISP to Suricata sync), MCP servers (threatintel and soar), and CLI collectors, shall verify TLS using a lab-managed CA chain. SOC tools shall serve TLS certificates issued by a single lab CA generated at first startup, mirroring INF-005's pattern for Wazuh. Default posture for these clients shall be verification ENABLED, with an explicit per-client override (for example, MISP_VERIFY_SSL=false) reserved for local debugging only. SEC-004's allowance for `rejectUnauthorized: false` covers Wazuh inter-component traffic only and shall not be applied to SOC stack consumers once this requirement is ACTIVE.

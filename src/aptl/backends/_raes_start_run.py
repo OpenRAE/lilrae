@@ -8,7 +8,7 @@ from raes_contracts.runtime_state import RuntimeSnapshot
 from raes_processor.models import ExecutionPlan
 
 from aptl.backends.raes_diagnostics import render_raes_diagnostics
-from aptl.backends.raes_planning_compat import AptlRuntimeManager
+from aptl.backends.raes_runtime import AptlRuntimeManager
 from aptl.backends.raes_start_model import AcesRunTarget, AdmittedScenarioStart
 from aptl.core.config import AptlConfig
 from aptl.core.lab_types import LabResult
@@ -24,17 +24,20 @@ def admitted_run_target(
     """Check the trial run identity and select the run target for the plan."""
 
     trial = admitted.bundle.trial
-    if trial is not None and (
-        run_target is None or run_target.run_id != trial.provenance.run_id
+    if (
+        trial is not None
+        and run_target is not None
+        and (run_target.run_id != trial.provenance.run_id)
     ):
         raise ValueError("family-run-identity-mismatch")
     source = admitted.execution_plan.provisioning.materialization_source
-    if source is None or run_target is not None:
+    if run_target is not None or (source is None and trial is None):
         return run_target
     storage_path = Path(config.run_storage.local_path)
     if not storage_path.is_absolute():
         storage_path = project_dir / storage_path
-    return AcesRunTarget(LocalRunStore(storage_path), source.run_id)
+    run_id = trial.provenance.run_id if trial is not None else source.run_id
+    return AcesRunTarget(LocalRunStore(storage_path), run_id)
 
 
 def materialization_reporting_options(

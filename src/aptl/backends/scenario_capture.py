@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, Callable
-from collections.abc import Mapping
+from typing import Protocol
+from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from copy import deepcopy
 
@@ -20,6 +20,7 @@ from aptl.backends.scenario_runtime_hooks import (
     ScenarioRuntimeOperations,
 )
 from aptl.core.evidence.adapters.sources import WindowedSource
+from aptl.core.evidence.outcomes import AcquisitionPhase, PREPARATION_PHASES
 from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.core.evidence.protocol import Collector, RunScope
 
@@ -38,6 +39,22 @@ class CaptureSourceContext:
     read_generated_output: Callable[[str, str], bytes] | None = field(
         default=None, repr=False
     )
+    retain_enrollment_ids: (
+        Callable[[Mapping[str, str]], Mapping[str, str] | None] | None
+    ) = field(default=None, repr=False)
+    phase: AcquisitionPhase = AcquisitionPhase.MEASUREMENT
+
+    def __post_init__(self) -> None:
+        """Reject a malformed phase before any source reads the context."""
+
+        if not isinstance(self.phase, AcquisitionPhase):
+            raise ValueError("capture-source-phase-invalid")
+
+    @property
+    def may_prepare(self) -> bool:
+        """Return whether this phase authorizes state-changing preparation."""
+
+        return self.phase in PREPARATION_PHASES
 
 
 @dataclass(frozen=True)
@@ -84,8 +101,20 @@ class ScenarioPropositionInterpreter(Protocol):
     ) -> Mapping[str, object] | None: ...
 
 
-def capture_source_context(request: object) -> CaptureSourceContext:
-    """Detach source inputs and expose only explicitly granted credential keys."""
+def capture_source_context(
+    request: object,
+    *,
+    establish_enrollment: bool = False,
+    phase: AcquisitionPhase = AcquisitionPhase.MEASUREMENT,
+) -> CaptureSourceContext:
+    """Detach source inputs and expose only explicitly granted credential keys.
+
+    Only the provisioning capture passes ``establish_enrollment``. It may create
+    the trial's retained enrollment record once, or, without a trial, create or
+    extend the scenario record. Other contexts only read the record.
+    The caller selects ``phase``; preparation alone authorizes state-changing
+    stimulus, and every other phase stays observational.
+    """
 
     from aptl.backends.scenario_service_policy import artifact_source_path
     from aptl.utils.pathsafe import open_contained_nofollow
@@ -122,35 +151,75 @@ def capture_source_context(request: object) -> CaptureSourceContext:
         except Exception:
             raise ValueError("capture-output-unavailable") from None
 
+    trial = request.capture_selection.context.trial
     return CaptureSourceContext(
         AdmittedRuntimeOperations(request.backend, realization.nodes),
         realization,
         environment,
-        request.capture_selection.context.trial,
+        trial,
         read_output,
+        _enrollment_retainer(request.project_dir, trial, establish_enrollment),
+        phase=phase,
     )
 
 
-def family_capture_sources(request: object) -> Mapping[str, WindowedSource]:
-    """Contain native-source callbacks and reject undeclared source identities."""
+def _enrollment_retainer(
+    project_dir: object, trial: AdmittedFamilyTrial | None, establish: bool
+) -> Callable[[Mapping[str, str]], Mapping[str, str] | None]:
+    """Bind core-retained enrollment ids to the trial, or to the scenario record."""
 
-    try:
-        contribution = request.capture_selection.contribution
-        sources = contribution.runtime_adapter.native_sources(
-            capture_source_context(request)
+    import hashlib
+    import json
+    from pathlib import Path
+
+    from aptl.core.retained_enrollment import (
+        scenario_enrollment_retainer,
+        trial_enrollment_retainer,
+    )
+
+    if trial is None:
+        retain = scenario_enrollment_retainer(Path(project_dir), establish=establish)
+    else:
+        digest = hashlib.sha256(json.dumps(trial.identity(), sort_keys=True).encode())
+        retain = trial_enrollment_retainer(
+            Path(project_dir), f"sha256:{digest.hexdigest()}", establish=establish
         )
-        if (
-            not isinstance(sources, Mapping)
-            or len(sources) > 256
-            or not set(sources).issubset(contribution.native_registration_ids)
-            or any(
-                not isinstance(source, WindowedSource) for source in sources.values()
-            )
-        ):
-            raise ValueError
-        return dict(sources)
+
+    def retain_ids(observed: Mapping[str, str]) -> Mapping[str, str] | None:
+        """Return node-to-agent ids that core retained before this call."""
+
+        prior = retain(observed)
+        return None if prior is None else MappingProxyType(prior)
+
+    return retain_ids
+
+
+def family_capture_sources(
+    request: object,
+    *,
+    establish_enrollment: bool = False,
+    phase: AcquisitionPhase = AcquisitionPhase.MEASUREMENT,
+) -> Mapping[str, WindowedSource]:
+    """Keep invalid declarations distinct from a source factory's runtime failure."""
+    contribution = request.capture_selection.contribution
+    context = capture_source_context(
+        request, establish_enrollment=establish_enrollment, phase=phase
+    )
+    try:
+        sources = contribution.runtime_adapter.native_sources(context)
     except Exception:
-        raise ValueError("family-capture-sources-invalid") from None
+        raise RuntimeError("family-capture-sources-unavailable") from None
+    if (
+        not isinstance(sources, Mapping)
+        or len(sources) > 256
+        or not set(sources).issubset(contribution.native_registration_ids)
+        or any(
+            not isinstance(source, WindowedSource) or not callable(source.fetch)
+            for source in sources.values()
+        )
+    ):
+        raise ValueError("family-capture-sources-invalid")
+    return dict(sources)
 
 
 @dataclass(frozen=True)

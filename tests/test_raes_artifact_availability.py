@@ -238,50 +238,6 @@ def test_materialization_inspection_is_read_only_until_graph_qualification(
     assert probe.calls == 1
 
 
-def test_shipped_scenario_declares_artifact_demand_for_every_imaged_node(tmp_path):
-    """The shipped scenario pins each artifact-bearing address to an exact artifact."""
-
-    from raes import instantiate_scenario
-
-    from tests.helpers import techvault_scenario_path
-
-    scenario = parse_sdl_file(techvault_scenario_path(tmp_path))
-    scenario = instantiate_scenario(
-        scenario,
-        parameters={
-            f"flag_{host}_{level}": f"{host}-{level}"
-            for host in ("victim", "workstation", "webapp", "fileshare", "ad")
-            for level in ("user", "root")
-        },
-    )
-    probe = _Probe(set())
-
-    context = artifact_availability_for_scenario(scenario, probe)
-
-    # One address per artifact-bearing address — every image-backed node and
-    # every digest-pinned content placement in the full TechVault env-pack. The
-    # 7.0.0 pack's backend-neutral inventory contains 29 exact content demands:
-    # it removed the two Cortex analyzer artifacts with TheHive and Cortex.
-    # Compute substrates are selected separately under OPEN authority.
-    assert len(context.requirements) == 29
-    addresses = {requirement.address for requirement in context.requirements}
-    assert {
-        "provision.content.ad-rules",
-        "provision.content.database-rules",
-        "provision.content.falco-rules",
-        "provision.content.postgresql-decoders",
-        "provision.content.samba-decoders",
-        "provision.content.suricata-rules",
-        "provision.content.wazuh-integrations",
-        "provision.content.webapp-rules",
-    } <= addresses
-    # Exact pins are probed by digest-pinned reference; materialized components
-    # probe their locked base input the same way.
-    assert all(ref.count("@sha256:") == 1 for ref, _ in probe.calls)
-    # Nothing was obtainable for this probe, so nothing is claimed available.
-    assert all(not e.available_artifact_digests for e in context.requirements)
-
-
 # -- env-pack content availability (ADR-051 content boundary, issue #875) -----
 #
 # Content declared by an exact env-pack artifact is not an OCI image, so the
@@ -321,12 +277,9 @@ def stub_pack(monkeypatch):
 def _pack_requirement(digest: str = _DIGEST, *, route=None):
     """An EXACT content requirement routed through APTL's env-pack copy route."""
 
-    from raes.artifact_requirements import (
-        ArtifactIdentity,
-        ArtifactRequirement,
-        ArtifactSatisfactionRoute,
-    )
-    from raes.explicitness import ExplicitnessClass
+    from raes.artifact_requirements import ArtifactRequirement, ArtifactSatisfactionRoute
+    from raes_contracts.artifact_identity import ArtifactIdentity
+    from raes_contracts.explicitness import ExplicitnessClass
 
     from aptl.backends.raes_artifact_mechanisms import env_pack_copy_profile
 
@@ -334,7 +287,7 @@ def _pack_requirement(digest: str = _DIGEST, *, route=None):
         requirement_id="pack-content",
         explicitness=ExplicitnessClass.EXACT,
         exact_artifact=ArtifactIdentity(
-            artifact_id="techvault-readme",
+            artifact_id="range-readme",
             version="0.1.0",
             digest=digest,
             media_type="text/markdown",
@@ -356,7 +309,7 @@ def test_pack_content_whose_bytes_match_the_pin_is_available(tmp_path, stub_pack
     from aptl.backends.raes_artifact_availability import _env_pack_digest_and_provenance
     from aptl.backends.raes_artifact_mechanisms import env_pack_copy_provenance_ref
 
-    stub_pack["techvault-readme"] = _DIGEST
+    stub_pack["range-readme"] = _DIGEST
 
     assert _env_pack_digest_and_provenance(_pack_requirement(), tmp_path) == (
         _DIGEST,
@@ -371,7 +324,7 @@ def test_pack_content_whose_bytes_drifted_from_the_pin_is_not_available(
 
     from aptl.backends.raes_artifact_availability import _env_pack_digest_and_provenance
 
-    stub_pack["techvault-readme"] = _OTHER_DIGEST
+    stub_pack["range-readme"] = _OTHER_DIGEST
 
     assert _env_pack_digest_and_provenance(_pack_requirement(), tmp_path) is None
 
@@ -389,7 +342,7 @@ def test_content_availability_needs_a_scenario_root_to_resolve_against(stub_pack
 
     from aptl.backends.raes_artifact_availability import _env_pack_digest_and_provenance
 
-    stub_pack["techvault-readme"] = _DIGEST
+    stub_pack["range-readme"] = _DIGEST
 
     assert _env_pack_digest_and_provenance(_pack_requirement(), None) is None
 
@@ -408,7 +361,7 @@ def test_a_requirement_routed_to_a_registry_pull_is_not_pack_content(
 
     from aptl.backends.raes_artifact_availability import _env_pack_digest_and_provenance
 
-    stub_pack["techvault-readme"] = _DIGEST
+    stub_pack["range-readme"] = _DIGEST
     pull = ArtifactSatisfactionRoute(
         mechanism=exact_artifact_profile(),
         acquisition="pull",

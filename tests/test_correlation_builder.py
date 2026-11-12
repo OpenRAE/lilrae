@@ -41,7 +41,7 @@ from aptl.core.correlation.models import AssociationMethod, ClockContext
 # Fixture builders — shaped like the real RAES/APTL archive records.
 # ---------------------------------------------------------------------------
 
-_PARTICIPANT_ADDRESS = "participant.behavior.techvault.kali-victim-ssh-probe"
+_PARTICIPANT_ADDRESS = "participant.behavior.fixture.kali-victim-ssh-probe"
 _ACTION_CONTRACT_ADDRESS = "participant.action-contract.aptl.kali-victim-ssh-probe"
 _OBSERVATION_BOUNDARY_ADDRESS = "participant.observation-boundary.aptl.kali-victim-ssh-probe"
 
@@ -252,7 +252,7 @@ def _connected_component(proj, start_ref: str) -> set[str]:
 
 _RUN_ID = "run-e2e-1"
 _EPISODE_ID = "episode-e2e-1"
-_ACTION_ID = "participant.behavior.techvault.kali-victim-ssh-probe.aaaa1111"
+_ACTION_ID = "participant.behavior.fixture.kali-victim-ssh-probe.aaaa1111"
 
 
 def _minimal_run(
@@ -267,7 +267,7 @@ def _minimal_run(
     evaluation_results = evaluation_kwargs.get("evaluation_results")
     if evaluation_results is None:
         evaluation_results = {
-            "evaluation.objective.techvault.foothold": {
+            "evaluation.objective.fixture.foothold": {
                 "outcome": "succeeded",
                 "started_at": "2026-01-01T00:00:01Z",
                 "updated_at": "2026-01-01T00:00:06Z",
@@ -357,7 +357,7 @@ class TestAssociationMethods:
         run_ref = bind_attempt_ref(_RUN_ID)
         episode_ref = bind_attempt_ref(_EPISODE_ID)
         action_ref = bind_attempt_ref(_ACTION_ID)
-        eval_ref = bind_attempt_ref("evaluation.objective.techvault.foothold")
+        eval_ref = bind_attempt_ref("evaluation.objective.fixture.foothold")
         declared = {
             (e.source_ref, e.target_ref): e
             for e in _edges_by_method(proj, AssociationMethod.DECLARED_RULE)
@@ -419,7 +419,7 @@ class TestAssociationMethods:
     def test_time_window_candidate_links_overlapping_evaluator_result_to_action(self):
         manifest, orchestration = _minimal_run()
         proj = _build(manifest, orchestration)
-        eval_ref = bind_attempt_ref("evaluation.objective.techvault.foothold")
+        eval_ref = bind_attempt_ref("evaluation.objective.fixture.foothold")
         action_ref = bind_attempt_ref(_ACTION_ID)
         candidates = _edges_by_method(proj, AssociationMethod.TIME_WINDOW_CANDIDATE)
         matches = [e for e in candidates if e.source_ref == eval_ref and e.target_ref == action_ref]
@@ -429,7 +429,7 @@ class TestAssociationMethods:
     def test_time_window_candidate_is_absent_when_windows_do_not_overlap(self):
         manifest, orchestration = _minimal_run(
             evaluation_results={
-                "evaluation.objective.techvault.foothold": {
+                "evaluation.objective.fixture.foothold": {
                     "outcome": "succeeded",
                     "started_at": "2030-01-01T00:00:00Z",
                     "updated_at": "2030-01-01T00:00:01Z",
@@ -460,7 +460,7 @@ class TestAssociationMethods:
         promoted to EXPLICIT_IDENTIFIER or DECLARED_RULE."""
         manifest, orchestration = _minimal_run()
         proj = _build(manifest, orchestration)
-        eval_ref = bind_attempt_ref("evaluation.objective.techvault.foothold")
+        eval_ref = bind_attempt_ref("evaluation.objective.fixture.foothold")
         action_ref = bind_attempt_ref(_ACTION_ID)
         for method in (AssociationMethod.EXPLICIT_IDENTIFIER, AssociationMethod.DECLARED_RULE):
             edges = _edges_by_method(proj, method)
@@ -546,7 +546,7 @@ class TestClockHandling:
         TIME_WINDOW_CANDIDATE built on an unreconciled comparison."""
         manifest, orchestration = _minimal_run()
         proj = _build(manifest, orchestration, clock_provider=_SkewClockProvider())
-        eval_ref = bind_attempt_ref("evaluation.objective.techvault.foothold")
+        eval_ref = bind_attempt_ref("evaluation.objective.fixture.foothold")
         action_ref = bind_attempt_ref(_ACTION_ID)
         candidates = _edges_by_method(proj, AssociationMethod.TIME_WINDOW_CANDIDATE)
         assert not any(e.source_ref == eval_ref and e.target_ref == action_ref for e in candidates)
@@ -578,11 +578,11 @@ class TestMissingSourceTimestamp:
     def test_evaluator_result_without_any_timestamp_gets_no_fabricated_candidate_edge(self):
         manifest, orchestration = _minimal_run(
             evaluation_results={
-                "evaluation.objective.techvault.foothold": {"outcome": "succeeded"}
+                "evaluation.objective.fixture.foothold": {"outcome": "succeeded"}
             }
         )
         proj = _build(manifest, orchestration)
-        eval_ref = bind_attempt_ref("evaluation.objective.techvault.foothold")
+        eval_ref = bind_attempt_ref("evaluation.objective.fixture.foothold")
         candidates = _edges_by_method(proj, AssociationMethod.TIME_WINDOW_CANDIDATE)
         assert not any(e.source_ref == eval_ref for e in candidates)
         # It is still a real node, still bound to the run by manifest
@@ -662,8 +662,8 @@ class TestRestarts:
     def test_a_restarted_episode_produces_two_distinct_episode_nodes(self):
         episode_1 = "episode-restart-1"
         episode_2 = "episode-restart-2"
-        action_1 = "participant.behavior.techvault.kali-victim-ssh-probe.1111"
-        action_2 = "participant.behavior.techvault.kali-victim-ssh-probe.2222"
+        action_1 = "participant.behavior.fixture.kali-victim-ssh-probe.1111"
+        action_2 = "participant.behavior.fixture.kali-victim-ssh-probe.2222"
         attempted_1, observed_1 = _attempted_and_observed(
             episode_id=episode_1,
             action_instance_id=action_1,
@@ -782,7 +782,7 @@ class TestEndToEndTrace:
 
         action_ref = bind_attempt_ref(_ACTION_ID)
         run_ref = bind_attempt_ref(_RUN_ID)
-        eval_ref = bind_attempt_ref("evaluation.objective.techvault.foothold")
+        eval_ref = bind_attempt_ref("evaluation.objective.fixture.foothold")
 
         # The two behavior-history evidence nodes (red attempted / blue
         # observed) both derive from content, so look them up by ref_kind

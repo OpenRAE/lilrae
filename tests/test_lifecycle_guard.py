@@ -31,6 +31,37 @@ def _enter_lifecycle_lock(project_dir: Path) -> None:
         pass
 
 
+def _forked_lock_attempt(project_dir, result):
+    from aptl.core.lifecycle_policy import LifecycleBusyError
+
+    try:
+        _enter_lifecycle_lock(project_dir)
+    except LifecycleBusyError:
+        result.put("excluded")
+    else:
+        result.put("unsafe")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX fork")
+def test_fork_cannot_inherit_delegated_mutation_authority(tmp_path):
+    from aptl.core.lifecycle_guard import lifecycle_mutation_lock
+
+    context = multiprocessing.get_context("fork")
+    result = context.Queue()
+    with lifecycle_mutation_lock(tmp_path):
+        child = context.Process(target=_forked_lock_attempt, args=(tmp_path, result))
+        child.start()
+        child.join(timeout=5)
+        try:
+            assert not child.is_alive()
+            assert result.get(timeout=5) == "excluded"
+        finally:
+            if child.is_alive():
+                child.terminate()
+                child.join(timeout=5)
+            result.close()
+
+
 def _hold_observation_lock_in_child(project_dir, ready, release):
     from aptl.core.lifecycle_guard import lifecycle_observation_lock
 
@@ -78,6 +109,46 @@ def test_lifecycle_mutation_lock_is_reentrant_per_thread(tmp_path: Path) -> None
             lock_path = tmp_path / ".aptl" / "lifecycle" / ".lock"
             assert lock_path.is_file()
             assert stat.S_IMODE(lock_path.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("state", ["malformed", "symlink"])
+def test_invalid_trial_fence_fails_closed(tmp_path, state):
+    from aptl.core.lifecycle_guard import LifecycleLockUnavailableError, lifecycle_mutation_lock
+    from aptl.core.trial_ownership import TRIAL_FENCE
+
+    with lifecycle_mutation_lock(tmp_path):
+        fence = tmp_path / TRIAL_FENCE
+        if state == "symlink":
+            fence.symlink_to(tmp_path / "missing")
+        else:
+            fence.write_bytes(b"invalid")
+    with pytest.raises(LifecycleLockUnavailableError):
+        _enter_lifecycle_lock(tmp_path)
+
+
+def test_stale_delegated_context_cannot_revive_released_ownership(tmp_path):
+    from contextvars import copy_context
+    from aptl.core.lifecycle_guard import lifecycle_mutation_lock
+    from aptl.core.lifecycle_policy import LifecycleBusyError
+
+    with lifecycle_mutation_lock(tmp_path):
+        stale = copy_context()
+    ready, release = threading.Event(), threading.Event()
+
+    def holder():
+        with lifecycle_mutation_lock(tmp_path):
+            ready.set()
+            release.wait(timeout=5)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    try:
+        assert ready.wait(timeout=5)
+        with pytest.raises(LifecycleBusyError, match="lifecycle owner"):
+            stale.run(_enter_lifecycle_lock, tmp_path)
+    finally:
+        release.set()
+        thread.join(timeout=5)
 
 
 def test_lifecycle_lock_anchors_a_descendant_to_the_config_owner(
@@ -201,6 +272,49 @@ def test_windows_lock_walk_rejects_a_reparse_directory_by_handle(
     assert opened == [(10, ".aptl", True)]
     assert closed == [11, 10]
     assert not (tmp_path / ".aptl").exists()
+
+
+@pytest.mark.parametrize("state", ["absent", "owned", "malformed", "reparse"])
+def test_windows_trial_fence_uses_existing_handles_only(tmp_path, monkeypatch, state):
+    import aptl.core.lifecycle_guard as guard
+    from aptl.core.trial_ownership import require_trial_owner
+
+    opened, closed = [], []
+    monkeypatch.setattr(guard, "_windows_open_root_handle", lambda root: 10)
+    monkeypatch.setattr(guard, "_windows_close_handle", closed.append)
+
+    def open_relative(parent, component, *, directory, create):
+        assert not create
+        opened.append((component, directory))
+        if not directory and state == "absent":
+            raise FileNotFoundError
+        return parent + 1
+
+    def reject_reparse(handle):
+        if handle == 12 and state == "reparse":
+            raise OSError("reparse")
+
+    def to_fd(handle):
+        assert handle == 13
+        data = tmp_path / "sample-fence"
+        data.write_bytes(b"a" * 64 if state == "owned" else b"invalid")
+        return os.open(data, os.O_RDONLY)
+
+    monkeypatch.setattr(guard, "_windows_open_relative_handle", open_relative)
+    monkeypatch.setattr(guard, "_windows_reject_reparse_point", reject_reparse)
+    monkeypatch.setattr(guard, "_windows_handle_to_fd", to_fd)
+    reader = guard._windows_trial_fence_owner
+    if state == "absent":
+        require_trial_owner(tmp_path, reader=reader)
+    elif state == "owned":
+        with pytest.raises(guard.LifecycleBusyError):
+            require_trial_owner(tmp_path, reader=reader)
+        require_trial_owner(tmp_path, b"a" * 64, reader=reader)
+    else:
+        with pytest.raises(OSError if state == "reparse" else ValueError):
+            require_trial_owner(tmp_path, reader=reader)
+    assert opened[:2] == [(".aptl", True), ("lifecycle", True)]
+    assert closed[-3:] == [12, 11, 10]
 
 
 @pytest.mark.skipif(os.name != "nt", reason="requires Windows junction semantics")

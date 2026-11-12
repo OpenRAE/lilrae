@@ -43,7 +43,7 @@ class TestReferenceDrivenClosure:
             run_dir,
             run_id="run-1",
             capture_spec_id="capture-plan-missing",
-            blob_bytes=b'{"schema_version":"aptl-techvault-transcript/v1","sessions":"[REDACTED]"}',
+            blob_bytes=b'{"schema_version":"fixture-transcript/v1","sessions":"[REDACTED]"}',
         )
         if plan_bytes is not None:
             plan_dir = run_dir / "evidence/capture-plans"
@@ -66,7 +66,7 @@ class TestReferenceDrivenClosure:
         fixtures.write_evidence(
             run_dir,
             run_id="run-1",
-            blob_bytes=b'{"schema_version":"aptl-techvault-transcript/v1","sessions":"[REDACTED]"}',
+            blob_bytes=b'{"schema_version":"fixture-transcript/v1","sessions":"[REDACTED]"}',
             requirement_id="transcript",
             capture_spec_id="plan-1",
         )

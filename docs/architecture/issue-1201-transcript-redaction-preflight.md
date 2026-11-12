@@ -1,5 +1,13 @@
 # Issue #1201: transcript evidence redaction preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1201-transcript-redaction-preflight.md).
+Its last recorded file change before this rewrite was `df2f4e313887`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 ## Decision and boundaries
 
 The TechVault adapter owns a new retained transcript payload version. Render a
@@ -34,6 +42,26 @@ and RAES artifact role to match the retained payload. The adapter's retained
 payload is a versioned projection, not a second source of custody truth.
 
 ## Required incumbent gates
+
+### Missing broker sessions (issue #1502)
+
+Retain validated broker sessions when their identities are a subset of the
+independent MCP census. Include a reconciliation report in the same retained
+JSON artifact, listing SHA-256 references to census, accepted and missing identities and counts.
+These references avoid retaining raw session IDs or weakening shared redaction.
+A missing identity means only "no broker record; cause unknown"; tee content
+does not establish whether SSH failed, admission was refused, or shutdown raced
+with session creation. The report passes through the existing redaction and
+content-addressed run-store path with the transcripts and travels with exports.
+
+Use the existing dropped-count persistence path to retain this artifact with
+mandatory loss disclosure and a `MID_RUN_LOSS` report. Required transcript gaps
+invalidate finalization even if a binding accepts other limitations: no
+`SEALED_READY`, `EMPTY_OK`, or successful-finalization marker. All-missing
+captures retain the gap report, never a successful empty transcript. Broker-only
+identities, ledger/session disagreement, and invalid custody still fail closed.
+Readback qualification checks the accepted transcript/frame counts and the
+reconciliation report against the full source census before returning.
 
 | Layer | Incumbent and required behavior |
 | --- | --- |

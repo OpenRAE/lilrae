@@ -63,9 +63,12 @@ def test_probe_listener_supports_ipv6_without_falling_back_to_ipv4() -> None:
         target=lambda: result.append(probe._listen("::1", port, 2.0))
     )
     listener.start()
-    for _attempt in range(100):
-        if probe._connect("::1", port, 0.05) == 0:
-            break
+    # Bound the retries by time, not by count: a refused connect returns at
+    # once, so a count-bound loop can finish before the listener thread calls
+    # listen() on a loaded runner.
+    deadline = time.monotonic() + 2.0
+    while probe._connect("::1", port, 0.05) and time.monotonic() < deadline:
+        time.sleep(0.01)
     listener.join(timeout=3)
 
     assert result == [0]
@@ -84,9 +87,14 @@ def test_probe_listener_proves_a_real_udp_exchange() -> None:
         )
     )
     listener.start()
-    for _attempt in range(100):
-        if probe._connect("127.0.0.1", port, 0.05, protocol="udp") == 0:
-            break
+    # Bound the retries by time, not by count, so a slow listener start on a
+    # loaded runner cannot exhaust the attempts before the socket is bound.
+    deadline = time.monotonic() + 2.0
+    while (
+        probe._connect("127.0.0.1", port, 0.05, protocol="udp")
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
     listener.join(timeout=3)
 
     assert result == [0]

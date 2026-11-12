@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment._ssh_key_bundle import SSH_ACCESS_PROFILE_V1
 from aptl.core.deployment.errors import CaptureReconciliationError
 from aptl.core.deployment.realization import (
     DeploymentCaptureApparatus,
@@ -38,11 +39,11 @@ def _capture_spec(project: Path, keys: str = "kali/.ssh") -> DeploymentRealizati
     """Return a capture request whose key outputs the pack declares in ``keys``."""
 
     artifact = DeploymentGeneratedArtifactRealization(
-        address="provision.generated-artifact.techvault-ssh-keys",
-        name="techvault-ssh-keys",
+        address="provision.generated-artifact.range-ssh-keys",
+        name="range-ssh-keys",
         generator="ssh_key_bundle",
         lifecycle="regenerate_on_change",
-        provenance="techvault:ssh-access-profile/v1",
+        provenance=SSH_ACCESS_PROFILE_V1,
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name="kali-pivot-private-key",

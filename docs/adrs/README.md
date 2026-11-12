@@ -1,21 +1,22 @@
 # Architecture Decision Records
 
-This directory contains Architecture Decision Records (ADRs) for APTL. ADRs capture significant architectural decisions along with their context, rationale, and consequences.
+These records explain significant design choices and their reasons.
+Each decision keeps its original identifier, date, status, and amendment history.
+An accepted record can describe an earlier implementation without proving current behavior.
+Current interfaces belong to the linked maintained Reference pages.
 
 ## Format
 
-We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each ADR includes:
-
-- **Status**: `proposed`, `accepted`, `deprecated`, or `superseded by ADR-XXX`
-- **Context**: The problem or situation driving the decision
-- **Decision**: What we chose and why
-- **Consequences**: Trade-offs (positive, negative, risks)
+The project uses its existing MADR structure.
+The [format reference](../reference/architecture-decisions.md) contains the template.
+[ADR-000](adr-000-use-adrs.md) explains the decision and its governance.
 
 ## Principles
 
-- ADRs are **immutable** once accepted. To reverse a decision, create a new ADR that supersedes it.
-- ADRs are **numbered sequentially** and never reused.
-- ADRs are **versioned with code**—they live in the repo, not a wiki.
+An editorial rewrite preserves decision meaning.
+A successor ADR states which earlier clauses it replaces.
+Historical examples and measurements keep their original scope.
+A proposal remains proposed until a recorded decision changes its status.
 
 ## Index
 
@@ -48,7 +49,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [024](adr-024-orchestrator-side-purple-continuity-carve-out.md) | Orchestrator-side purple-team continuity carve-out | accepted | 2026-05-03 |
 | [025](adr-025-strict-first-party-config-schema.md) | Strict first-party config schema | superseded in part by ADR-065 | 2026-05-05 |
 | [026](adr-026-advisory-ci-vulnerability-scanning.md) | Advisory CI Vulnerability Scanning (scanners made blocking by the #1193 amendment) | accepted (amended) | 2026-05-09 |
-| [027](adr-027-red-team-structured-logging.md) | Red Team Structured Logging Boundary (SIEM-transport superseded by ADR-033) | accepted (amended) | 2026-05-09 |
+| [027](adr-027-red-team-structured-logging.md) | Red Team Structured Logging Boundary (SIEM-transport superseded by ADR-033) | accepted (amended 2026-05-17 by [ADR-033](adr-033-agent-reasoning-trace-boundary.md)) | 2026-05-09 |
 | [028](adr-028-runtime-rendered-service-config.md) | Runtime-Rendered Service Config | accepted | 2026-05-10 |
 | [029](adr-029-control-plane-secret-handling.md) | Control-Plane Secret Handling in Run Data and Local State | accepted | 2026-05-10 |
 | [030](adr-030-startup-partial-readiness-classification.md) | Startup Partial-Readiness Classification | accepted | 2026-05-11 |
@@ -56,7 +57,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [032](adr-032-conversation-surface-hardening.md) | Conversation Surface Hardening | accepted | 2026-05-17 |
 | [033](adr-033-agent-reasoning-trace-boundary.md) | Red-Side Behavioural Capture and Non-Contamination Boundary | accepted | 2026-05-17 |
 | [034](adr-034-lab-managed-soc-tls-ca.md) | Lab-Managed CA for Verified SOC Stack TLS | accepted | 2026-05-18 |
-| [035](adr-035-raes-sdl-adoption.md) | Adopt RAES SDL as APTL's Scenario Authoring Surface (realization model superseded by ADR-046) | accepted (amended) | 2026-05-18 |
+| [035](adr-035-raes-sdl-adoption.md) | Adopt RAES SDL as APTL's Scenario Authoring Surface (realization model superseded by ADR-046) | accepted (amended 2026-06-29, 2026-07-12, and 2026-07-19 by [ADR-046](adr-046-dynamic-raes-scenario-realization.md)) | 2026-05-18 |
 | [036](adr-036-snapshot-endpoint-registry.md) | Snapshot Endpoint Registry Boundary | accepted | 2026-05-18 |
 | [037](adr-037-docker-compose-backend-cohesion.md) | Docker Compose Backend Cohesion | superseded in part by ADR-065 | 2026-05-18 |
 | [038](adr-038-docs-style-lint-and-published-site.md) | Documentation Style Lint and Published Docs Site | accepted | 2026-06-11 |
@@ -67,13 +68,13 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [043](adr-043-suricata-runtime-config-ownership-boundary.md) | Suricata Runtime Config Ownership Boundary | accepted | 2026-06-20 |
 | [044](adr-044-raes-aligned-run-reproducibility-record.md) | RAES-Aligned Run Reproducibility Record | accepted | 2026-06-25 |
 | [045](adr-045-ephemeral-lifecycle-policy-enforcement.md) | Ephemeral Lifecycle Policy Enforcement | accepted | 2026-06-28 |
-| [046](adr-046-dynamic-raes-scenario-realization.md) | Dynamic RAES Scenario Realization (Image Realization Addendum superseded by ADR-048) | accepted (amended) | 2026-06-29 |
+| [046](adr-046-dynamic-raes-scenario-realization.md) | Dynamic RAES Scenario Realization (Image Realization Addendum superseded by ADR-048) | accepted (amended 2026-10-31) | 2026-06-29 |
 | [047](adr-047-raes-experiment-admission-and-trial-plan-boundary.md) | RAES Experiment Admission and Trial-Plan Boundary | accepted | 2026-07-19 |
-| [048](adr-048-image-free-placement-realization.md) | APTL Image-Free, Placement-Based Realization Envelope (historical term; see [Node Realization Routes](../components/node-realization.md)) | superseded in part by ADR-051 | 2026-07-20 |
-| [049](adr-049-sealed-disposable-lab-appliance.md) | Sealed, Disposable Lab Appliance Delivery Boundary | superseded in part by ADR-060 | 2026-07-25 |
+| [048](adr-048-image-free-placement-realization.md) | APTL Image-Free, Placement-Based Realization Envelope (historical term; see [Node Realization Routes](../components/node-realization.md)) | accepted; superseded in part by ADR-051 | 2026-07-20 |
+| [049](adr-049-sealed-disposable-lab-appliance.md) | Sealed, Disposable Lab Appliance Delivery Boundary | accepted; superseded in part by ADR-060 | 2026-07-25 |
 | [050](adr-050-terminal-attempt-archival-and-atomic-seal.md) | Terminal Attempt Archival And Atomic Seal Boundary | accepted | 2026-07-28 |
 | [051](adr-051-component-level-raes-realization.md) | Component-Level RAES Realization | accepted | 2026-07-28 |
-| [052](adr-052-configured-participant-credential-sourcing.md) | Configured Participant Credential Sourcing | proposed | 2026-08-12 |
+| [052](adr-052-configured-participant-credential-sourcing.md) | Configured Participant Credential Sourcing | accepted | 2026-08-12 |
 | [053](adr-053-pack-backend-deployment-serving-interaction-seam.md) | Pack-Backend Deployment-Serving Interaction Seam | accepted | 2026-08-10 |
 | [054](adr-054-lilrae-core-and-experience-ownership.md) | APTL-to-LilRAE Identity Continuity and Capability Ownership | proposed | 2026-09-05 |
 | [055](adr-055-local-runtime-authority-and-ownership.md) | Local Runtime Authority and Ownership | proposed | 2026-09-05 |
@@ -88,3 +89,8 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [064](adr-064-layered-architecture-and-code-conventions.md) | Layered Architecture and Code Conventions | superseded in part by ADR-065 | 2026-10-31 |
 | [065](adr-065-go-implementation-and-engineering-standards.md) | Go Implementation, Architecture Model, and Engineering Standards | superseded in part by ADR-066 | 2026-10-31 |
 | [066](adr-066-descriptor-walk-for-contained-files.md) | Descriptor Walk for Contained Files on Unix | accepted | 2026-11-01 |
+| [065](adr-065-executable-participant-action-boundaries.md) | Executable Participant Action Boundaries | Proposed for the #1418 delivery PR. | 2026-10-31 |
+| [066](adr-066-runtime-readback-reports-realized-state.md) | Runtime Readback Reports Realized State | accepted | 2026-10-31 |
+| [067](adr-067-admitted-participant-smoke-providers.md) | Admitted Participant Smoke Providers | accepted | 2026-11-07 |
+| [068](adr-068-dev-merge-queue.md) | Merge Queue for the dev Branch | accepted | 2026-11-11 |
+| [069](adr-069-shared-containment-wrapper.md) | Shared Containment Wrapper | accepted | 2026-11-10 |

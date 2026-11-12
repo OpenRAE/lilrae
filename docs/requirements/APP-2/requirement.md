@@ -11,6 +11,13 @@ updated_at: 2026-10-12T18:00:18.618385Z
 
 # APP-2: Versioned participant profile conformance
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/APP-2/requirement.md).
+
+
 ## Statement
 
 APTL shall bind each supported participant delivery profile to a canonical narrative, admitted ACES scenario and configuration, staged asset lock, participant capability allow-lists, semantic readiness suite, explicit resource and lifecycle budgets, and a machine-readable qualification report; conformance shall fail on a missing or unexpected runtime surface, failed real backend operation, participant exposure of a disabled capability, unstaged network dependency, or budget breach.
@@ -25,7 +32,7 @@ Issue #820 defines the reusable bounded workshop/classroom profile and qualifica
 - IMPLEMENTS → PULL_REQUEST `836` (PR #836: define bounded participant lab profile)
 - TESTS → TEST `tests/test_participant_profile.py` (Participant profile conformance tests)
 - TESTS → TEST `tests/test_participant_qualification.py` (Participant qualification trust and budget tests)
-- TESTS → TEST `tests/test_participant_mcp_smoke.py` (Participant MCP semantic smoke tests)
+- TESTS → TEST `tests/techvault/test_participant_mcp_smoke.py` (Participant MCP semantic smoke tests)
 - DOCUMENTS → DOCUMENTATION `docs/reference/participant-profile.md` (Participant profile reference)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/participant_profile.py` (Participant profile loader and conformance model)
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/participant_qualification.py` (Authenticated participant qualification evaluator)

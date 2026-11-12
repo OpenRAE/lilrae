@@ -1,6 +1,6 @@
 """Full-stack real-Docker test: base-container-materialized and image-backed nodes together.
 
-TechVault's real shape is permanently mixed: some nodes convert to the
+A realistic range is permanently mixed: some nodes convert to the
 generic materializer (`runtime:`), others stay on a declared vendor
 `source:` (a legitimate, transparently-declared upstream image - not a
 hidden appliance image ADR-047/048 targets). `realize()` must materialize
@@ -90,8 +90,22 @@ def test_realize_materializes_runtime_node_and_starts_image_node_together(tmp_pa
     _materialized_project(tmp_path)
     backend = DockerComposeBackend(project_dir=tmp_path, project_name="aptl-mixed-test")
 
+    # Package downloads belong to the build plane. The participant network has
+    # no external grants, so prepare the declared package in its base image;
+    # the materializer must still observe and verify that exact package.
+    base_image = "lilrae-mixed-proof-base:968"
+    built = subprocess.run(
+        ["docker", "build", "-t", base_image, "-f", "-", str(tmp_path)],
+        input="FROM debian:13-slim\nRUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*\n",
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert built.returncode == 0, built.stderr
+
     free_node = DeploymentNodeRealization(
         address="provision.node.free-box",
+        backend_base_image_ref=base_image,
         name="free-box",
         service_name="free-box",
         container_name=free_container,

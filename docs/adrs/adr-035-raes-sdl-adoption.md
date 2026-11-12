@@ -24,21 +24,14 @@ ADR-046 establishes that the compiled RAES `RuntimeModel`, interpreted through
 `docker-compose.yml` remains the realization vehicle selected by profile rather
 than the topology authority.
 
-What this ADR decided still stands: RAES SDL adoption as the canonical authoring
-surface, the backend-manifest and conformance model, the `DeploymentBackend`
-execution boundary, and the RAES backend integration guardrails are preserved.
+The retained decision uses RAES authoring, backend manifests, conformance, and `DeploymentBackend` execution. The integration guardrails remain in force.
 
 ## Status update—2026-07-12
 
 **Superseded further, by [ADR-046](adr-046-dynamic-raes-scenario-realization.md)'s
-Capture Inventory and Parity-Inventory Removal Addendum.** Wherever the body of
-this ADR below states that `scenarios/techvault.sdl.yaml` "remains the
-detailed inventory/parity evidence surface" (or the equivalent), that
-statement no longer describes the repository: the capture SDL, its supporting
-tree (`scenarios/techvault/`, `scenarios/aces.lock.json`), and the SCN-010
-parity inventory (`docs/raes/parity-inventory.yaml` / `.md`,
-`check_parity_manifest`, and the `required_surface_coverage` contract) have
-all since been removed. The asset-inventory capture capability now lives in
+Capture Inventory and Parity-Inventory Removal Addendum.** The original TechVault inventory statements are historical. `scenarios/techvault.sdl.yaml`, `scenarios/techvault/`, and `scenarios/aces.lock.json` were removed. So were SCN-010 parity files, `check_parity_manifest`, and `required_surface_coverage`.
+
+The body below no longer supplies current parity evidence. The asset-inventory capture capability now lives in
 RAES; APTL keeps only `scenarios/techvault-operational.sdl.yaml` as the
 driving contract, with no separate capture/parity evidence surface behind it.
 This is a point-in-time correction, not a rewrite of the decision record
@@ -49,11 +42,16 @@ below—see ADR-046 for the current state.
 **Superseded further, by [ADR-046](adr-046-dynamic-raes-scenario-realization.md)'s
 TechVault Full Dynamic Cutover Addendum.** The remaining compatibility statement
 that `docker-compose.yml` is the profile-selected realization vehicle is no
-longer true for the operational TechVault scenario. Docker Compose remains an
-APTL deployment backend format, but its standalone model is derived from the
-single admitted RAES execution/realization graph and is not an authoring,
-topology, service-catalog, profile, or lifecycle input. A checked-in Compose
+longer true for the operational TechVault scenario. Compose remains a derived deployment format. The admitted RAES realization graph supplies it. Standalone Compose is not a separate authoring, topology, service-catalog, profile, or lifecycle authority. A checked-in Compose
 file, if retained, is a deterministic reference artifact only.
+
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [SDL guide](../sdl/index.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
 
 ## Context
 
@@ -74,17 +72,9 @@ target is integrated by publishing a `backend-manifest-v2` claiming
 conformance to a named profile and passing `raes conformance backend
 --profile <name>` against that manifest.
 
-RAES is the system whose multi-backend reproducibility story has to hold up
-for the research to land; APTL is the realistic backend that proves the
-contract surface against a full purple-team lab.
+RAES owns cross-backend reproducibility. LilRAE supplies a realistic native backend that exercises those contracts in a purple-team lab.
 
-When this decision was written, APTL maintained its own in-tree SDL at
-`aptl.core.sdl`, plus a
-Pydantic-validated YAML schema at `aptl.core.scenarios` (SCN-001), with a
-parallel grammar/parser/validation story tracked by DSL-001..DSL-009. The
-in-tree SDL and RAES SDL both started from the Open Cyber Range SDL (the
-same root), so the surfaces overlap substantially, and the in-tree fork is
-already drifting in scope and naming.
+The earlier tree owned `aptl.core.sdl` and the SCN-001 Pydantic YAML schema in `aptl.core.scenarios`. DSL-001 through DSL-009 tracked their grammar, parser, and validation. Both languages began from Open Cyber Range SDL. The local fork overlapped RAES while its names and scope diverged.
 
 Carrying two SDLs has three concrete costs:
 
@@ -97,18 +87,12 @@ Carrying two SDLs has three concrete costs:
    equivalent RAES features (variables/runtime substitution, composition,
    pre/post-conditions, CACAO/Attack Flow alignment, cleanup/rollback,
    topology declaration, user-behavior profiles).
-3. **Tooling already exists in RAES**—`raes sdl resolve`,
-   `raes sdl verify-imports`, `raes sdl publish`, lockfiles
-   (`raes.lock.json`), OCI module distribution, MCP server, conformance
-   runner—and would have to be rebuilt in-tree to reach parity.
+3. **Existing RAES tooling** includes resolution, import verification, publication, `raes.lock.json`, OCI distribution, MCP, and conformance. Matching that support would duplicate upstream work.
 
 Implementation status as of 2026-06-25: public lab startup now defaults to the
 RAES-authored operational TechVault SDL through `start_raes_scenario()`,
 `scenarios/catalog.json`, and the RAES runtime manager. APTL has since promoted
-its backend manifest and gates beyond the Phase A bootstrap claims. Remaining
-work under issue #530 is reconciliation cleanup: remove or quarantine legacy
-APTL SDL/YAML surfaces and update stale docs/tests so they cannot be mistaken
-for current authoring or runtime authorities.
+its backend manifest and gates beyond the Phase A bootstrap claims. Issue #530 covered remaining reconciliation. Local SDL/YAML surfaces and stale documentation or tests needed removal or quarantine so they could not appear authoritative.
 
 ## Decision
 
@@ -122,9 +106,7 @@ Specifically:
   validators.
 - APTL implements one `RuntimeTarget` registered into the RAES runtime
   target registry and publishes a `backend-manifest-v2` from
-  `src/aptl/backends/raes_manifest.py:create_aptl_manifest()`. The manifest
-  and conformance gates are the source of truth for the current backend
-  profile claim; do not copy stale profile names from historical planning text.
+  `src/aptl/backends/raes_manifest.py:create_aptl_manifest()`. The manifest and conformance results determine a backend profile claim. Historical planning names cannot replace them.
 - APTL's CLI delegates `aptl lab start` and friends through the RAES
   `RuntimeManager` lifecycle (compile → plan → validate → apply → start
   orchestrator/evaluator → stop) instead of the current imperative Python
@@ -152,12 +134,7 @@ Specifically:
 APTL targeted `provisioning-only` initially because that profile requires only
 `backend-manifest-v2`, `operation-receipt-v1`, `operation-status-v1`, and
 `runtime-snapshot-v1`—all reachable by wrapping the existing lab provisioning
-code. Issue #311 promoted APTL to `orchestration-capable`: the manifest
-declared a real `capabilities.orchestrator` and the
-`workflow-result-envelope-v1` / `workflow-history-event-stream-v1` contracts,
-the runtime target published a concrete RAES `Orchestrator`
-(`aptl.backends.raes_orchestrator`), and scenario start routed through the RAES
-control plane. Issue #312 then promoted the evaluator surface through
+code. Issue #311 added the historical orchestration-capable profile. It declared `capabilities.orchestrator`, `workflow-result-envelope-v1`, and `workflow-history-event-stream-v1`. `aptl.backends.raes_orchestrator` supplied the concrete orchestrator, and scenario startup used RAES control. Issue #312 then promoted the evaluator surface through
 `aptl.backends.raes_evaluator` and the evaluation result/history contracts.
 
 Current code may advance beyond those historical milestones. The canonical
@@ -198,9 +175,7 @@ The inventory must map every legacy surface to exactly one owning category:
 - **RAES SDL** when the authored scenario can express the surface directly
   through the RAES parser, schemas, semantic validators, and compiled
   `RuntimeModel`.
-- **RAES schema/profile gap** when the concept belongs in RAES rather than
-  APTL; these rows must cite a RAES follow-up instead of adding an APTL
-  extension that recreates the retired in-tree SDL.
+- **RAES schema/profile gap** when RAES owns the concept. Such a row must identify an upstream follow-up rather than restore the retired local SDL.
 - **APTL backend responsibility** when the concept is backend realization
   detail: Docker Compose profiles, generated runtime config, lab-managed TLS,
   SOC seed material, deployment inventory, readiness classification, snapshots,
@@ -229,13 +204,7 @@ document itself. In particular:
 - run archives come from `LocalRunStore` and its redacting JSON/JSONL write
   boundary.
 
-The inventory may be human-readable or machine-readable, but if it becomes
-machine-readable it must stay a narrow audit manifest: stable legacy
-identifier, canonical source, owning category, RAES/runtime/backend target,
-validation evidence, and blocking follow-up. It must not introduce a second
-Pydantic `ScenarioDefinition`, a second RAES model, a duplicate Docker Compose
-parser, a duplicate secret taxonomy, a duplicate readiness taxonomy, or a
-parallel exception/result envelope.
+A machine-readable inventory must remain a narrow audit manifest. Fields cover legacy identity, canonical source, owner category, target, validation evidence, and blocking follow-up. It must not duplicate scenario models, RAES types, Compose parsing, secret classification, readiness classification, or exception/result envelopes.
 
 ## RAES Backend Integration Guardrails
 
@@ -378,9 +347,7 @@ deprecations across releases.
 
 ### Negative / costs
 
-- Migration cost for existing scenarios—but they move to archive, not
-  being rewritten, so this is a small one-time move once the RAES
-  TechVault reaches parity.
+- Existing scenarios move to the archive rather than receive a local schema rewrite. The original migration expected one move after RAES TechVault parity.
 - APTL now depends on the `raes` Python package; version pinning and
   upstream-coordination become real workflow concerns.
 - Backend conformance becomes a pre-push gate; failing conformance
@@ -391,10 +358,7 @@ deprecations across releases.
 
 ## Alternatives Considered
 
-1. **Keep APTL's in-tree SDL, mirror RAES grammar.** Rejected: defeats
-   the cross-backend reproducibility goal; APTL becomes a RAES dialect
-   fork that has to stay in sync manually, with no machine-readable
-   conformance signal.
+1. **Keep APTL's in-tree SDL, mirror RAES grammar.** Rejected: defeats cross-backend reproducibility. LilRAE would become a manually synchronized dialect without machine-readable conformance.
 2. **Adopt RAES SDL but skip the backend conformance suite.** Rejected:
    without conformance, APTL is not a demonstrable RAES backend, and the
    research claim collapses to "we use RAES syntax," not "RAES portability

@@ -40,9 +40,6 @@ def _build_second_adapter(tmp_path: Path) -> Path:
             [project.entry-points."aptl.scenario_capture"]
             "otherpack.aptl" = "otherpack_adapter:capture"
 
-            [project.entry-points."aptl.scenario_planning_compatibility"]
-            "otherpack.aptl" = "otherpack_adapter:planning"
-
             [project.entry-points."aptl.scenario_verifiers"]
             "otherpack.aptl" = "otherpack_adapter:verifier"
 
@@ -62,7 +59,6 @@ def _build_second_adapter(tmp_path: Path) -> Path:
                 PackBackendInteractionResult,
             )
             from aptl.backends.scenario_capture import ScenarioCaptureContribution
-            from aptl.backends.scenario_planning_compatibility import PlanningCompatibilityDecision
             from aptl.backends.scenario_startup import ScenarioStartupPlan
             from aptl.core.evidence.adapters.sources import SourceResult
             from aptl.core.evidence.outcomes import CollectorStatus
@@ -177,7 +173,6 @@ def _build_second_adapter(tmp_path: Path) -> Path:
                         supports_redaction=True,
                         integrity_modes=frozenset({"checksum"}),
                         sealing_modes=frozenset({"digest"}),
-                        supports_chain_of_custody=False,
                         supports_retention=True,
                         supports_loss_disclosure=True,
                         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
@@ -204,21 +199,6 @@ def _build_second_adapter(tmp_path: Path) -> Path:
                             )
                     return {"otherpack.collector.events": Source()}
 
-            class Planning:
-                provider_id = "otherpack-planning"
-                extension_api_version = "1"
-                supported_pack_id = "otherpack"
-                supported_pack_versions = ("1.0.0",)
-                supported_pack_set_digests = (DIGEST,)
-                backend_target_name = "aptl"
-                backend_target_versions = ("0.1.0",)
-                backend_profiles = ("full-remote-control-plane",)
-                backend_transports = ("docker", "docker-compose")
-
-                @staticmethod
-                def resolve(_context):
-                    return PlanningCompatibilityDecision(runtime_max_nodes=2048)
-
             class Verifier:
                 plugin_id = "otherpack"
                 extension_api_version = "2"
@@ -241,7 +221,7 @@ def _build_second_adapter(tmp_path: Path) -> Path:
             startup = Startup()
             serving = Serving()
             capture = Capture()
-            planning = Planning()
+
             verifier = Verifier()
             """
         ).strip()
@@ -349,8 +329,6 @@ def test_second_installed_pack_starts_captures_plans_and_verifies(
         from aptl.backends.identity import BackendIdentity
         from aptl.backends.scenario_capture import ScenarioCaptureContext
         from aptl.backends.scenario_capture_discovery import resolve_scenario_capture
-        from aptl.backends.scenario_planning_compatibility import ScenarioPlanningCompatibilityContext
-        from aptl.backends.scenario_planning_compatibility_discovery import resolve_scenario_planning_compatibility
         from aptl.backends.scenario_startup import select_scenario_startup, run_scenario_runtime
         from aptl.core.config import AptlConfig
         from aptl.core.evidence.adapters.sources import SourceResult
@@ -442,8 +420,9 @@ def test_second_installed_pack_starts_captures_plans_and_verifies(
                 {"otherpack.collector.events": source}, capture.registry
             )["otherpack.collector.events"]
             clock = SimpleNamespace(now=lambda: "2026-09-21T00:00:00Z")
+            (binding,) = admitted.capture_plan.bindings
             handle = collector.start(CollectorContext(
-                "trial", "run", "attempt", SimpleNamespace(), 10.0, clock
+                "trial", "run", "attempt", binding, 10.0, clock
             ))
             collector_outcome = collector.stop(handle)
             assert collector_outcome.status is CollectorStatus.OK
@@ -475,10 +454,6 @@ def test_second_installed_pack_starts_captures_plans_and_verifies(
                 / f"evidence/capture-plans/{admitted.capture_plan.plan_id}.json"
             ).read_bytes() == admitted.capture_plan.canonical_bytes
 
-            planning = resolve_scenario_planning_compatibility(
-                ScenarioPlanningCompatibilityContext(pack, backend_identity)
-            )
-            assert planning.decision.runtime_max_nodes == 2048
             report = verify_scenario(VerificationContext(
                 run_id="run",
                 attempt_id="attempt",

@@ -11,6 +11,13 @@ updated_at: 2026-10-12T18:00:18.618385Z
 
 # SCN-003: Run Lifecycle Management
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/SCN-003/requirement.md).
+
+
 > Historical requirement record (scope notice added 2026-10-12): The statement describes the retired scenario runtime and archive assembler. The shipped lifecycle uses `aptl lab start` and `aptl lab stop`; run records are described in the current Experiment Runs reference.
 > The original statement is retained; the rationale records its retirement.
 > See the current

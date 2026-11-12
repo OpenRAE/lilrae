@@ -269,14 +269,23 @@ class ComposeEnvironmentBindingMixin:
         }
         addresses = _base_container_node_addresses(realization)
         error = unbound_environment_error(context, realization, addresses)
+        compose_addresses = frozenset(node.address for node in compose_nodes(realization))
+        if error is None:
+            error = unbound_environment_error(
+                context, realization, compose_addresses, compose=True
+            )
         if error is None:
             try:
                 self._compose_environment = compose_environment(context, realization)
             except EnvironmentBindingError as exc:
                 error = str(exc)
-            addresses |= {node.address for node in compose_nodes(realization)}
         if error is None:
-            warn_unused_grants(context, sourced_names(realization, addresses))
+            warn_unused_grants(
+                context, sourced_names(realization, addresses | compose_addresses)
+            )
+        else:
+            self._environment_binding_context = None
+            self._compose_environment = None
         return LabResult(success=False, error=error) if error is not None else None
 
     def _write_sourced_environment_override(

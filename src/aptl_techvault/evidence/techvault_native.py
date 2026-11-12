@@ -15,11 +15,13 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlunsplit
 
+from aptl.backends.scenario_runtime_hooks import RUNTIME_OPERATION_REFUSALS
+from aptl.core.evidence.adapters.sources import WindowedSource
 from aptl_techvault.evidence.techvault import (
+    SQLI_DELIVERY_UNCONFIRMED,
     SQLI_PROBE_SOURCE_IP,
     SURICATA_SQLI_SID,
     WAZUH_SQLI_RULE_ID,
@@ -30,6 +32,7 @@ from aptl_techvault.evidence.techvault_misp_readiness import (
     MispAuthenticatedApiReadinessSource,
 )
 from aptl_techvault.evidence.techvault_native_readiness import (
+    EnrollmentRetainer,
     admitted_misp_state,
     declared_endpoint_agents,
     misp_readiness,
@@ -89,30 +92,30 @@ class TechVaultNativeEvidenceOwner:
     def __init__(
         self,
         *,
-        backend: object,
+        operations: object,
         realization: object,
-        project_dir: Path,
-        indexer_auth: tuple[str, str],
+        retain_enrollment_ids: EnrollmentRetainer | None,
+        may_prepare: bool,
         dependencies: TechVaultNativeDependencies | None = None,
     ) -> None:
-        """Bind trusted operations to one admitted TechVault realization."""
+        """Bind admitted operations to one TechVault realization and phase.
+
+        ``may_prepare`` comes from the caller's acquisition phase. Without it,
+        the owner sends no MISP write, SQLi probe, or freshness event.
+        """
 
         selected_dependencies = dependencies or TechVaultNativeDependencies()
-        self._backend = backend
+        self._operations = operations
         self._realization = realization
-        self._project_dir = project_dir
-        # Retained in the constructor for one compatibility release while the
-        # capture request surface stops supplying indexer credentials. Evidence
-        # never consumes them: TechVault declares the manager alert log as the
-        # Wazuh source for this registration (issue #957).
-        _ = indexer_auth
+        self._retain_enrollment_ids = retain_enrollment_ids
+        self._may_prepare = may_prepare
         self._now = selected_dependencies.now
         self._sleep = selected_dependencies.sleep
         endpoint = webapp_endpoint(realization)
         self._webapp_ip = endpoint[0] if endpoint is not None else None
         self._webapp_port = endpoint[1] if endpoint is not None else None
 
-    def sources(self) -> dict[str, object]:
+    def sources(self) -> dict[str, WindowedSource]:
         """Return exact registration-id to source bindings."""
 
         kwargs: dict[str, Any] = {
@@ -138,7 +141,7 @@ class TechVaultNativeEvidenceOwner:
             ),
         }
 
-    def _misp_readiness_source(self) -> dict[str, object]:
+    def _misp_readiness_source(self) -> dict[str, WindowedSource]:
         """Bind the MISP source only when the plan admits a state to compare.
 
         Without admitted values there is nothing to compare an observation
@@ -158,9 +161,15 @@ class TechVaultNativeEvidenceOwner:
     def misp_readiness_query(
         self, _start_iso: str, _end_iso: str
     ) -> Mapping[str, object] | None:
-        """Observe MISP, its database and its cache through the admitted plan."""
+        """Observe MISP, its database and its cache through the admitted plan.
 
-        return misp_readiness(self._backend, self._realization)
+        The API check writes and deletes one event, so it runs only in
+        preparation. In measurement the source reports itself unavailable.
+        """
+
+        if not self._may_prepare:
+            return None
+        return misp_readiness(self._operations, self._realization)
 
     def wazuh_agent_readiness_query(
         self, start_iso: str, end_iso: str
@@ -176,9 +185,9 @@ class TechVaultNativeEvidenceOwner:
         """Read the manager roster using the admitted scenario identities."""
 
         return wazuh_agent_readiness(
-            getattr(self._backend, "container_exec_with_input", None),
+            getattr(self._operations, "container_exec_with_input", None),
             self._realization,
-            self._project_dir,
+            self._retain_enrollment_ids,
             start_iso,
             end_iso,
         )
@@ -227,6 +236,8 @@ class TechVaultNativeEvidenceOwner:
     def _emit_missing_agent_events(self, missing: list[str]) -> bool:
         """Trigger real source activity for stale admitted endpoint agents."""
 
+        if not self._may_prepare:
+            return False
         declared = {
             node: sources
             for node, (_enrollment, sources) in declared_endpoint_agents(
@@ -235,7 +246,11 @@ class TechVaultNativeEvidenceOwner:
         }
         try:
             return emit_missing_agent_events(
-                self._backend, self._realization, missing, declared, self.trigger_sqli
+                self._operations,
+                self._realization,
+                missing,
+                declared,
+                self.trigger_sqli,
             )
         except Exception:
             return False
@@ -258,13 +273,13 @@ class TechVaultNativeEvidenceOwner:
         image = getattr(node, "image", None) if node is not None else None
         image_ref = getattr(image, "image_ref", None)
         identities = content_identities(self._realization)
-        image_digest_read = getattr(self._backend, "container_image_digest", None)
+        image_digest_read = getattr(self._operations, "container_image_digest", None)
         image_digest = (
             image_digest_read(_SURICATA_CONTAINER)
             if callable(image_digest_read)
             else None
         )
-        execute = getattr(self._backend, "container_exec_with_input", None)
+        execute = getattr(self._operations, "container_exec_with_input", None)
         if (
             not isinstance(image_ref, str)
             or not isinstance(image_digest, str)
@@ -326,10 +341,19 @@ class TechVaultNativeEvidenceOwner:
         return (digests, sids) if valid else None
 
     def trigger_sqli(self) -> Mapping[str, object] | None:
-        """Send one fixed participant-equivalent Kali login probe."""
+        """Send one fixed participant-equivalent Kali login probe in preparation.
 
-        execute = getattr(self._backend, "container_exec_with_input", None)
-        if not self._webapp_ip or self._webapp_port is None or not callable(execute):
+        Return ``None`` when no request started. Return the unconfirmed marker
+        when the request started but its delivery is not confirmed.
+        """
+
+        execute = getattr(self._operations, "container_exec_with_input", None)
+        if (
+            not self._may_prepare
+            or not self._webapp_ip
+            or self._webapp_port is None
+            or not callable(execute)
+        ):
             return None
         trigger_id = "aptl-probe-" + secrets.token_hex(8)
         triggered_at = self._now()
@@ -341,26 +365,9 @@ class TechVaultNativeEvidenceOwner:
         endpoint = urlunsplit(
             ("http", f"{self._webapp_ip}:{self._webapp_port}", "/login", "", "")
         )
-        result = execute(
-            _KALI_CONTAINER,
-            [
-                "curl",
-                "-sS",
-                "-o",
-                "/dev/null",
-                "-X",
-                "POST",
-                "-H",
-                "Content-Type: application/x-www-form-urlencoded",
-                "--data-binary",
-                "@-",
-                endpoint,
-            ],
-            payload,
-            timeout=30,
-        )
-        if result.returncode != 0:
-            return None
+        sent = _send_sqli_probe(execute, endpoint, payload)
+        if sent is not True:
+            return None if sent is None else SQLI_DELIVERY_UNCONFIRMED
         return {
             "trigger_id": trigger_id,
             "method": "POST",
@@ -376,7 +383,7 @@ class TechVaultNativeEvidenceOwner:
     ) -> Sequence[Mapping[str, object]] | None:
         """Read a bounded EVE tail and retain exact fresh SQLi alerts only."""
 
-        result = self._backend.container_exec(
+        result = self._operations.container_exec(
             _SURICATA_CONTAINER,
             ["tail", "-c", str(MAX_SOURCE_BYTES), "/var/log/suricata/eve.json"],
             timeout=30,
@@ -409,7 +416,7 @@ class TechVaultNativeEvidenceOwner:
         """Read exact rule 303020 alerts from the declared manager log."""
 
         observed = read_wazuh_manager_alerts(
-            self._backend, self._realization, start_iso, end_iso
+            self._operations, self._realization, start_iso, end_iso
         )
         if not observed.complete:
             return None
@@ -419,6 +426,43 @@ class TechVaultNativeEvidenceOwner:
             if isinstance(item.get("rule"), Mapping)
             and str(item["rule"].get("id", "")) == WAZUH_SQLI_RULE_ID
         ]
+
+
+def _send_sqli_probe(
+    execute: Callable[..., object], endpoint: str, payload: str
+) -> bool | None:
+    """Send the probe body from Kali on stdin.
+
+    Return ``True`` when the request completed, ``False`` when it started
+    without confirmed delivery, and ``None`` when core refused it first.
+    """
+
+    try:
+        result = execute(
+            _KALI_CONTAINER,
+            [
+                "curl",
+                "-sS",
+                "-o",
+                "/dev/null",
+                "-X",
+                "POST",
+                "-H",
+                "Content-Type: application/x-www-form-urlencoded",
+                "--data-binary",
+                "@-",
+                endpoint,
+            ],
+            payload,
+            timeout=30,
+        )
+    except ValueError as exc:
+        # A refused operation never started; a failed one may have sent.
+        return None if str(exc) in RUNTIME_OPERATION_REFUSALS else False
+    # broad-except: a backend transport failure may follow a sent request.
+    except Exception:
+        return False
+    return getattr(result, "returncode", 1) == 0
 
 
 __all__ = (

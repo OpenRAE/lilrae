@@ -11,6 +11,13 @@ updated_at: 2026-10-12T17:30:00.000000Z
 
 # SCN-010: ACES SDL as APTL's Canonical Scenario Authoring Surface
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/SCN-010/requirement.md).
+
+
 ## Statement
 
 APTL shall consume the external Agentic Cyber Environment System (ACES) SDL (sibling repository at ../aces-sdl) as its canonical scenario authoring surface. All authored scenarios shall be ACES SDL documents validated by the ACES reference parser, compiled through the ACES runtime model, and executed via an APTL-implemented ACES backend target. APTL shall not maintain a parallel in-tree scenario specification language. APTL's backend implementation shall publish a backend-manifest-v2 declaring conformance to a named ACES backend capability profile from contracts/profiles/backend/, with `provisioning-only` as the initial target, and shall pass the `aces conformance backend` suite for that profile. The legacy in-tree SDL and `scenarios/*.yaml` paths shall remain functional until the ACES-authored `techvault.sdl.yaml` scenario reaches capability parity with the existing scenario set (same node/service/vulnerability/feature surfaces, injects, scenario flow shapes, objectives, scoring outputs, and run-archive surfaces); once parity holds, the default scenario flips to the ACES TechVault, `scenarios/*.yaml` moves to `scenarios/archive/` as reference-only material, the in-tree SDL and its scenario definition models are deleted, all in a single cutover PR. This requirement supersedes DSL-001 and SCN-001 (both transitioned to DEPRECATED at cutover) and deprecates DSL-002 through DSL-009 at cutover. RTE-001's input source changes from APTL's in-tree DSL to the ACES RuntimeModel.
@@ -34,7 +41,7 @@ UPDATED 2026-10-12: b4b9c04d (#757) removed the aptl aces-inventory command and 
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/techvault_gate.py` (ACES TechVault static validation gate (public API + orchestrator))
 - IMPLEMENTS → PULL_REQUEST `326` (Land SCN-010 parity inventory (#318))
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_gate_checks.py` (ACES static validation gate check implementations)
-- TESTS → TEST `tests/test_techvault_static_gate.py` (ACES static validation gate tests)
+- TESTS → TEST `tests/techvault/test_techvault_static_gate.py` (ACES static validation gate tests)
 - IMPLEMENTS → PULL_REQUEST `359` (Add ACES inventory methodology tooling)
 - DOCUMENTS → ADR `ADR-035` (Adopt ACES SDL as APTL's Scenario Authoring Surface)
 - IMPLEMENTS → GITHUB_ISSUE `311` (Upgrade APTL backend conformance to orchestration-capable profile)
@@ -92,7 +99,7 @@ UPDATED 2026-10-12: b4b9c04d (#757) removed the aptl aces-inventory command and 
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/techvault_live_gate.py` (ACES live validation gate orchestrator (SCN-010F))
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_live_gate_checks.py` (ACES live validation gate checks (SCN-010F))
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_live_gate_probes.py` (ACES live validation gate probe helpers (SCN-010F))
-- TESTS → TEST `tests/test_techvault_live_gate.py` (ACES live validation gate tests (SCN-010F))
+- TESTS → TEST `tests/techvault/test_techvault_live_gate.py` (ACES live validation gate tests (SCN-010F))
 - IMPLEMENTS → CODE_FILE `src/aptl/core/runtime/workflow_engine.py` (RTE-001 workflow execution engine)
 - TESTS → TEST `tests/test_workflow_engine.py` (RTE-001 workflow engine tests)
 - IMPLEMENTS → GITHUB_ISSUE `514` (APTL ACES orchestrator: report real RTE-001 workflow execution state)

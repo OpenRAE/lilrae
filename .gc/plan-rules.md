@@ -1,52 +1,38 @@
 # LilRAE plan rules
 
-Mandatory constraints the `/implement` skill applies during plan phase.
+Apply these constraints during `/implement` planning.
 
-- One issue = one PR. A delivery PR MUST address every acceptance criterion
-  of its issue, including code, documentation, and tests. Extend the existing
-  PR; do not distribute one issue across multiple PRs. If an issue is too large,
-  create smaller linked issues with explicit acceptance criteria and one
-  complete PR per smaller issue. The parent tracks their delivery.
-- Verification follows changed behavior and risk. Existing tests can provide
-  sufficient evidence; an edit does not require a new test. Add focused pytest
-  or Vitest cases only for behavior or important failure paths not covered.
-  Delete redundant, obsolete, and implementation-mirroring tests rather than
-  preserving test counts or coverage percentages. Use `pytest -m fuzz` for
-  property-based tests.
-- Plans that touch `mcp/aptl-mcp-common` MUST account for the fact that
-  every MCP server consumes it. Run only targeted common and consumer tests
-  locally; CI/CD rebuilds and tests every dependent MCP before the change is
-  considered complete.
-- Plans that change any Compose asset (`docker-compose*.yml`), container
-  Dockerfiles, or `config/` files MUST include focused local contract tests.
-  CI/CD owns the clean `lilrae lab stop -v && lilrae lab start` validation on a
-  fresh machine — the lab is the primary product, not the codebase.
-- Local verification MUST remain change-scoped: targeted pytest or Vitest
-  paths plus `pre-commit run` on staged files. Bare/full suites,
-  `pre-commit run --all-files`, whole-tree prose checks, dependency checks, and
-  coverage runs are CI/CD-only.
-- Plans MUST NOT edit `CHANGELOG.md` or the version. Releases are automated by
-  release-please from Conventional Commit PR titles: `feat:` (minor),
-  `fix:`/`perf:` (patch), `feat!:` or a `BREAKING CHANGE:` footer (major);
-  `docs`/`chore`/`refactor`/`test`/`ci`/`build` do not release. The PR title is
-  the changelog entry, so make it a clear Conventional Commit. See
-  `docs/releasing.md`.
-- New code MUST use `lilrae` naming: a new distribution, top-level import
-  package, command, service, environment variable (`LILRAE_`), resource name,
-  or configuration file is named for LilRAE, not APTL. Module and package
-  names inside `src/` state their responsibility and carry no product prefix
-  ([ADR-064](../docs/adrs/adr-064-layered-architecture-and-code-conventions.md)).
-  Code that extends an existing interface MUST keep
-  that interface's current identifiers (for example the `aptl` import root,
-  `aptl.*` entry-point groups, existing config fields, `APTL_*` variables, and
-  runtime resource names); add no alias, shim, or parallel `lilrae` spelling.
-  Renaming an existing identifier needs its own compatibility decision. See
-  [ADR-062](../docs/adrs/adr-062-lilrae-name-and-naming-convention.md).
-- The CLI command is `lilrae` (ADR-062 successor clause for #1402). New code,
-  scripts, messages, and docs MUST call `lilrae` and
-  `lilrae-misp-suricata-sync`. The `aptl` and `aptl-misp-suricata-sync`
-  aliases exist only for existing users until 10.0.0 (#1403); do not add new
-  callers of them.
+- Deliver one complete PR per issue, including its code, documentation, and verification.
+  Extend an existing delivery PR. Do not divide one issue across PRs.
+  If needed, create smaller linked issues with explicit acceptance criteria and one complete PR each.
+  Keep their parent open until its criteria are satisfied.
+- Select verification by changed behavior and risk. Reuse adequate existing tests.
+  Add focused pytest or Vitest cases for uncovered behavior and important failure paths.
+  Delete redundant, obsolete, or implementation-mirroring cases.
+  Select property tests with `pytest -m fuzz`.
+- For `mcp/aptl-mcp-common` changes, select targeted common-library and consumer tests.
+  Every MCP server consumes that package. CI rebuilds and tests all dependent servers.
+- For Compose assets, container Dockerfiles, or `config/` changes, include focused contract tests.
+  CI owns clean `lilrae lab stop -v && lilrae lab start` qualification on a fresh machine.
+  The lab is the primary product.
+- Run targeted behavior tests and lab operations only in CI or an explicitly approved, isolated VM.
+  Use the workstation for source edits, static checks, Git, and commit hygiene.
+  CI owns full suites, `pre-commit run --all-files`, whole-tree checks, dependency checks, and coverage.
+- Do not edit `CHANGELOG.md` or release versions.
+  Use a clear Conventional Commit PR title; Release Please derives versions and release notes from it.
+  Follow [Releasing](../docs/releasing.md) and its title reference.
+- Use `lilrae` naming for new distributions, top-level packages, commands, services, variables, resources, and configuration files.
+  New environment variables use `LILRAE_`.
+  Within `src/`, name modules for their responsibility without a product prefix.
+  Follow [ADR-064](../docs/adrs/adr-064-layered-architecture-and-code-conventions.md).
+- Preserve identifiers when extending an existing interface.
+  Examples include the `aptl` import root, `aptl.*` entry-point groups, existing fields, `APTL_*` variables, and runtime resource names.
+  Add no alias, shim, or parallel `lilrae` spelling for an existing identifier.
+  An identifier rename needs its own compatibility decision.
+  Follow [ADR-062](../docs/adrs/adr-062-lilrae-name-and-naming-convention.md).
+- Use `lilrae` and `lilrae-misp-suricata-sync` in new commands, scripts, messages, and documentation.
+  Do not add callers of the old aliases.
+  Issue #1403 tracks alias removal; package scripts determine current availability.
 - Plans for Go code (ADR-065) MUST write the design record in the front matter
   of `docs/architecture/issue-<number>-<topic>-design.md` before any code. The
   plan phase runs `go run -C tools ./cmd/archcheck design -base

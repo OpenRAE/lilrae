@@ -14,7 +14,7 @@ import json
 import math
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Mapping
 from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -36,9 +36,6 @@ from aptl.backends._raes_participant_execution import _ParticipantDeliveryExecut
 from aptl.backends.raes_participant_apparatus import canonical_mapping_digest
 from aptl.backends.raes_participant_control_evidence import selection_fingerprint
 from aptl.backends.raes_participant_execution_support import mapping_digest
-from aptl.backends.raes_participant_fixture_core import (
-    _mapping_digest as fixture_mapping_digest,
-)
 from aptl.core import continuity
 from aptl.core._credential_sources import ProcessEnvironmentCredentialSource
 from aptl.core.appliance_boundary import ApplianceBoundaryPolicy
@@ -428,7 +425,6 @@ SCHEMES: dict[str, Callable[[object], dict[str, object]]] = {
     "artifact-profile-digest": _text(raes_artifact_mechanisms._profile_digest),
     "participant-selection-fingerprint": _text(selection_fingerprint),
     "governed-arguments-digest": _text(mapping_digest),
-    "participant-workflow-digest": _text(fixture_mapping_digest),
     "boundary-policy-digest": _boundary_policy_digest,
     "correlation-content-signature": _text(_content_signature),
     "apparatus-mapping-digest": _rfc8785_digest(canonical_mapping_digest),
@@ -467,10 +463,20 @@ def _corpus(path: Path) -> dict[str, object]:
     return loads_strict(path.read_bytes())
 
 
-def _cases() -> list[tuple[str, str, dict[str, object]]]:
+def corpus_schemes() -> set[str]:
+    """Return the scheme of each vector file."""
+
+    return {str(_corpus(path)["scheme"]) for path in _corpus_files()}
+
+
+def corpus_cases(schemes: Collection[str]) -> list[tuple[str, str, dict[str, object]]]:
+    """Return the cases of each vector file whose scheme is in schemes."""
+
     cases = []
     for path in _corpus_files():
         corpus = _corpus(path)
+        if corpus["scheme"] not in schemes:
+            continue
         for case in corpus["cases"]:
             cases.append((corpus["scheme"], case["id"], case))
     return cases
@@ -483,7 +489,6 @@ def test_each_corpus_file_is_well_formed() -> None:
         corpus = _corpus(path)
         assert set(corpus) == {"corpus", "scheme", "version", "owner", "cases"}, path.name
         assert corpus["corpus"] == 1, path.name
-        assert corpus["scheme"] in SCHEMES, path.name
         assert path.name == f"{corpus['scheme']}.json", path.name
         assert corpus["cases"], path.name
         ids = [case["id"] for case in corpus["cases"]]
@@ -503,18 +508,20 @@ def _matches(result: object, expect: object) -> bool:
     return json.dumps(result, sort_keys=True) == json.dumps(expect, sort_keys=True)
 
 
-@pytest.mark.parametrize(
-    ("scheme", "case_id", "case"),
-    _cases(),
-    ids=[f"{scheme}/{case_id}" for scheme, case_id, _case in _cases()],
-)
-def test_vector(scheme: str, case_id: str, case: dict[str, object]) -> None:
+def check_vector(
+    schemes: Mapping[str, Callable[[object], dict[str, object]]],
+    scheme: str,
+    case_id: str,
+    case: dict[str, object],
+) -> None:
+    """Fail when the owner of scheme does not give the result of the case."""
+
     problem = None
     try:
         case_input = bytes.fromhex(case["input_hex"]) if "input_hex" in case else _decode(case["input"])
         expect = case["expect"]
         try:
-            result = SCHEMES[scheme](case_input)
+            result = schemes[scheme](case_input)
         except Rejected as rejection:
             result = {"reject": rejection.stage}
         matches = _matches(result, expect)
@@ -529,6 +536,20 @@ def test_vector(scheme: str, case_id: str, case: dict[str, object]) -> None:
     # Compare without an assertion diff: a vector can hold a synthetic secret.
     if not matches:
         pytest.fail(f"{scheme}/{case_id}: the owner result differs from the vector", pytrace=False)
+
+
+# The tests of an adapter check the vectors that its owner code defines and
+# that each vector file has exactly one scheme owner.
+_GENERIC_CASES = corpus_cases(SCHEMES)
+
+
+@pytest.mark.parametrize(
+    ("scheme", "case_id", "case"),
+    _GENERIC_CASES,
+    ids=[f"{scheme}/{case_id}" for scheme, case_id, _case in _GENERIC_CASES],
+)
+def test_vector(scheme: str, case_id: str, case: dict[str, object]) -> None:
+    check_vector(SCHEMES, scheme, case_id, case)
 
 
 def test_vector_comparison_keeps_json_types_apart() -> None:

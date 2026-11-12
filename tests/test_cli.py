@@ -231,7 +231,7 @@ class TestLabStartCommand:
     def test_lab_info_omits_reverse_access_when_service_is_not_running(
         self, runner, tmp_path, mocker
     ):
-        """The default TechVault scenario does not realize reverse."""
+        """A scenario that does not realize reverse gets no reverse access entry."""
         from aptl.cli.main import app
 
         (tmp_path / ".env").touch()
@@ -413,7 +413,7 @@ class TestLabStartCommand:
     ):
         """Do not advertise a URL the scenario never published.
 
-        TechVault declares no `published_ports` for `aptl-grafana-otel`, so the
+        A scenario can declare no `published_ports` for `aptl-grafana-otel`, so the
         container exposes 3000/tcp to the range and nothing to the host. The
         summary printed the compile-time default anyway, sending an operator to
         `http://localhost:3100`, which answers nothing -- and it is the second
@@ -456,7 +456,7 @@ class TestLabStartCommand:
 
         The list `lab start` hands the summary comes from resolving the
         checked-in Compose stack's convenience ports, so it carries Grafana's
-        3100 default even though TechVault's SDL declares no `published_ports`
+        3100 default even though the scenario's SDL declares no `published_ports`
         for it and the container binds nothing to the host. Live Docker state is
         the ground truth once the range is up, so the summary reconciles against
         it and stays silent about a URL that answers nothing.
@@ -933,7 +933,7 @@ class TestLabStartCommand:
                 "--project-dir",
                 str(tmp_path),
                 "--scenario",
-                "techvault-purpleteam",
+                "fixture-range",
             ],
         )
 
@@ -1218,12 +1218,12 @@ class TestLabStartCommand:
             return_value=mocker.MagicMock(
                 scenarios=[
                     SimpleNamespace(
-                        id="techvault",
-                        name="TechVault",
+                        id="fixture-range",
+                        name="Fixture Range",
                         description="Default public startup scenario.",
                     )
                 ],
-                pack_identity=PackIdentity("techvault", "0.1.0", "sha256:" + "a" * 64),
+                pack_identity=PackIdentity("fixture-range", "0.1.0", "sha256:" + "a" * 64),
                 maturity="built",
             ),
         )
@@ -1234,7 +1234,7 @@ class TestLabStartCommand:
         )
 
         assert result.exit_code == 0
-        assert "techvault\t0.1.0\tbuilt" in result.stdout
+        assert "fixture-range\t0.1.0\tbuilt" in result.stdout
         assert "sha256:" + "a" * 64 in result.stdout
         assert "scenarios/" not in result.stdout
 
