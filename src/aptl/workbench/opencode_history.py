@@ -340,24 +340,27 @@ def export_native_session(
             _checkpointed_root(work) as root,
             _native_database(root, max_bytes, 10_000_000) as db,
         ):
-            if db is None:
-                return None
-            return {
-                "schema_version": "lilrae-opencode-session/v1",
-                "sessions": _rows(db, "SELECT * FROM session ORDER BY id"),
-                "messages": _rows(
-                    db,
-                    "SELECT id, session_id, data, time_created, time_updated "
-                    "FROM message ORDER BY time_created, id",
-                ),
-                "parts": _rows(
-                    db,
-                    "SELECT id, message_id, session_id, data, time_created, "
-                    "time_updated FROM part ORDER BY time_created, id",
-                ),
-            }
+            return None if db is None else _session_export(db)
     except OSError, sqlite3.Error, ValueError, PathContainmentError:
         return None
+
+
+def _session_export(db: sqlite3.Connection) -> dict[str, object]:
+    """Return every session, message and part row of one open database."""
+    return {
+        "schema_version": "lilrae-opencode-session/v1",
+        "sessions": _rows(db, "SELECT * FROM session ORDER BY id"),
+        "messages": _rows(
+            db,
+            "SELECT id, session_id, data, time_created, time_updated "
+            "FROM message ORDER BY time_created, id",
+        ),
+        "parts": _rows(
+            db,
+            "SELECT id, message_id, session_id, data, time_created, "
+            "time_updated FROM part ORDER BY time_created, id",
+        ),
+    }
 
 
 def _rows(db: sqlite3.Connection, query: str) -> list[dict[str, object]]:

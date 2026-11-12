@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -78,7 +78,8 @@ def retain_soc_dump(
                     str(redact_granted_secrets(text, secrets)).encode(),
                 )
             status = {"status": "captured", "files": sorted(files)}
-        except Exception as exc:  # noqa: BLE001  # adapter errors can carry product output; keep the type only
+        except Exception as exc:
+            # Adapter errors can carry product output; keep the type only.
             log.warning("trial-end product capture failed: %s", type(exc).__name__)
             status = {"status": "failed", "reason": type(exc).__name__}
     store.write_file(
@@ -108,18 +109,8 @@ def retain_host_audit(
     if files:
         start = int(_instant(started_at).timestamp())
         end = int(_instant(ended_at).timestamp()) + 1
-        kept, size, truncated = [], 0, False
         try:
-            for path in files:
-                for line in path.read_bytes().splitlines(keepends=True):
-                    match = _AUDIT_TIME.search(line)
-                    if match is None or not start <= int(match.group(1)) <= end:
-                        continue
-                    if size + len(line) > MAX_AUDIT_BYTES:
-                        truncated = True
-                        break
-                    kept.append(line)
-                    size += len(line)
+            kept, size, truncated = _audit_window(files, start, end)
             store.write_file(run_id, "trial/audit/audit.log", b"".join(kept))
             status = {
                 "status": "captured",
@@ -133,6 +124,32 @@ def retain_host_audit(
     store.write_file(
         run_id, "trial/audit/status.json", json.dumps(status, sort_keys=True).encode()
     )
+
+
+def _audit_window(
+    files: list[Path], start: int, end: int
+) -> tuple[list[bytes], int, bool]:
+    """Return the window's records oldest first; stop at the first one over the bound.
+
+    The kept records stay contiguous, so a truncated log has no gap.
+    """
+    kept: list[bytes] = []
+    size = 0
+    for line in _window_lines(files, start, end):
+        if size + len(line) > MAX_AUDIT_BYTES:
+            return kept, size, True
+        kept.append(line)
+        size += len(line)
+    return kept, size, False
+
+
+def _window_lines(files: list[Path], start: int, end: int) -> Iterator[bytes]:
+    """Yield each audit record whose time is in ``[start, end]``, in file order."""
+    for path in files:
+        for line in path.read_bytes().splitlines(keepends=True):
+            match = _AUDIT_TIME.search(line)
+            if match is not None and start <= int(match.group(1)) <= end:
+                yield line
 
 
 def _instant(value: str) -> datetime:

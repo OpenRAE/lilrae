@@ -17,8 +17,11 @@ from types import MappingProxyType
 from raes import Scenario
 from raes_contracts.contracts import ParticipantControlContextAssetModel
 
-from aptl.core._credential_sources import AttachedServiceAccountSource, ProcessEnvironmentCredentialSource
-from aptl.core.config import ExperimentSettings
+from aptl.core.config import (
+    AttachedServiceAccountSource,
+    ExperimentSettings,
+    ProcessEnvironmentCredentialSource,
+)
 from aptl.core.mcp_policy import ProfileId, WorkbenchConfigurationError, profile_for
 from aptl.core.opencode import (
     SUPPORTED_OPENCODE_BUILD,
@@ -29,6 +32,7 @@ from aptl.core.opencode import (
     VertexRoute,
 )
 from aptl.core.participant_requests import decode_context_asset
+from aptl.core.trial_attempt import TrialAttempt
 from aptl.core.trial_sdl import DeclaredParticipant
 from aptl.utils.pathsafe import create_exclusive_nofollow
 from aptl.utils.redaction import redact
@@ -111,14 +115,14 @@ def trial_executors(
     scenario: Scenario,
     participants: tuple[DeclaredParticipant, ...],
     *,
-    run_id: str,
-    deadline: datetime,
+    attempt: TrialAttempt,
     settings: TrialLaunchSettings,
     read_asset: AssetReader,
     evidence_sink: Callable[[str, OpenCodeInvocationEvidence], None],
     transcript_sink: Callable[[str, Mapping[str, object]], None] | None = None,
 ) -> Iterator[Mapping[str, LilraeOpenCodeExecutor]]:
     """Yield one executor per participant address; remove credentials on exit."""
+    run_id, deadline = attempt.run_id, attempt.deadline
     resolver = ProcessEnvironmentCredentialResolver(settings.source_environment)
     with ExitStack() as stack:
         executors = {}

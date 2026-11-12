@@ -74,8 +74,7 @@ def _run_trial(tmp_path, scenario, settings, attempt, *, control):
         with trial_executors(
             scenario,
             participants,
-            run_id=attempt.run_id,
-            deadline=attempt.deadline,
+            attempt=attempt,
             settings=settings,
             read_asset=read_fixture_asset,
             evidence_sink=lambda address, item: evidence.__setitem__(

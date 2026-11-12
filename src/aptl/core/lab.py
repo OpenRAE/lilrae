@@ -123,14 +123,17 @@ if TYPE_CHECKING:
     from raes_contracts.contracts import ExperimentEvidenceRecordModel
 
     from aptl.backends._raes_scenario_queries import AdmittedStartSurface
-    from aptl.backends.scenario_family_models import FamilyTrialInput
     from aptl.backends.scenario_startup import (
         ScenarioStartupPlan,
         ScenarioStartupSelection,
     )
     from aptl.backends.raes_realization_model import AptlRealization
     from aptl.backends.raes import AcesStartOutcome
-    from aptl.backends.raes_start_model import AcesRunTarget, AdmittedScenarioStart
+    from aptl.backends.raes_start_model import (
+        AcesRunTarget,
+        AdmittedScenarioStart,
+        ScenarioAdmissionRun,
+    )
     from aptl.core.runstore import RunStorageBackend
     from aptl.core.deployment.backend import DeploymentBackend
     from aptl.core.experiment.capture_plan import CapturePlan
@@ -376,8 +379,7 @@ def admit_start_surface(
     *,
     bundle: ScenarioBundle | None = None,
     startup_selection: ScenarioStartupSelection | None = None,
-    run_id: str | None = None,
-    trial: "FamilyTrialInput | None" = None,
+    run: ScenarioAdmissionRun | None = None,
 ) -> tuple["AdmittedScenarioStart", "AdmittedStartSurface"]:
     """Lazy RAES import for the one admitted execution lab start reuses."""
 
@@ -392,8 +394,7 @@ def admit_start_surface(
         scenario_path=scenario_path,
         bundle=bundle,
         startup_selection=startup_selection,
-        run_id=run_id,
-        trial=trial,
+        run=run,
     )
 
 
@@ -2072,6 +2073,7 @@ def _load_admitted_start_surface(
             if ctx.start_selection is not None
             else {}
         )
+        trial = None
         if ctx.start_selection is not None and ctx.start_selection.bundle.trial is not None:
             from aptl.backends._raes_admission_helpers import family_trial_input
 
@@ -2079,15 +2081,17 @@ def _load_admitted_start_surface(
             assert ctx.trial is not None
             admission_kwargs = {
                 "bundle": replace(ctx.start_selection.bundle, trial=None),
-                "trial": family_trial_input(ctx.start_selection.bundle, ctx.trial),
             }
+            trial = family_trial_input(ctx.start_selection.bundle, ctx.trial)
         ctx.run_store, ctx.run_id = _resolve_run_target(ctx)
+        from aptl.backends.raes_start_model import ScenarioAdmissionRun
+
         admitted, surface = admit_start_surface(
             ctx.project_dir,
             ctx.config,
             ctx.backend,
             scenario_path=ctx.scenario_path,
-            run_id=ctx.run_id,
+            run=ScenarioAdmissionRun(run_id=ctx.run_id, trial=trial),
             **admission_kwargs,
         )
     except AdmissionRejection as exc:

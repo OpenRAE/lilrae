@@ -38,11 +38,15 @@ class ParticipantInvocation(Protocol):
 
 @dataclass(frozen=True)
 class DeclaredTrial:
-    """The caller's attempt, the trial SDL digest, and its declared participants."""
+    """The caller's attempt, the trial SDL digest, and its declared participants.
+
+    ``episode_seconds`` is the trial's normal length; ``None`` runs to the deadline.
+    """
 
     attempt: TrialAttempt
     scenario_sha256: str
     participants: tuple[DeclaredParticipant, ...]
+    episode_seconds: int | None = None
 
 
 @dataclass
@@ -64,7 +68,6 @@ def run_declared_trial(
     store: LocalRunStore,
     clock: Clock,
     poll_seconds: float = 1.0,
-    episode_seconds: int | None = None,
 ) -> TrialRecord:
     """Start every participant and stop them at the episode end, the deadline, or on request.
 
@@ -99,8 +102,8 @@ def run_declared_trial(
         thread.start()
     episode_end = (
         None
-        if episode_seconds is None
-        else clock() + timedelta(seconds=episode_seconds)
+        if trial.episode_seconds is None
+        else clock() + timedelta(seconds=trial.episode_seconds)
     )
     cause = _supervise(
         threads, trial.attempt, stop_requested, clock, poll_seconds, episode_end
@@ -145,22 +148,41 @@ def _supervise(
     episode_end: datetime | None,
 ) -> str:
     """Wait for every participant, the episode end, the deadline, or a stop request."""
-    while any(thread.is_alive() for thread in threads):
-        if stop_requested():
-            return "stopped"
-        remaining = (attempt.deadline - clock()).total_seconds()
-        if remaining <= 0:
-            return "deadline"
-        if episode_end is not None and clock() >= episode_end:
-            return _EPISODE_END
-        remaining = (
-            min(remaining, max((episode_end - clock()).total_seconds(), 0.0))
-            if episode_end
-            else remaining
-        )
-        for thread in threads:
-            thread.join(min(poll_seconds, remaining) / max(len(threads), 1))
-    return "completed"
+    cause = None
+    while cause is None and any(thread.is_alive() for thread in threads):
+        cause = _stop_cause(attempt, stop_requested(), clock(), episode_end)
+        if cause is None:
+            _join_slice(threads, attempt, clock(), poll_seconds, episode_end)
+    return cause or "completed"
+
+
+def _stop_cause(
+    attempt: TrialAttempt,
+    stop_requested: bool,
+    now: datetime,
+    episode_end: datetime | None,
+) -> str | None:
+    """Return why the trial stops now, or ``None`` while it keeps running."""
+    if stop_requested:
+        return "stopped"
+    if now >= attempt.deadline:
+        return "deadline"
+    return _EPISODE_END if episode_end is not None and now >= episode_end else None
+
+
+def _join_slice(
+    threads: list[threading.Thread],
+    attempt: TrialAttempt,
+    now: datetime,
+    poll_seconds: float,
+    episode_end: datetime | None,
+) -> None:
+    """Wait one poll interval, never past the deadline or the episode end."""
+    remaining = (attempt.deadline - now).total_seconds()
+    if episode_end is not None:
+        remaining = min(remaining, max((episode_end - now).total_seconds(), 0.0))
+    for thread in threads:
+        thread.join(min(poll_seconds, remaining) / max(len(threads), 1))
 
 
 def _invoke(

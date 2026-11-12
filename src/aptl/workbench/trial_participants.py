@@ -27,6 +27,7 @@ from aptl.core.participant_requests import (
     ParticipantRequest,
     ParticipantRequestBinding,
     ParticipantRequestOwner,
+    RequestProfile,
 )
 from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor, OpenCodeOptions
 from aptl.workbench.opencode_bootstrap import (
@@ -208,7 +209,9 @@ def _clock_steps(scenario: InstantiatedScenario) -> tuple[tuple[str, str, int], 
 ParticipantCredentialSource = ProcessEnvironmentCredentialSource | AttachedServiceAccountSource
 
 
-def participant_route(profile, source: ParticipantCredentialSource) -> ParticipantRoute:
+def participant_route(
+    profile: RequestProfile, source: ParticipantCredentialSource
+) -> ParticipantRoute:
     """Select the request profile's route; Vertex AI needs the attached identity."""
     if profile.gateway == VertexRoute.provider_id:
         if not isinstance(source, AttachedServiceAccountSource):

@@ -14,7 +14,10 @@ from collections.abc import Mapping, Sequence
 _NAMED_IDENTITIES = ("path", "username", "name")
 
 
-def _identity(observed: Sequence[Mapping], declared: Sequence[Mapping]) -> str | None:
+Record = Mapping[str, object]
+
+
+def _identity(observed: Sequence[Record], declared: Sequence[Record]) -> str | None:
     """Return one key that names every record uniquely in both lists."""
     common = set.intersection(*(set(item) for item in (*observed, *declared)))
     candidates = sorted(key for key in common if key.endswith("_id")) + [
@@ -29,24 +32,34 @@ def _identity(observed: Sequence[Mapping], declared: Sequence[Mapping]) -> str |
     return None
 
 
+def _are_record_lists(observed: object, declared: object) -> bool:
+    """Return whether both values are non-empty lists of records."""
+    return (
+        isinstance(observed, list)
+        and isinstance(declared, list)
+        and bool(observed)
+        and bool(declared)
+        and all(isinstance(item, Mapping) for item in (*observed, *declared))
+    )
+
+
+def _in_declared_records(observed: list[Record], declared: list[Record]) -> object:
+    """Sort one observed record list by the declared position of its identity."""
+    key = _identity(observed, declared)
+    if key is None:
+        return observed
+    rank = {repr(item[key]): index for index, item in enumerate(declared)}
+    by_identity = {repr(item[key]): item for item in declared}
+    ordered = sorted(observed, key=lambda item: rank.get(repr(item[key]), len(rank)))
+    return [in_declared_order(item, by_identity.get(repr(item[key]))) for item in ordered]
+
+
 def in_declared_order(observed: object, declared: object) -> object:
     """Return ``observed`` with every record list in its declared order."""
     if isinstance(observed, Mapping) and isinstance(declared, Mapping):
         return {key: in_declared_order(value, declared.get(key)) for key, value in observed.items()}
-    if (
-        isinstance(observed, list)
-        and isinstance(declared, list)
-        and observed
-        and declared
-        and all(isinstance(item, Mapping) for item in (*observed, *declared))
-    ):
-        key = _identity(observed, declared)
-        if key is None:
-            return observed
-        rank = {repr(item[key]): index for index, item in enumerate(declared)}
-        by_identity = {repr(item[key]): item for item in declared}
-        ordered = sorted(observed, key=lambda item: rank.get(repr(item[key]), len(rank)))
-        return [in_declared_order(item, by_identity.get(repr(item[key]))) for item in ordered]
+    if _are_record_lists(observed, declared):
+        return _in_declared_records(observed, declared)
     return observed
 
 

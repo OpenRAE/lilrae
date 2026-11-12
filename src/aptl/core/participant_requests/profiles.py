@@ -141,41 +141,45 @@ class RequestCatalog(ClosedModel):
 
     def _validate_route(self, profile: RequestProfile) -> None:
         """Admit the gateway and any enforceable exclusive serving route."""
+        if self.provider == "opencode" and profile.gateway == VertexRoute.provider_id:
+            self._validate_vertex_route(profile)
+            return
         gateway = {"claude": "anthropic", "codex": "openai", "opencode": "openrouter"}[
             self.provider
         ]
-        if self.provider == "opencode" and profile.gateway == VertexRoute.provider_id:
-            # The attached Vertex AI identity has one endpoint and no alternate route.
-            if (
-                profile.gateway_endpoint != VertexRoute.endpoint
-                or profile.serving_provider != VertexRoute.serving_provider
-                or not VertexRoute.admits(profile.model)
-            ):
-                raise ValueError("request Vertex AI route is not approved")
-            return
         if profile.gateway != gateway:
             raise ValueError("request gateway is unsupported by this implementation")
-        endpoints = {
-            "anthropic": "https://api.anthropic.com",
-            "openai": "https://api.openai.com/v1",
-            "openrouter": "https://openrouter.ai/api/v1",
-        }
-        if (
-            self.provider != "opencode"
-            and profile.gateway_endpoint != endpoints[gateway]
-            and not is_loopback_gateway(
-                profile.gateway_endpoint,
-                path="" if self.provider == "claude" else "/v1",
-            )
-        ):
-            raise ValueError("request gateway endpoint is not approved")
         if self.provider == "opencode":
             OpenRouterRoute(
                 endpoint=profile.gateway_endpoint,
                 serving_provider=profile.serving_provider,
             )
-        elif profile.serving_provider != gateway:
+            return
+        self._validate_native_endpoint(profile, gateway)
+        if profile.serving_provider != gateway:
             raise ValueError("exclusive alternate serving routes are unsupported")
+
+    @staticmethod
+    def _validate_vertex_route(profile: RequestProfile) -> None:
+        """The attached Vertex AI identity has one endpoint and no alternate route."""
+        if (
+            profile.gateway_endpoint != VertexRoute.endpoint
+            or profile.serving_provider != VertexRoute.serving_provider
+            or not VertexRoute.admits(profile.model)
+        ):
+            raise ValueError("request Vertex AI route is not approved")
+
+    def _validate_native_endpoint(self, profile: RequestProfile, gateway: str) -> None:
+        """Admit the vendor endpoint of a CLI adapter, or an explicit loopback fake."""
+        endpoints = {
+            "anthropic": "https://api.anthropic.com",
+            "openai": "https://api.openai.com/v1",
+        }
+        if profile.gateway_endpoint != endpoints[gateway] and not is_loopback_gateway(
+            profile.gateway_endpoint,
+            path="" if self.provider == "claude" else "/v1",
+        ):
+            raise ValueError("request gateway endpoint is not approved")
 
     def _validate_reasoning(self, profile: RequestProfile) -> None:
         """Keep effort vocabulary and reasoning modes native to each adapter."""

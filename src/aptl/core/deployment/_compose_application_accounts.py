@@ -32,7 +32,8 @@ _PHP = "php"
 _EXEC_TIMEOUT = 60
 # A product finishes creating its env-declared principal shortly after its
 # listener answers, so a proof is retried briefly before it fails the start.
-_PROOF_TIMEOUT = 600  # MISP initializes for several minutes on first start
+# MISP initializes for several minutes on first start.
+_PROOF_TIMEOUT = 600
 _PROOF_INTERVAL = 5
 
 #: The loopback listener each product serves its API on, as ``(scheme, port)``.

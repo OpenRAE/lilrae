@@ -9,10 +9,15 @@ asset bytes.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from raes import Scenario, build_declaration_index
 from raes.participant_control_context import resolve_authored_control_context
+
+if TYPE_CHECKING:
+    from raes_contracts.contracts import ParticipantConfigurationResultModel
 
 __all__ = ["DeclaredParticipant", "TrialDeclarationError", "declared_participants"]
 
@@ -69,7 +74,10 @@ def declared_participants(scenario: Scenario) -> tuple[DeclaredParticipant, ...]
     return tuple(participants)
 
 
-def admitted_participants(scenario: Scenario, configurations) -> tuple[DeclaredParticipant, ...]:
+def admitted_participants(
+    scenario: Scenario,
+    configurations: Iterable[ParticipantConfigurationResultModel],
+) -> tuple[DeclaredParticipant, ...]:
     """Return each admitted participant with its configured model and prompt selections.
 
     An admitted family trial owns participant configuration, so its owner-validated

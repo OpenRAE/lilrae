@@ -222,14 +222,13 @@ def test_the_shared_episode_end_cancels_both_participants_and_completes_the_tria
         for item in _PARTICIPANTS
     }
     record = run_declared_trial(
-        DeclaredTrial(attempt, "sha256:" + "1" * 64, _PARTICIPANTS),
+        DeclaredTrial(attempt, "sha256:" + "1" * 64, _PARTICIPANTS, episode_seconds=1),
         invocations=invocations,
         evidence=evidence,
         stop_requested=lambda: False,
         store=_store(tmp_path, attempt.run_id),
         clock=lambda: datetime.now(UTC),
         poll_seconds=0.05,
-        episode_seconds=1,
     )
     assert record.terminal_cause == "completed"
     assert {item.status for item in record.participants} == {"completed"}

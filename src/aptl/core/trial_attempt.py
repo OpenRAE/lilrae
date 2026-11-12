@@ -7,7 +7,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from raes_contracts.contracts import AdmittedTrialPlanModel
 
 __all__ = ["TrialAttempt", "TrialUnit", "load_trial_unit", "parse_trial_attempt"]
 
@@ -23,7 +26,7 @@ _UTC_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 class TrialUnit:
     """One admitted RAES plan entry and its exact instantiated snapshot bytes."""
 
-    plan: Any = field(repr=False)
+    plan: AdmittedTrialPlanModel = field(repr=False)
     plan_entry_id: str
     snapshot: bytes = field(repr=False)
 

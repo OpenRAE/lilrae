@@ -14,6 +14,7 @@ import pytest
 from aptl.core.config import ExperimentSettings
 from aptl.core.mcp_policy import McpPolicy, select_scenario_servers
 from aptl.core.opencode import OpenCodeBuild
+from aptl.core.trial_attempt import TrialAttempt
 from aptl.core.trial_sdl import TrialDeclarationError, declared_participants
 from aptl.workbench.process import ProcessResult
 from aptl.workbench.trial_launch import TrialLaunchSettings, trial_executors
@@ -111,8 +112,7 @@ def _check_variation(tmp_path, variables):
     with trial_executors(
         scenario,
         participants,
-        run_id="run-1",
-        deadline=datetime.now(UTC) + timedelta(minutes=5),
+        attempt=TrialAttempt("run-1", "attempt-1", datetime.now(UTC) + timedelta(minutes=5)),
         settings=_settings(tmp_path, scenario, runner),
         read_asset=read_fixture_asset,
         evidence_sink=lambda address, item: None,
@@ -138,8 +138,7 @@ def _check_variation(tmp_path, variables):
     refused = trial_executors(
         scenario,
         participants,
-        run_id="run-2",
-        deadline=datetime.now(UTC) + timedelta(minutes=5),
+        attempt=TrialAttempt("run-2", "attempt-1", datetime.now(UTC) + timedelta(minutes=5)),
         settings=_settings(tmp_path / "tampered", scenario, LaunchRecorder()),
         read_asset=tampered,
         evidence_sink=lambda address, item: None,

@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 import os
+from typing import TYPE_CHECKING
 
 from raes import parse_sdl_file
 from raes_contracts.contracts import ParticipantControlContextAssetModel
@@ -17,8 +18,12 @@ from raes_env_packs import resolve_pack_artifact
 
 from aptl.backends._raes_admission_helpers import bind_trial_unit
 from aptl.backends._raes_scenario_resolution import resolve_scenario_bundle
-from aptl.core._credential_sources import AttachedServiceAccountSource
-from aptl.core.config import AptlConfig, find_config, load_config
+from aptl.core.config import (
+    AptlConfig,
+    AttachedServiceAccountSource,
+    find_config,
+    load_config,
+)
 from aptl.core.lab import finalize_trial_capture
 from aptl.core.mcp_policy import configured_server_ids
 from aptl.core.opencode import OpenCodeInvocationEvidence
@@ -38,6 +43,12 @@ from aptl.workbench.trial_launch import (
     trial_executors,
 )
 from aptl.workbench.trial_run import DeclaredTrial, run_declared_trial
+
+if TYPE_CHECKING:
+    from raes import Scenario
+    from raes.scenario import InstantiatedScenario
+
+    from aptl.core.scenario_bundle import ScenarioBundle
 
 log = get_logger("lab_trial")
 
@@ -164,8 +175,7 @@ def _run_and_drain(
             trial_executors(
                 scenario,
                 participants,
-                run_id=attempt.run_id,
-                deadline=attempt.deadline,
+                attempt=attempt,
                 settings=_launch_settings(root, config, attempt),
                 read_asset=read_asset,
                 evidence_sink=sink,
@@ -174,18 +184,23 @@ def _run_and_drain(
         ):
             control = TrialControl(root)
             record = run_declared_trial(
-                DeclaredTrial(attempt, scenario_sha256, participants),
+                DeclaredTrial(
+                    attempt,
+                    scenario_sha256,
+                    participants,
+                    config.experiment.trial_episode_seconds,
+                ),
                 invocations=executors,
                 evidence=evidence,
                 stop_requested=lambda: terminated.is_set() or control.stop_requested(),
                 store=store,
                 clock=lambda: datetime.now(UTC),
-                episode_seconds=config.experiment.trial_episode_seconds,
             )
         gaps: tuple[str, ...] = ()
         try:
             _retain_trial_end_data(root, config, bound, scenario, store, record)
-        except Exception as exc:  # noqa: BLE001  # trial-end data never blocks the seal; the seal lists the gap
+        except Exception as exc:
+            # Trial-end data never blocks the seal; the seal lists the gap.
             log.warning("trial-end data was not retained: %s", type(exc).__name__)
             gaps = (f"trial-end data capture failed: {type(exc).__name__}",)
         cleanup = {"provider_access": "removed"}
@@ -201,7 +216,7 @@ def _run_and_drain(
 
 
 def _trial_scenario(
-    bundle, config: AptlConfig, attempt: TrialAttempt
+    bundle: ScenarioBundle, config: AptlConfig, attempt: TrialAttempt
 ) -> tuple[object, str, tuple | None, object]:
     """Return the scenario, its digest, any admitted configurations and the bound bundle.
 
@@ -223,7 +238,12 @@ def _trial_scenario(
 
 
 def _retain_trial_end_data(
-    root: Path, config: AptlConfig, bound, scenario, store: LocalRunStore, record
+    root: Path,
+    config: AptlConfig,
+    bound: ScenarioBundle,
+    scenario: Scenario | InstantiatedScenario,
+    store: LocalRunStore,
+    record: TrialRecord,
 ) -> None:
     """Keep the scenario's product dump and the host audit log before the seal."""
     from aptl.backends._raes_admission_helpers import resolve_admission_adapters
@@ -236,7 +256,8 @@ def _retain_trial_end_data(
         _, capture = resolve_admission_adapters(bound, config, None)
         adapter = capture.contribution.runtime_adapter if capture is not None else None
         backend, _failure = _configured_backend(root, config, command="trial")
-    except Exception as exc:  # noqa: BLE001  # a missing adapter is recorded, never fatal to the seal
+    except Exception as exc:
+        # A missing adapter is recorded, never fatal to the seal.
         log.warning("trial-end capture adapter is unavailable: %s", type(exc).__name__)
     env_path = root / ".env"
     retain_soc_dump(

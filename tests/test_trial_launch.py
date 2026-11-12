@@ -114,8 +114,7 @@ def _run_vertex_trial(scenario, participants, settings, deadline, store, evidenc
     with trial_executors(
         scenario,
         participants,
-        run_id="run-1",
-        deadline=deadline,
+        attempt=TrialAttempt("run-1", "attempt-1", deadline),
         settings=settings,
         read_asset=read_fixture_asset,
         evidence_sink=lambda address, item: evidence.setdefault(address, {}).update(
@@ -159,8 +158,7 @@ def _assert_unconfigured_vertex_refused(tmp_path, scenario, participants, deadli
     refused = trial_executors(
         scenario,
         participants,
-        run_id="run-2",
-        deadline=deadline,
+        attempt=TrialAttempt("run-2", "attempt-1", deadline),
         settings=_settings(missing, KeyReadingRunner(), with_source=False),
         read_asset=read_fixture_asset,
         evidence_sink=lambda address, item: None,

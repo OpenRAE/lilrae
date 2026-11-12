@@ -481,7 +481,8 @@ class LilraeOpenCodeExecutor:
         )
         try:
             self._transcript_sink(redact_capture_value(session, secrets))
-        except Exception as exc:  # noqa: BLE001  # never mask the invocation outcome
+        except Exception as exc:
+            # Never mask the invocation outcome.
             logger.warning(
                 "participant native session was not retained: %s", type(exc).__name__
             )
