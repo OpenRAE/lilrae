@@ -228,7 +228,11 @@ def admit_raes_scenario(
         bundle, parameters, capture_selection, parser=parse_sdl_file
     )
     bindings = selected.autonomous_bindings
-    factory = getattr(startup_selection.provider, "trial_participant_bindings", None)
+    factory = getattr(
+        startup_selection.provider if startup_selection is not None else None,
+        "trial_participant_bindings",
+        None,
+    )
     if bundle.trial is not None and not bindings and callable(factory):
         bindings = factory(bundle, family=admission_run.trial.family)
         from aptl.core.participant_binding import LilraeParticipantBinding

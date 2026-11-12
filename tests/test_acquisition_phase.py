@@ -64,6 +64,7 @@ def _fake_request(tmp_path, runtime_adapter):
             contribution=SimpleNamespace(
                 runtime_adapter=runtime_adapter,
                 native_registration_ids=frozenset({"example.events"}),
+                measurement_registration_ids=frozenset(),
                 runtime_environment_keys=(),
                 generated_output_refs=(),
             ),
@@ -182,6 +183,7 @@ def _native_request(
         contribution=SimpleNamespace(
             runtime_adapter=runtime_adapter,
             native_registration_ids=native_ids,
+            measurement_registration_ids=frozenset(),
             runtime_environment_keys=(),
             generated_output_refs=(),
         ),

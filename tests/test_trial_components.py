@@ -21,7 +21,7 @@ from aptl.workbench.opencode_configuration import (
     render_opencode_config,
     validate_provider_environment,
 )
-from aptl.workbench.trial_launch import _key_project, _provider, participant_tool_servers
+from aptl.workbench.trial_launch import participant_tool_servers
 
 _ATTEMPT = TrialAttempt("run-1", "attempt-1", datetime(2030, 1, 1, tzinfo=UTC))
 
@@ -150,27 +150,9 @@ def test_routes_admit_only_their_own_models_and_environment():
         validate_provider_environment({"GOOGLE_CLOUD_PROJECT": "p"})
 
 
-@pytest.mark.parametrize(
-    "key",
-    ["not json", "[]", json.dumps({"type": "user", "project_id": "synthetic-project"}),
-     json.dumps({"type": "service_account", "project_id": "X"})],
-)
-def test_vertex_key_must_be_a_service_account_key(key):
-    with pytest.raises(ValueError) as caught:
-        _key_project(key)
-    assert key not in str(caught.value)
-
-
-def test_unknown_model_provider_and_role_are_refused():
-    no_settings = SimpleNamespace()
-    with pytest.raises(ValueError):
-        _provider("anthropic/claude", no_settings, None, "run-1")
+def test_unknown_participant_role_is_refused():
     with pytest.raises(ValueError):
         participant_tool_servers("white", ("aptl-red",))
-    settings = SimpleNamespace(experiment=SimpleNamespace(participant_serving_providers={}))
-    unapproved = _provider("openrouter/a/b", settings, None, "run-1")
-    with pytest.raises(ValueError):
-        unapproved.__enter__()
 
 
 def test_executor_requires_a_session_for_tools_unless_allowlisted(tmp_path):

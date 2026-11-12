@@ -69,6 +69,7 @@ It must bind that preset to the observed image identity and the admitted source 
 The backend must pin the immutable image used to create the worker.
 The report describes the known preset; it does not claim native configuration readback.
 Core readers retain their declared sources and cannot be overridden by a weaker adapter report.
+
 Live readiness, experimental measurements, and objective verdicts require their own native observations.
 This is distinct from the rejected bridge, which labelled release-table values as daemon observations.
 
