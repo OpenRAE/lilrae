@@ -210,6 +210,25 @@ function validateResultBudgets(config: LabConfig): void {
   }
 }
 
+/** The reason that a configuration with `verify_ssl: false` is refused (SEC-009). */
+export const TLS_VERIFICATION_REQUIRED =
+  'TLS verification cannot be disabled; set ca_cert_path to the CA that signs the service certificate';
+
+/**
+ * Refuse a configuration that disables TLS verification (SEC-009). An error
+ * names the setting, never a value.
+ */
+function validateTlsVerification(config: LabConfig): void {
+  if (config.api?.verify_ssl === false) {
+    throw new Error(`api.verify_ssl: ${TLS_VERIFICATION_REQUIRED}`);
+  }
+  for (const [queryName, query] of Object.entries(config.queries ?? {})) {
+    if (query.verify_ssl === false) {
+      throw new Error(`queries.${queryName}.verify_ssl: ${TLS_VERIFICATION_REQUIRED}`);
+    }
+  }
+}
+
 /**
  * Load Docker lab configuration from JSON file
  */
@@ -237,6 +256,7 @@ async function loadDockerLabConfig(configPath: string): Promise<LabConfig> {
   }
 
   validateResultBudgets(config);
+  validateTlsVerification(config);
 
   // Validate that at least one capability is configured
   if (!config.containers && !config.api) {

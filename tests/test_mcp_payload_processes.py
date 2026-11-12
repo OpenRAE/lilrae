@@ -62,9 +62,14 @@ def _runtime_ca(extracted):
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
         .sign(key, hashes.SHA256())
     )
-    path = extracted / "config/soc_certs/lab-ca.pem"
-    path.parent.mkdir(parents=True)
-    path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    # The SOC CA and the lab Wazuh CA (SEC-009) are both generated at startup.
+    for relative in (
+        "config/soc_certs/lab-ca.pem",
+        "config/wazuh_indexer_ssl_certs/root-ca.pem",
+    ):
+        path = extracted / relative
+        path.parent.mkdir(parents=True)
+        path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
 
 
 @pytest.mark.parametrize("server", SERVERS)
