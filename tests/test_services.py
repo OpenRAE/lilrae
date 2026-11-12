@@ -272,7 +272,8 @@ class TestProbeManagerApi:
         assert request.call_count == 1
         kwargs = request.call_args.kwargs
         assert kwargs.get("auth_header") is None
-        assert kwargs["insecure"] is True
+        assert "insecure" not in kwargs
+        assert kwargs["ca_cert_path"] == "/lab/root-ca.pem"
         assert result.ready is False
         assert (result.phase, result.category) == ("transport", "tls_handshake")
         assert result.curl_exit == 35

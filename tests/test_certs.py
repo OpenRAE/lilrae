@@ -544,6 +544,7 @@ class TestEnsureSSLCerts:
         (certs_dir / "root-ca.pem").write_text("new-cert")
         (certs_dir / "root-ca-manager.pem").write_text("existing-cert")
         (certs_dir / "root-ca-manager.pem").chmod(0o400)
+        _write_leaf_certificates(certs_dir)
         mock_run = mocker.patch("aptl.core.certs.subprocess.run")
 
         result = ensure_ssl_certs(tmp_path)
@@ -674,6 +675,7 @@ class TestEnsureSSLCerts:
         certs_dir = tmp_path / "config" / "wazuh_indexer_ssl_certs"
         certs_dir.mkdir(parents=True)
         (certs_dir / "root-ca.pem").write_text("fake-cert")
+        _write_leaf_certificates(certs_dir)
 
         result = ensure_ssl_certs(tmp_path)
 
