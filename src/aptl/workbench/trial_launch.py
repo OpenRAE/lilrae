@@ -172,7 +172,7 @@ def trial_executors(
                     attempt.run_id, attempt.attempt_id, attempt.unit.plan_entry_id
                 ),
                 native_history_required=True,
-                request_observation_required=True,
+                request_observation_required=request.profile.gateway == "openrouter",
             )
             executor, _ = stack.enter_context(
                 managed_opencode_executor(
