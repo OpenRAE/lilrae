@@ -79,7 +79,7 @@ def _registration(
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
-        limits=CaptureLimits(_MAX_BYTES, 1, 900),
+        limits=CaptureLimits(_MAX_BYTES, 2 if name == SESSION_REGISTRATION else 1, 900),
         redaction_policies=frozenset({"redact_secrets"}),
         retention_policies=offer.retention_policy_refs,
         capture_offer=offer,

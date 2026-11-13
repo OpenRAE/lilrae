@@ -17,7 +17,12 @@ from tests.trial_capture_fixture import capture_request
 import pytest
 
 
-def test_native_usage_survives_the_real_acquisition_and_redaction_path(tmp_path):
+@pytest.mark.parametrize(
+    "participants", [("agents.operator",), ("agents.red", "agents.blue")]
+)
+def test_native_usage_survives_the_real_acquisition_and_redaction_path(
+    tmp_path, participants
+):
     request, _ = capture_request(tmp_path)
     registration, _ = trial_capture_registrations(frozenset({"nodes.soc"}))
     demand = replace(
@@ -46,7 +51,7 @@ def test_native_usage_survives_the_real_acquisition_and_redaction_path(tmp_path)
         ),
     )
     sessions = {
-        "agents.operator": {
+        address: {
             "messages": [
                 {
                     "tokens": {"input": 17, "output": 3},
@@ -55,14 +60,13 @@ def test_native_usage_survives_the_real_acquisition_and_redaction_path(tmp_path)
                 }
             ]
         }
+        for address in participants
     }
     result = acquire_trial_evidence(
         request,
         attempt_id="attempt-1",
         sources={
-            SESSION_REGISTRATION: participant_session_source(
-                sessions, ("agents.operator",)
-            ),
+            SESSION_REGISTRATION: participant_session_source(sessions, participants),
         },
     )
     assert result.reports[0].status == CollectorStatus.OK
@@ -71,9 +75,11 @@ def test_native_usage_survives_the_real_acquisition_and_redaction_path(tmp_path)
     ).read_bytes()
     assert b"private-test-credential" not in content
     payload = json.loads(content)
-    message = payload[0]["native_export"]["messages"][0]
-    assert message["tokens"] == {"input": 17, "output": 3}
-    assert message["cost"] == 0.002
+    assert len(payload) == len(participants)
+    for item in payload:
+        message = item["native_export"]["messages"][0]
+        assert message["tokens"] == {"input": 17, "output": 3}
+        assert message["cost"] == 0.002
 
 
 def test_missing_participant_export_is_loss_and_keeps_the_available_peer():
