@@ -38,17 +38,9 @@ def render_opencode_config(
     max_steps: int | None = None,
 ) -> dict[str, object]:
     """Serialize admitted route and tool inputs into the upstream config shape."""
-    if request_profile is not None and (
-        request_profile.gateway != route.provider_id or request_profile.model != model
-    ):
-        raise ValueError("participant request profile differs from its route or model")
-    if (
-        request_profile is not None
-        and isinstance(route, VertexRoute)
-        and request_profile.reasoning_mode != "unsupported"
-    ):
-        raise ValueError("Vertex request reasoning controls are unsupported")
-    config = {
+    if request_profile is not None:
+        _validate_request_profile(model, route, request_profile)
+    config: dict[str, object] = {
         "model": model,
         "small_model": model,
         "enabled_providers": [route.provider_id],
@@ -63,27 +55,52 @@ def render_opencode_config(
         "snapshot": False,
     }
     if request_profile is not None:
-        profile = request_profile
-        model_config = config["provider"][route.provider_id]["models"][
-            model.removeprefix(route.provider_id + "/")
-        ]
-        native = model_config.setdefault("options", {})
-        if profile.reasoning_mode == "effort":
-            native["reasoning"] = {"effort": profile.reasoning_effort.value}
-        elif profile.reasoning_mode == "budget":
-            native["reasoning"] = {"max_tokens": profile.reasoning_budget.value}
-        elif profile.reasoning_mode == "disabled":
-            native["reasoning"] = {"enabled": False}
-        model_config["temperature"] = profile.temperature.value is not None
-        agent = {}
-        if profile.temperature.value is not None:
-            agent["temperature"] = profile.temperature.value
-        if profile.top_p.value is not None:
-            agent["top_p"] = profile.top_p.value
-        config["agent"] = {"build": agent}
+        _apply_request_profile(config, model, route, request_profile)
     if max_steps is not None:
         config.setdefault("agent", {}).setdefault("build", {})["steps"] = max_steps
     return config
+
+
+def _validate_request_profile(
+    model: str, route: ParticipantRoute, profile: RequestProfile
+) -> None:
+    """Refuse a request profile that differs from its route, or an unsupported control."""
+    if profile.gateway != route.provider_id or profile.model != model:
+        raise ValueError("participant request profile differs from its route or model")
+    if isinstance(route, VertexRoute) and profile.reasoning_mode != "unsupported":
+        raise ValueError("Vertex request reasoning controls are unsupported")
+
+
+def _apply_request_profile(
+    config: dict[str, object],
+    model: str,
+    route: ParticipantRoute,
+    profile: RequestProfile,
+) -> None:
+    """Write the profile's native reasoning and sampling controls into the config."""
+    model_config = config["provider"][route.provider_id]["models"][
+        model.removeprefix(route.provider_id + "/")
+    ]
+    reasoning = _reasoning_options(profile)
+    native = model_config.setdefault("options", {})
+    if reasoning is not None:
+        native["reasoning"] = reasoning
+    model_config["temperature"] = profile.temperature.value is not None
+    agent = {}
+    if profile.temperature.value is not None:
+        agent["temperature"] = profile.temperature.value
+    if profile.top_p.value is not None:
+        agent["top_p"] = profile.top_p.value
+    config["agent"] = {"build": agent}
+
+
+def _reasoning_options(profile: RequestProfile) -> dict[str, object] | None:
+    """Return the provider-native reasoning control of the profile, if it sets one."""
+    if profile.reasoning_mode == "effort":
+        return {"effort": profile.reasoning_effort.value}
+    if profile.reasoning_mode == "budget":
+        return {"max_tokens": profile.reasoning_budget.value}
+    return {"enabled": False} if profile.reasoning_mode == "disabled" else None
 
 
 def opencode_environment(

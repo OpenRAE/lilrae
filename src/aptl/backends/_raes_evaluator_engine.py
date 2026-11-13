@@ -244,6 +244,9 @@ def _aggregate_dependency_outcome(
     return outcome
 
 
+_ASSERTION_TRUTH = {"true": True, "false": False}
+
+
 def _dependency_truth_value(
     snapshot: RuntimeSnapshot,
     states: dict[str, EvaluationExecutionState],
@@ -253,7 +256,7 @@ def _dependency_truth_value(
     truth = snapshot.proposition_truth_results.get(address)
     if isinstance(truth, Mapping):
         outcome = truth.get("assertion_outcome")
-        return True if outcome == "true" else False if outcome == "false" else None
+        return _ASSERTION_TRUTH.get(outcome) if isinstance(outcome, str) else None
     return _state_truth_value(states.get(address))
 
 

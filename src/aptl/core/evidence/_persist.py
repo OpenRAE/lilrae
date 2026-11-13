@@ -289,13 +289,12 @@ def persist_success_outcome(
         CaptureVisibility.EVALUATOR_ONLY,
         CaptureVisibility.APPARATUS_ONLY,
     )
-    redaction_state = (
-        "withheld"
-        if withheld and not outcome.source_pipeline.get("typed_description")
-        else "redacted"
-        if binding.redaction_policy
-        else structured_redaction_state
-    )
+    if withheld and not outcome.source_pipeline.get("typed_description"):
+        redaction_state = "withheld"
+    elif binding.redaction_policy:
+        redaction_state = "redacted"
+    else:
+        redaction_state = structured_redaction_state
     loss_disclosure = _loss_disclosure(
         outcome, effective_status=effective_status, redaction_state=redaction_state
     )
