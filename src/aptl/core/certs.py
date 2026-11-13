@@ -7,12 +7,15 @@ ownership afterward.
 """
 
 import hashlib
+import ipaddress
 import os
 import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+from cryptography import x509
 
 from aptl.core import hostenv
 from aptl.core.ephemeral_containers import EphemeralContainer
@@ -26,6 +29,19 @@ _CERT_COMPOSE_FILE = "generate-indexer-certs.yml"
 _ROOT_CA = "root-ca.pem"
 _MANAGER_ROOT_CA = "root-ca-manager.pem"
 _CERT_CLEANUP_TIMEOUT = 60
+#: Host-run clients reach the indexer and the manager API through their
+#: loopback publications, so those certificates must name these hosts (#1767).
+_HOST_FACING_NAMES = (
+    x509.DNSName("localhost"),
+    x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
+)
+_HOST_FACING_ROLES = ("indexer", "manager")
+
+
+def wazuh_root_ca(project_dir: Path) -> Path:
+    """Return the lab Wazuh CA that signs the indexer and manager certificates."""
+
+    return project_dir / _CERTS_SUBDIR / _ROOT_CA
 
 
 @dataclass
@@ -82,7 +98,7 @@ def ensure_ssl_certs(
     if native_user is not None:
         _reclaim_certs_dir(certs_dir, native_user[0])
 
-    if certs_dir.exists() and root_ca.exists():
+    if certs_dir.exists() and root_ca.exists() and _names_host_facing(certs_dir):
         alias_error = _ensure_manager_root_ca_alias(certs_dir)
         if alias_error is not None:
             return CertResult(
@@ -106,6 +122,28 @@ def ensure_ssl_certs(
         project=project,
         pull_images=pull_images,
     )
+
+
+def _names_host_facing(certs_dir: Path) -> bool:
+    """Report whether the indexer and manager certificates name the loopback hosts.
+
+    A certificate from a release before #1767 lacks those names, so a verified
+    host-run client cannot reach the service. The generator then replaces it.
+    """
+
+    for role in _HOST_FACING_ROLES:
+        try:
+            certificate = x509.load_pem_x509_certificate(
+                (certs_dir / f"wazuh.{role}.pem").read_bytes()
+            )
+            names = certificate.extensions.get_extension_for_class(
+                x509.SubjectAlternativeName
+            ).value
+        except OSError, ValueError, x509.ExtensionNotFound:
+            return False
+        if not all(name in names for name in _HOST_FACING_NAMES):
+            return False
+    return True
 
 
 def _generate_ssl_certs(

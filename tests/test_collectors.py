@@ -393,9 +393,8 @@ class TestCollectShuffleExecutions:
 
 class TestSocCollectorTLSPosture:
     """SEC-006 / ADR-034: SOC stack collectors must verify TLS against
-    the lab-managed CA, NOT pass ``insecure=True``. The Wazuh indexer
-    collector stays ``insecure=True`` — that's SEC-004 territory and
-    explicitly out of SEC-006 scope per ADR-034 § Decision.
+    the lab-managed CA, NOT pass ``insecure=True``. Wazuh clients verify
+    against the lab Wazuh CA instead (SEC-009).
     """
 
     @patch("aptl.core.collectors._curl_json")
