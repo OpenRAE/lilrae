@@ -1241,6 +1241,7 @@ def test_family_capture_sources_contain_callback_failures():
             contribution=SimpleNamespace(
                 runtime_environment_keys=(),
                 native_registration_ids=frozenset({"example.events"}),
+                measurement_registration_ids=frozenset(),
             ),
         ),
     )
@@ -1476,3 +1477,46 @@ def test_independent_wheels_use_only_public_contract(
             adapter_version,
         ]
     )
+
+
+def test_a_trial_input_file_admits_only_its_exact_plan_entry(family_input, tmp_path):
+    """``lab start --trial-input`` reads one plan entry and binds it to the installed family."""
+    import json
+    from datetime import UTC, datetime
+
+    from raes_contracts.canonical import canonical_json_bytes
+    from raes_processor.trial_realization import instantiate_admitted_trial_entry
+
+    from aptl.backends._raes_admission_helpers import family_trial_input
+    from aptl.backends.scenario_family import admit_family_trial
+    from aptl.core.trial_attempt import TrialAttempt, load_trial_unit
+
+    bundle, family, plan = family_input()
+    from raes import canonical_instantiated_sdl_bytes
+
+    from aptl.backends.scenario_family import admit_family_source
+
+    scenario = instantiate_admitted_trial_entry(
+        plan=plan, plan_entry_id="entry-a", family=admit_family_source(bundle.sdl_path)
+    )
+    snapshot = json.loads(canonical_instantiated_sdl_bytes(scenario))
+    document = {"plan": plan.model_dump(mode="json"), "plan_entry_id": "entry-a", "snapshot": snapshot}
+    path = tmp_path / "trial-input.json"
+    path.write_bytes(canonical_json_bytes(document))
+    attempt = TrialAttempt("run-a", "attempt-a", datetime.now(UTC), unit=load_trial_unit(path))
+    admitted = admit_family_trial(bundle, BACKEND, family_trial_input(bundle, attempt))
+    assert admitted.snapshot == canonical_json_bytes(snapshot)
+
+    # A substituted snapshot is refused; so are extra keys and an unknown entry.
+    snapshot["scenario"]["name"] = "other"
+    path.write_bytes(canonical_json_bytes(document))
+    with pytest.raises(ValueError, match="family-trial-invalid"):
+        admit_family_trial(
+            bundle,
+            BACKEND,
+            family_trial_input(bundle, replace(attempt, unit=load_trial_unit(path))),
+        )
+    for changed in ({**document, "family": {}}, {**document, "plan_entry_id": "entry-z"}):
+        path.write_bytes(canonical_json_bytes(changed))
+        with pytest.raises(ValueError):
+            load_trial_unit(path)

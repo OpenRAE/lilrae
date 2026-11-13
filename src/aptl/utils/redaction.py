@@ -194,10 +194,29 @@ def _count_declaration(name: str, value: dict[str, object]) -> bool:
     )
 
 
+#: OpenCode's per-call usage record: integer counts, with cache read and write counts.
+_OPENCODE_USAGE_COUNTS = frozenset({"input", "output", "reasoning", "total"})
+
+
+def _opencode_usage(value: object) -> bool:
+    """Recognize OpenCode's closed per-call ``tokens`` record of public counts."""
+    if not isinstance(value, dict) or not set(value) <= _OPENCODE_USAGE_COUNTS | {"cache"}:
+        return False
+    cache = value.get("cache", {})
+    return (
+        all(_public_count(value[key]) for key in value if key != "cache")
+        and isinstance(cache, dict)
+        and set(cache) <= {"read", "write"}
+        and all(_public_count(count) for count in cache.values())
+    )
+
+
 def _safe_model_count(name: str, value: object) -> bool:
     """Preserve only typed public counts and closed integer target declarations."""
     if name in {"input_tokens_complete", "output_tokens_complete"}:
         return type(value) is bool
+    if name == "tokens":
+        return _opencode_usage(value)
     return name in {
         "prompt_tokens",
         "output_tokens",

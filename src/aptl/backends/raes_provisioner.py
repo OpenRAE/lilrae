@@ -87,6 +87,7 @@ class AptlProvisioner(
     # (issue #876 cycle-6 review). None for a scenario with no artifact demand.
     artifact_availability: ArtifactAvailabilityContext | None = None
     capture_plan: CapturePlan = field(default_factory=empty_capture_plan)
+    trial_capture_plan: CapturePlan | None = None
     observability_scope: ObservabilityScopeDecision = field(
         default_factory=ObservabilityScopeDecision
     )

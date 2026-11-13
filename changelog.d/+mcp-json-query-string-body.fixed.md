@@ -1,0 +1,1 @@
+An MCP query with a JSON body now accepts a body given as JSON text. Before this fix, the client sent a string body as `application/octet-stream`, and the Wazuh indexer refused the search with HTTP 406. A rules-file upload query declares `content_type` to send its XML body raw.

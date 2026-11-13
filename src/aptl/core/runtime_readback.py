@@ -1,4 +1,4 @@
-"""One native runtime reading and the vantage that produced it."""
+"""One runtime value and the declared source that supports it."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ class ConcernReading:
             or self.value is None
             or self.source
             not in {
+                ObservationStrength.DRIVER_REPORTED,
                 ObservationStrength.DAEMON_OBSERVED,
                 ObservationStrength.GUEST_OBSERVED,
             }

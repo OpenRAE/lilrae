@@ -57,7 +57,7 @@ def build_observation_index(
     """Build all address maps once before observing the planned resources."""
 
     project_name = getattr(backend, "project_name", _DEFAULT_PROJECT_NAME)
-    node_containers, node_runtimes = _node_indexes(realization)
+    node_containers, node_runtimes = _node_indexes(realization, plan)
     placement_content, placement_datasets = _placement_payload_indexes(realization)
     return RealizationObservationIndex(
         realization_root=_realization_root(backend, scenario_root),
@@ -86,6 +86,7 @@ def build_observation_index(
 
 def _node_indexes(
     realization: AptlRealization,
+    plan: ProvisioningPlan,
 ) -> tuple[dict[str, str], dict[str, RuntimeConfiguration]]:
     """Index concrete container names and typed runtime declarations by node."""
 
@@ -95,11 +96,37 @@ def _node_indexes(
         if node.container_name
     }
     runtimes = {
-        node.address: node.runtime
+        node.address: _declared_environment_runtime(
+            node.runtime, plan.resources.get(node.address)
+        )
         for node in realization.nodes
         if node.runtime is not None
     }
     return containers, runtimes
+
+
+def _declared_environment_runtime(
+    runtime: RuntimeConfiguration, resource: object
+) -> RuntimeConfiguration:
+    """Read back only the environment that the scenario declares.
+
+    Implementation profiles add backend detail, such as a variable that reads a
+    backend-owned artifact. Those additions are not scenario facts, so readback
+    does not report them.
+    """
+
+    payload = getattr(resource, "payload", None) or {}
+    spec = payload.get("spec") if isinstance(payload, dict) else None
+    node = spec.get("node") if isinstance(spec, dict) else None
+    declared = node.get("runtime") if isinstance(node, dict) else None
+    environment = (declared or {}).get("environment") or []
+    return runtime.model_copy(
+        update={
+            "environment": RuntimeConfiguration.model_validate(
+                {"environment": environment}
+            ).environment
+        }
+    )
 
 
 def _non_compose_addresses(realization: AptlRealization) -> frozenset[str]:

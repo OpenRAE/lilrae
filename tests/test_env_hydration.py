@@ -51,6 +51,7 @@ class TestHydrateDotenv:
 
     def test_creates_missing_env_with_runnable_credentials(self, tmp_path):
         from aptl.core.env import (
+            SHUFFLE_API_KEY_FIXTURE,
             find_placeholder_env_values,
             hydrate_dotenv,
             load_dotenv,
@@ -67,6 +68,7 @@ class TestHydrateDotenv:
         assert all(env[key] == value for key, value in fixtures.items())
         assert len(env[_secret_key("MISP", "API", "KEY")]) == 40
         assert len(env[_secret_key("APTL", "API", "TOKEN")]) == 64
+        assert env[_secret_key("SHUFFLE", "API", "KEY")] == SHUFFLE_API_KEY_FIXTURE
         assert find_placeholder_env_values(env) == []
         if os.name == "posix":
             assert env_path.stat().st_mode & 0o777 == 0o600
@@ -128,6 +130,7 @@ class TestHydrateDotenv:
             _secret_key("WAZUH", "CLUSTER", "KEY"): _runtime_value("cluster"),
             _secret_key("APTL", "API", "TOKEN"): _runtime_value("token"),
             _secret_key("MISP", "API", "KEY"): _runtime_value("misp"),
+            _secret_key("SHUFFLE", "API", "KEY"): _runtime_value("shuffle"),
             _secret_key("GRAFANA", "ADMIN", "PASSWORD"): _runtime_value("grafana"),
         }
         env_path.write_text(

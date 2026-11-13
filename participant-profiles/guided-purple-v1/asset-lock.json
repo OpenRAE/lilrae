@@ -79,7 +79,7 @@
       "asset_id": "mcp-indexer-config",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/docker-lab-config.json",
-      "sha256": "a5bd9121d33ef64f94f1000b6e2d2b4dd80559b977264308f39b2b14670e4230"
+      "sha256": "e080820f8ca430a814ab7a99ab1093388cf62e0577783b713bd25b3137d67afd"
     },
     {
       "asset_id": "mcp-wazuh-build",
@@ -97,7 +97,7 @@
       "asset_id": "mcp-wazuh-config",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/docker-lab-config.json",
-      "sha256": "93bc2cb0fb289c9f21de9b9895c6647f89fcc7114825c35aae7f128871a7b125"
+      "sha256": "9ef193fa6214458364a8963d24ad89bcc1ad0e131ea6236bc4788849ccfc13c1"
     },
     {
       "asset_id": "image-kali",

@@ -212,7 +212,14 @@ def family_capture_sources(
     if (
         not isinstance(sources, Mapping)
         or len(sources) > 256
-        or not set(sources).issubset(contribution.native_registration_ids)
+        or not set(sources).issubset(
+            contribution.native_registration_ids
+            | (
+                contribution.measurement_registration_ids
+                if not context.may_prepare
+                else frozenset()
+            )
+        )
         or any(
             not isinstance(source, WindowedSource) or not callable(source.fetch)
             for source in sources.values()
@@ -314,6 +321,8 @@ class ScenarioCaptureContribution:
         default=None, repr=False, compare=False
     )
     generated_output_refs: tuple[GeneratedOutputReference, ...] = ()
+    #: Sources collected only during trial measurement, after startup preparation.
+    measurement_registration_ids: frozenset[str] = frozenset()
 
 
 class ScenarioCaptureProvider(Protocol):

@@ -9,7 +9,12 @@ import pytest
 
 
 def native_database(
-    work, *, prompt="exact prompt\n", model="test/model", finish="stop"
+    work,
+    *,
+    prompt="exact prompt\n",
+    model="test/model",
+    finish="stop",
+    provider="openrouter",
 ):
     path = work / "data/opencode/opencode.db"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -25,14 +30,14 @@ def native_database(
                 "msg_user",
                 {
                     "role": "user",
-                    "model": {"providerID": "openrouter", "modelID": model},
+                    "model": {"providerID": provider, "modelID": model},
                 },
             ),
             (
                 "msg_assistant",
                 {
                     "role": "assistant",
-                    "providerID": "openrouter",
+                    "providerID": provider,
                     "modelID": model,
                     "time": {"completed": 30},
                 },
@@ -107,6 +112,24 @@ def observe(work, **kwargs):
     )
 
 
+def test_native_history_verifies_a_vertex_pin_and_refuses_another_provider(tmp_path):
+    from aptl.workbench.opencode_history import read_native_history
+
+    native_database(tmp_path, model="zai-org/glm-5.2-maas", provider="google-vertex")
+    pin = "google-vertex/zai-org/glm-5.2-maas"
+    history = read_native_history(
+        tmp_path, expected_prompt=b"exact prompt\n", expected_model=pin, session_id=None
+    )
+    assert (history.status, history.recorded_model) == ("observed", pin)
+    other = read_native_history(
+        tmp_path,
+        expected_prompt=b"exact prompt\n",
+        expected_model="openrouter/zai-org/glm-5.2-maas",
+        session_id=None,
+    )
+    assert other.status == "invalid"
+
+
 def test_native_history_verifies_prompt_model_and_separate_step_usage(tmp_path):
     native_database(tmp_path)
     history = observe(tmp_path)
@@ -165,6 +188,14 @@ def test_native_history_retains_prompt_delivery_on_interrupted_generation(tmp_pa
     assert history.steps == ()
 
 
+@pytest.mark.parametrize(
+    ("finish", "status"), [("length", "observed"), ("error", "partial")]
+)
+def test_native_history_accepts_an_output_limit_end_only(tmp_path, finish, status):
+    native_database(tmp_path, finish=finish)
+    assert observe(tmp_path).status == status
+
+
 @pytest.mark.parametrize("column", ["message", "part"])
 @pytest.mark.parametrize("value", [None, b"invalid native JSON"])
 def test_native_history_rejects_non_text_json_columns(tmp_path, column, value):
@@ -198,12 +229,31 @@ def test_native_usage_does_not_invent_or_coerce_counts(tmp_path, token_value):
         assert history.steps == ()
 
 
-def test_native_history_missing_corrupt_or_uncheckpointed_is_explicit(tmp_path):
+def test_a_cancelled_participants_pending_log_is_read_from_a_checkpointed_copy(
+    tmp_path,
+):
+    """A cancelled opencode leaves its session in the write-ahead log, not in the database file."""
+    from aptl.workbench.opencode_history import export_native_session
+
+    path = tmp_path / "data/opencode/opencode.db"
+    path.parent.mkdir(parents=True)
+    holder = sqlite3.connect(path)
+    holder.execute("PRAGMA journal_mode=WAL")
+    holder.execute("PRAGMA wal_autocheckpoint=0")
+    try:
+        native_database(tmp_path)
+        assert path.with_name("opencode.db-wal").stat().st_size > 0
+        assert observe(tmp_path).status == "observed"
+        assert [row["id"] for row in export_native_session(tmp_path)["sessions"]] == [
+            "ses_fixture"
+        ]
+    finally:
+        holder.close()
+
+
+def test_native_history_missing_or_corrupt_is_explicit(tmp_path):
     assert observe(tmp_path).status == "missing"
     path = native_database(tmp_path)
-    path.with_name("opencode.db-wal").write_bytes(b"uncheckpointed")
-    assert observe(tmp_path).status == "uncheckpointed"
-    path.with_name("opencode.db-wal").unlink()
     path.write_bytes(b"not a SQLite database; secret-capability")
     history = observe(tmp_path)
     assert history.status == "invalid"
@@ -243,12 +293,15 @@ def test_executor_reduces_history_before_private_teardown(tmp_path, failed):
             )
 
     records = []
+    transcripts = []
     active = LilraeOpenCodeExecutor(
         options=synthetic_options(
             executable=Path("/bin/true"),
             work_root=tmp_path,
             runner=Runner(),
             evidence_sink=records.append,
+            environment={"OPENROUTER_API_KEY": "secret-capability"},
+            transcript_sink=transcripts.append,
         ),
         model="openrouter/test/model",
         prompt="exact prompt\n",
@@ -266,6 +319,29 @@ def test_executor_reduces_history_before_private_teardown(tmp_path, failed):
     assert history.session_id == records[0].session_id
     assert not list(tmp_path.glob("lilrae-participant-*"))
     assert "secret-capability" not in repr(records)
+    (transcript,) = transcripts
+    assert [row["id"] for row in transcript["messages"]] == [
+        "msg_user",
+        "msg_assistant",
+    ]
+    assert "private reasoning" in repr(transcript["parts"])
+    assert "secret-capability" not in repr(transcript)
+
+
+def test_native_session_export_returns_every_row_with_decoded_data(tmp_path):
+    from aptl.workbench.opencode_history import export_native_session
+
+    native_database(tmp_path)
+    session = export_native_session(tmp_path)
+    assert session["schema_version"] == "lilrae-opencode-session/v1"
+    assert [row["id"] for row in session["sessions"]] == ["ses_fixture"]
+    assert session["messages"][0]["data"]["role"] == "user"
+    assert {row["data"]["type"] for row in session["parts"]} >= {
+        "text",
+        "reasoning",
+        "tool",
+    }
+    assert export_native_session(tmp_path / "missing") is None
 
 
 def test_executor_refuses_mismatched_native_prompt(tmp_path):

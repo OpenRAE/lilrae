@@ -2112,7 +2112,7 @@ class TestOrchestrateLabStart:
         """A .env.example placeholder secret must stop the start fail-closed.
 
         Hydration only repairs the vars it owns generators for; a sensitive
-        var outside `_HYDRATED_ENV_SPECS` (SHUFFLE_API_KEY) keeps its copied
+        var outside `_HYDRATED_ENV_SPECS` (DASHBOARD_PASSWORD) keeps its copied
         .env.example placeholder, and booting with it would bring the SOC
         stack up with admin credentials anyone can read in the repo. If
         `_validate_env_secrets` were unwired from `_step_load_env`, only
@@ -2123,13 +2123,13 @@ class TestOrchestrateLabStart:
         mocks = self._patch_all_steps(mocker, tmp_path)
         env_file = tmp_path / ".env"
         env_file.write_text(
-            env_file.read_text() + "SHUFFLE_API_KEY=CHANGE_ME_shuffle_api_key\n"
+            env_file.read_text() + "DASHBOARD_PASSWORD=CHANGE_ME_dashboard_password\n"
         )
 
         result = orchestrate_lab_start(tmp_path)
 
         assert result.success is False
-        assert "SHUFFLE_API_KEY" in result.error
+        assert "DASHBOARD_PASSWORD" in result.error
         mocks["start"].assert_not_called()
 
     def test_stops_on_env_loading_failure(self, mocker, tmp_path):

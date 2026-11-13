@@ -91,6 +91,8 @@ _REALIZED_SWITCH_TYPE = "switch"
 
 _NODE_TYPE_PATH = CONCERN_PAYLOAD_PATH["node-type"]
 _OS_FAMILY_PATH = CONCERN_PAYLOAD_PATH["os-family"]
+_OS_DISTRIBUTION_PATH = CONCERN_PAYLOAD_PATH["os-distribution"]
+_OS_VERSION_PATH = CONCERN_PAYLOAD_PATH["os-version"]
 _CONTENT_TYPE_PATH = CONCERN_PAYLOAD_PATH["content-type"]
 _DOMAIN_TOPOLOGY_PATH = CONCERN_PAYLOAD_PATH["domain-topology"]
 _SERVICE_INDEX_SCHEMA_PATH = CONCERN_PAYLOAD_PATH[
@@ -327,6 +329,8 @@ def _record_operating_system_concern(
         )
         if operating_system is not None:
             concerns[_OS_FAMILY_PATH] = operating_system.family
+            concerns[_OS_DISTRIBUTION_PATH] = operating_system.distribution
+            concerns[_OS_VERSION_PATH] = operating_system.version
     else:
         os_family = _observed_os_family(info)
         if os_family is not None:

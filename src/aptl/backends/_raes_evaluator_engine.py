@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -223,6 +224,7 @@ def _state_truth_value(state: EvaluationExecutionState | None) -> bool | None:
 
 
 def _aggregate_dependency_outcome(
+    snapshot: RuntimeSnapshot,
     states: dict[str, EvaluationExecutionState],
     dependencies: tuple[str, ...],
     *,
@@ -230,7 +232,9 @@ def _aggregate_dependency_outcome(
     waiting_detail: str,
 ) -> _EvaluationOutcome:
     """Aggregate dependency truth values into a running or pass/fail outcome."""
-    values = [_state_truth_value(states.get(address)) for address in dependencies]
+    values = [
+        _dependency_truth_value(snapshot, states, address) for address in dependencies
+    ]
     waiting = not dependencies or any(value is None for value in values)
     outcome = (
         _running(waiting_detail)
@@ -238,6 +242,22 @@ def _aggregate_dependency_outcome(
         else _ready_passed(all(bool(value) for value in values), ready_detail)
     )
     return outcome
+
+
+_ASSERTION_TRUTH = {"true": True, "false": False}
+
+
+def _dependency_truth_value(
+    snapshot: RuntimeSnapshot,
+    states: dict[str, EvaluationExecutionState],
+    address: str,
+) -> bool | None:
+    """Use native assertion truth without inventing assertion evaluation states."""
+    truth = snapshot.proposition_truth_results.get(address)
+    if isinstance(truth, Mapping):
+        outcome = truth.get("assertion_outcome")
+        return _ASSERTION_TRUTH.get(outcome) if isinstance(outcome, str) else None
+    return _state_truth_value(states.get(address))
 
 
 def _condition_outcome(
@@ -276,6 +296,7 @@ def _resolve_outcome(
         outcome = _condition_outcome(payload, snapshot)
     elif resource_type == "objective":
         outcome = _aggregate_dependency_outcome(
+            snapshot,
             states,
             _string_values(payload.get("success_addresses")),
             ready_detail="objective evaluated from observed success dependencies",

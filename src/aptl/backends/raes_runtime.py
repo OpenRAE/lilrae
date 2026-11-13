@@ -139,11 +139,12 @@ class AptlRuntimeManager(_RaesRuntimeManager):
             or request.capture_selection.registry.observation_projection()
             != self._target.manifest.observation
             or request.plan.plan_digest
-            != getattr(
-                getattr(self._target.provisioner, "capture_plan", None),
-                "plan_digest",
-                None,
-            )
+            not in {
+                getattr(
+                    getattr(self._target.provisioner, name, None), "plan_digest", None
+                )
+                for name in ("capture_plan", "trial_capture_plan")
+            }
         ):
             raise ValueError("capture request differs from its runtime owner")
         if trial_body is None and request.window is None:

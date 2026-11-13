@@ -454,8 +454,13 @@ def _credential_aliases(servers: dict[str, dict[str, object]]) -> set[str]:
 def _server_environment(
     server: dict[str, object], credentials: Mapping[str, str]
 ) -> dict[str, str]:
-    """Resolve one MCP server's environment from its credential binding."""
-    environment = {"PATH": _BASE_ENVIRONMENT["PATH"]}
+    """Resolve one MCP server's environment from its credential binding.
+
+    A lab MCP server keeps the operator's home: its lab configuration names the
+    lab SSH key as ``~/.ssh/aptl_lab_key``. The participant agent runs with its
+    own private home, which holds no lab key.
+    """
+    environment = {"PATH": _BASE_ENVIRONMENT["PATH"], "HOME": str(Path.home())}
     for name, value in server["env"].items():
         if value.startswith("${") and value.endswith("}"):
             alias = value[2:-1]

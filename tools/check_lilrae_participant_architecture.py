@@ -54,13 +54,17 @@ COMPONENTS = {
             "aptl.core.opencode",
             "aptl.utils.pathsafe",
             "aptl.utils.strict_json",
+            "aptl.workbench.opencode_events",
+            "collections.abc",
             "contextlib",
             "hashlib",
             "os",
             "pathlib",
             "re",
+            "shutil",
             "sqlite3",
             "sys",
+            "tempfile",
         }
     ),
     "src/aptl/workbench/opencode_options.py": frozenset(

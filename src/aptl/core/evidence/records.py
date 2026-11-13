@@ -38,6 +38,7 @@ from raes_contracts.contracts.experiment_capture import (
 )
 
 from aptl.core.evidence.content_store import ContentInsertion
+from aptl.utils.redaction import redact
 from aptl.core.evidence.outcomes import AcquisitionPhase
 from aptl.core.evidence.protocol import CollectorOutcome
 from aptl.core.experiment.capture_registry import CaptureBinding
@@ -237,4 +238,5 @@ def build_evidence_record(
         sensitivity=disclosure.sensitivity,
         redaction_state=disclosure.redaction_state,
         redaction_policy=redaction_policy,
+        typed_description=redact(outcome.source_pipeline.get("typed_description")),
     )

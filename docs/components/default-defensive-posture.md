@@ -47,7 +47,7 @@ See [MCP reference](../reference/mcp.md).
 
 ## Wazuh active-response
 
-The five response blocks in `config/wazuh_cluster/wazuh_manager.conf` start disabled.
+The five response blocks in `config/wazuh_cluster/wazuh_manager.conf` start commented out.
 They select rules 5763, 302060, 302010, 301002, and 304040, with 120-second timeouts.
 Only `aptl-firewall-drop` enforces the Kali source-IP whitelist.
 See the [response reference](wazuh-active-response.md) for command and matcher semantics.

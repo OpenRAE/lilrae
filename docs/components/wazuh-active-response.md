@@ -76,7 +76,10 @@ This recommendation does not replace the selected command's actual cleanup behav
 
 ## Default posture
 
-All five checked response blocks contain `<disabled>yes</disabled>`.
+All five checked response blocks ship commented out.
+Do not use `<disabled>yes</disabled>` to turn off one block.
+`wazuh-execd` reads the first `<disabled>` element under `<active-response>` as the global switch.
+A `yes` value stops the manager's `wazuh-execd`, and the manager restart API then fails.
 Detection rules can still generate alerts.
 See [default defensive posture](default-defensive-posture.md).
 

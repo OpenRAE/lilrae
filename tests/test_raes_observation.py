@@ -1821,3 +1821,20 @@ def test_container_realized_rejects_any_stopped_container():
         "HostConfig": {"RestartPolicy": {"Name": "always"}},
     }
     assert container_realized(running) is True
+
+
+def test_guest_os_readback_records_the_observed_identity_as_concerns():
+    from aptl.backends.raes_observation import _record_operating_system_concern
+
+    backend = _Backend(
+        containers=("aptl-guest",),
+        exec_results={"aptl-guest": (0, 'ID="ubuntu"\nVERSION_ID="26.04"\n')},
+    )
+    concerns: dict = {}
+    identity = _record_operating_system_concern(backend, "aptl-guest", {}, True, None, concerns)
+    assert identity is not None
+    assert concerns == {
+        ("os_family",): "linux",
+        ("os_distribution",): "ubuntu",
+        ("os_version",): "26.04",
+    }

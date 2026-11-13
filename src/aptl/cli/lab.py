@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from functools import partial
 from pathlib import Path
 from typing import NoReturn, Optional
@@ -42,7 +42,7 @@ from aptl.core.lab_types import (
     describe_project_runtime,
 )
 from aptl.cli.lab_trial import refuse_existing_trial_run, run_lab_trial, trial_summary
-from aptl.core.trial_attempt import TrialAttempt, parse_trial_attempt
+from aptl.core.trial_attempt import TrialAttempt, load_trial_unit, parse_trial_attempt
 from aptl.core.scenario_catalog import (
     load_scenario_catalog,
     resolve_scenario_selection,
@@ -231,6 +231,12 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
         "--deadline",
         help="UTC deadline of the trial, for example 2026-11-06T12:00:00Z.",
     ),
+    trial_input: Optional[Path] = typer.Option(
+        None,
+        "--trial-input",
+        help="Admitted RAES plan entry to run: JSON with plan, plan_entry_id and snapshot. "
+        "Needs --run-id, --attempt-id and --deadline.",
+    ),
 ) -> None:
     """Start the LilRAE lab environment.
 
@@ -244,6 +250,10 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
 
     try:
         trial_attempt = parse_trial_attempt(run_id, attempt_id, deadline)
+        if trial_input is not None:
+            if trial_attempt is None:
+                raise ValueError("--trial-input needs --run-id, --attempt-id and --deadline")
+            trial_attempt = replace(trial_attempt, unit=load_trial_unit(trial_input))
         if trial_attempt is not None:
             refuse_existing_trial_run(project_dir, trial_attempt)
     except ValueError as exc:
@@ -342,7 +352,7 @@ def start(  # NOSONAR - Typer exposes one parameter per user-visible CLI option.
     if trial_attempt is None or not result.success:
         _report_start_result(project_dir, result, output_json)
         return
-    _report_trial_result(project_dir, result, trial_attempt, selected_scenario, output_json)
+    _report_trial_result(project_dir, result, trial_attempt, output_json)
 
 
 def _start_result_fields(project_dir: Path, result: LabResult) -> dict[str, object]:
@@ -430,7 +440,6 @@ def _report_trial_result(
     project_dir: Path,
     result: LabResult,
     attempt: TrialAttempt,
-    scenario_path: Optional[Path],
     output_json: bool,
 ) -> None:
     """Run the declared trial on a usable lab, then report its sealed record.
@@ -446,8 +455,8 @@ def _report_trial_result(
         record = run_lab_trial(
             project_dir,
             attempt,
-            scenario_path=scenario_path,
             scenario_sha256=result.scenario_sha256,
+            started=result.trial_runtime,
             progress=_start_progress(output_json),
         )
     except (OSError, RuntimeError, ValueError) as exc:

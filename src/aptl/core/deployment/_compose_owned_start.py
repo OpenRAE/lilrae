@@ -198,6 +198,10 @@ class ComposeOwnedStartMixin:
     ) -> LabResult | None:
         """Refuse Compose namespace and mount paths that bypass filtering."""
         import json
+
+        if getattr(self, "_dedicated_vm", False):
+            # The lab host is a VM built only for this lab (deployment.dedicated_vm).
+            return None
         from aptl.core.deployment._native_range_model import validate_native_services
 
         command = self._build_command(

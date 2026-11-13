@@ -142,14 +142,17 @@ def test_start_reports_running_until_observed_state_is_available():
         assert history[-1]["status"] == EvaluationResultStatus.RUNNING.value
 
 
-def test_start_decides_exact_declared_node_presence() -> None:
+@pytest.mark.parametrize("polarity, passed", [("positive", True), ("negative", False)])
+def test_start_decides_exact_declared_node_presence(polarity, passed) -> None:
     from raes_conformance.conformance.target_planning import (
         DEFAULT_TARGET_CONFORMANCE_SCENARIO,
     )
     from raes_processor.reference import run_reference_processor
 
     execution_plan = run_reference_processor(
-        DEFAULT_TARGET_CONFORMANCE_SCENARIO,
+        DEFAULT_TARGET_CONFORMANCE_SCENARIO.replace(
+            "role: postcondition", f"role: postcondition\n    polarity: {polarity}"
+        ),
         create_aptl_manifest(),
     ).execution_plan
 
@@ -159,29 +162,19 @@ def test_start_decides_exact_declared_node_presence() -> None:
     )
 
     assert result.success is True
-    truth = result.snapshot.proposition_truth_results[
-        "evaluation.assertion.health"
-    ]
+    truth = result.snapshot.proposition_truth_results["evaluation.assertion.health"]
     assert truth["evaluation_basis"] == "declared_state"
     assert truth["proposition_outcome"] == "true"
-    assert truth["assertion_outcome"] == "true"
+    assert truth["assertion_outcome"] == ("true" if passed else "false")
     assert proposition_truth_contract_diagnostics(result.snapshot) == []
+    objective = result.snapshot.evaluation_results["evaluation.objective.validate"]
+    assert objective["passed"] is passed
+    assert objective["status"] == "ready"
+    assert "evaluation.assertion.health" not in result.snapshot.evaluation_results
 
 
 def test_start_derives_condition_pass_but_objective_stays_unresolved():
-    """The condition resolves from observed provisioning state; the objective
-    cannot, because APTL does not decide assertions (issue #434, open).
-
-    RAES ADR-073 routes objective success exclusively through
-    ``objectives.*.success.assertions``, so a compiled objective's
-    ``success_addresses`` point at ``evaluation.assertion.<id>``. Propositions
-    and assertions carry no compiled ``result_contract``, so APTL's evaluator
-    cannot register them as ``EvaluationExecutionState`` entries and never
-    decides them — the objective waits forever on a dependency nothing
-    resolves. Closing that gap needs an evidence-bearing probe-binding
-    subsystem, which is explicitly out of scope here; this test documents the
-    gap rather than faking a result contract or assertion truth to hide it.
-    """
+    """A ready node does not supply this observed-state assertion's missing evidence."""
     result = AptlEvaluator().start(
         _evaluation_plan(),
         _snapshot_with_node_status("ready"),
@@ -208,11 +201,7 @@ def test_start_derives_condition_pass_but_objective_stays_unresolved():
     assert condition.score is None
     assert condition.max_score is None
 
-    # The objective's compiled success_addresses point at
-    # evaluation.assertion.health, an address APTL never registers a state
-    # for (assertions carry no compiled result_contract), so it can only ever
-    # observe an unresolved dependency and stays RUNNING — even though the
-    # condition it would otherwise depend on has already resolved to passed.
+    # Only corroborated assertion truth can complete this objective.
     assert objective.status == EvaluationResultStatus.RUNNING
     assert objective.passed is None
     assert objective.score is None

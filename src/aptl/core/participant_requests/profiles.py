@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 from raes_contracts.canonical import canonical_json_digest
 
 from aptl.core._participant_model_ids import validate_installed_participant_model_id
-from aptl.core.opencode import OpenRouterRoute, is_loopback_gateway
+from aptl.core.opencode import OpenRouterRoute, VertexRoute, is_loopback_gateway
 
 Label = Annotated[
     str, Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._:-]*$")
@@ -16,6 +16,8 @@ Label = Annotated[
 Count = Annotated[int, Field(ge=1, le=32768)]
 Temperature = Annotated[float, Field(ge=0, le=2, allow_inf_nan=False)]
 Probability = Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)]
+#: OpenCode gateways whose native turn limit LilRAE enforces.
+_OPENCODE_GATEWAYS = frozenset({"openrouter", "google-vertex"})
 
 
 class ClosedModel(BaseModel):
@@ -49,7 +51,7 @@ class RequestProfile(ClosedModel):
         ),
     ]
     model: str
-    gateway: Literal["anthropic", "openai", "openrouter"]
+    gateway: Literal["anthropic", "openai", "openrouter", "google-vertex"]
     gateway_endpoint: str
     serving_provider: str
     no_fallback: StrictBool
@@ -83,7 +85,7 @@ class RequestProfile(ClosedModel):
     @model_validator(mode="after")
     def explicit_controls(self) -> RequestProfile:
         if self.assistant_turn_limit is not None and (
-            self.gateway != "openrouter"
+            self.gateway not in _OPENCODE_GATEWAYS
             or self.assistant_turn_limit.state not in {"set", "locked"}
         ):
             raise ValueError("native assistant turn control is unsupported")
@@ -139,32 +141,45 @@ class RequestCatalog(ClosedModel):
 
     def _validate_route(self, profile: RequestProfile) -> None:
         """Admit the gateway and any enforceable exclusive serving route."""
+        if self.provider == "opencode" and profile.gateway == VertexRoute.provider_id:
+            self._validate_vertex_route(profile)
+            return
         gateway = {"claude": "anthropic", "codex": "openai", "opencode": "openrouter"}[
             self.provider
         ]
         if profile.gateway != gateway:
             raise ValueError("request gateway is unsupported by this implementation")
-        endpoints = {
-            "anthropic": "https://api.anthropic.com",
-            "openai": "https://api.openai.com/v1",
-            "openrouter": "https://openrouter.ai/api/v1",
-        }
-        if (
-            self.provider != "opencode"
-            and profile.gateway_endpoint != endpoints[gateway]
-            and not is_loopback_gateway(
-                profile.gateway_endpoint,
-                path="" if self.provider == "claude" else "/v1",
-            )
-        ):
-            raise ValueError("request gateway endpoint is not approved")
         if self.provider == "opencode":
             OpenRouterRoute(
                 endpoint=profile.gateway_endpoint,
                 serving_provider=profile.serving_provider,
             )
-        elif profile.serving_provider != gateway:
+            return
+        self._validate_native_endpoint(profile, gateway)
+        if profile.serving_provider != gateway:
             raise ValueError("exclusive alternate serving routes are unsupported")
+
+    @staticmethod
+    def _validate_vertex_route(profile: RequestProfile) -> None:
+        """The attached Vertex AI identity has one endpoint and no alternate route."""
+        if (
+            profile.gateway_endpoint != VertexRoute.endpoint
+            or profile.serving_provider != VertexRoute.serving_provider
+            or not VertexRoute.admits(profile.model)
+        ):
+            raise ValueError("request Vertex AI route is not approved")
+
+    def _validate_native_endpoint(self, profile: RequestProfile, gateway: str) -> None:
+        """Admit the vendor endpoint of a CLI adapter, or an explicit loopback fake."""
+        endpoints = {
+            "anthropic": "https://api.anthropic.com",
+            "openai": "https://api.openai.com/v1",
+        }
+        if profile.gateway_endpoint != endpoints[gateway] and not is_loopback_gateway(
+            profile.gateway_endpoint,
+            path="" if self.provider == "claude" else "/v1",
+        ):
+            raise ValueError("request gateway endpoint is not approved")
 
     def _validate_reasoning(self, profile: RequestProfile) -> None:
         """Keep effort vocabulary and reasoning modes native to each adapter."""

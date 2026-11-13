@@ -280,7 +280,7 @@ class ProvisionerStartMixin(object):
             readback_diagnostics, _ = realization_authority_disclosure(
                 plan,
                 validation_snapshot,
-                manifest=create_aptl_manifest(),
+                manifest=self.reporting_manifest or create_aptl_manifest(),
             )
             settling, unobserved = _unsettled_readback(
                 plan, validation_snapshot, readback_diagnostics
@@ -323,7 +323,7 @@ class ProvisionerStartMixin(object):
         from aptl.backends.lilrae_apparatus_reporting import append_verified_apparatus
 
         return append_verified_apparatus(
-            result, self._lilrae_apparatus_resources, apparatus_observations
+            result, self._lilrae_apparatus_resources, apparatus_observations, plan
         )
 
     def _realized_snapshot(

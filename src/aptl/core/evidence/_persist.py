@@ -262,8 +262,9 @@ def persist_success_outcome(
     Enforces the binding's byte quota during streaming (truncation flips the
     effective status and adds a mandatory loss disclosure), redacts structured
     payloads, and derives a deterministic evidence-record identity.
-    ``WITHHELD``-visibility evidence keeps its bytes but is recorded as
-    ``redaction_state="withheld"`` so a participant projection can drop it.
+    Evaluator-only references stay excluded from participant projections.
+    Typed observations retain their applied redaction policy: the portable
+    contract forbids known values in a record marked ``withheld``.
     The record's capture time is the collector's observed finish time.
     """
     captured_at = outcome.finished_at
@@ -288,7 +289,12 @@ def persist_success_outcome(
         CaptureVisibility.EVALUATOR_ONLY,
         CaptureVisibility.APPARATUS_ONLY,
     )
-    redaction_state = "withheld" if withheld else structured_redaction_state
+    if withheld and not outcome.source_pipeline.get("typed_description"):
+        redaction_state = "withheld"
+    elif binding.redaction_policy:
+        redaction_state = "redacted"
+    else:
+        redaction_state = structured_redaction_state
     loss_disclosure = _loss_disclosure(
         outcome, effective_status=effective_status, redaction_state=redaction_state
     )
