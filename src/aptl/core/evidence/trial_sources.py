@@ -37,7 +37,7 @@ def trial_capture_registrations(
 def _registration(
     name: str, role: str, source_refs: frozenset[str]
 ) -> CollectorRegistration:
-    """Describe one redacted, run-scoped log source and its capture offer."""
+    """Describe one raw, run-scoped log source and its capture offer."""
     offer = ObservationCaptureOffer(
         offer_id=name,
         offer_version="1.0.0",
@@ -54,13 +54,13 @@ def _registration(
         channel_refs=frozenset({role}),
         window_kinds=frozenset({"run", "apparatus"}),
         integrity_modes=frozenset({"checksum"}),
-        sensitivity="redacted",
+        sensitivity="plain",
         availability="available",
         fidelity="complete",
-        disclosure="redacted",
+        disclosure="full",
         retention_policy_refs=frozenset({"run_lifetime"}),
         export_policy="not-required",
-        redaction_policy="redact_secrets",
+        redaction_policy=None,
     )
     return CollectorRegistration(
         registration_id=name,
@@ -72,15 +72,15 @@ def _registration(
         window_kinds=offer.window_kinds,
         media_types=offer.media_types,
         required_artifact_roles=offer.artifact_roles,
-        supported_sensitivities=frozenset({"redacted"}),
-        supports_redaction=True,
+        supported_sensitivities=frozenset({"plain"}),
+        supports_redaction=False,
         integrity_modes=offer.integrity_modes,
         sealing_modes=frozenset({"digest"}),
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
         limits=CaptureLimits(_MAX_BYTES, 2 if name == SESSION_REGISTRATION else 1, 900),
-        redaction_policies=frozenset({"redact_secrets"}),
+        redaction_policies=frozenset(),
         retention_policies=offer.retention_policy_refs,
         capture_offer=offer,
     )

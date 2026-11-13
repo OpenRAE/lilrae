@@ -253,8 +253,8 @@ def _run_action_command(
             list(spec.command),
             timeout=spec.timeout_seconds,
         )
-        stdout = redact(str(getattr(result, "stdout", "")))
-        stderr = redact(str(getattr(result, "stderr", "")))
+        stdout = str(getattr(result, "stdout", ""))
+        stderr = str(getattr(result, "stderr", ""))
         returncode = int(getattr(result, "returncode", 1))
     except Exception as exc:
         stderr = redact(f"{type(exc).__name__}: {exc}")

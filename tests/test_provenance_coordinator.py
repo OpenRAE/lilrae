@@ -268,18 +268,6 @@ class TestRequiredProviders:
 class TestPayloadSafety:
     """Provider payloads are bounded and secret-free before they reach a record."""
 
-    def test_a_secret_shaped_payload_is_rejected_not_redacted_into_the_record(self):
-        provider = _StubProvider(
-            "apparatus",
-            result=ProvenanceResult(
-                provider_id="apparatus",
-                status=ProvenanceStatus.COLLECTED,
-                payload={"api_key": "AKIAIOSFODNN7EXAMPLE"},
-            ),
-        )
-        collection = _collect([provider])
-        assert collection.sections["apparatus"].status is ProvenanceStatus.FAILED
-        assert "AKIAIOSFODNN7EXAMPLE" not in repr(collection.projection())
 
     def test_an_unserializable_payload_fails_closed(self):
         provider = _StubProvider(

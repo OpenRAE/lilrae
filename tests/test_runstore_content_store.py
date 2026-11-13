@@ -12,11 +12,12 @@ narrowly rather than adding a second repository.
 from __future__ import annotations
 
 import hashlib
+import json
 
 import pytest
 
 from aptl.core.evidence.content_store import create_content_addressed, create_run_json_once
-from aptl.core.runstore import LocalRunStore, RunStoreConflictError, SecretInvariantError
+from aptl.core.runstore import LocalRunStore, RunStoreConflictError
 
 
 def _store(tmp_path) -> LocalRunStore:
@@ -95,6 +96,12 @@ class TestContentAddressed:
 
 
 class TestRunJsonOnce:
+    def test_preserves_scenario_credentials_and_assertion_results(self, tmp_path):
+        store = _store(tmp_path)
+        payload = {"proposition_truth_results": {"evaluation.assertion.demo-credentials-present": {"assertion_outcome": "false", "password": "scenario-fixture"}}}
+        target = create_run_json_once(store, "run-1", "trial/evaluation.json", payload)
+        assert json.loads(target.read_bytes()) == payload
+
     def test_writes_under_the_run_dir(self, tmp_path):
         store = _store(tmp_path)
         target = create_run_json_once(store, "run-1", "evidence/records/rec-1.json", {"a": 1})
@@ -112,8 +119,3 @@ class TestRunJsonOnce:
         create_run_json_once(store, "run-1", "evidence/r.json", {"a": 1})
         with pytest.raises(RunStoreConflictError):
             create_run_json_once(store, "run-1", "evidence/r.json", {"a": 2})
-
-    def test_secret_shaped_payload_is_rejected(self, tmp_path):
-        store = _store(tmp_path)
-        with pytest.raises(SecretInvariantError):
-            create_run_json_once(store, "run-1", "evidence/r.json", {"api_key": "sk-live-secret-value-123456789"})

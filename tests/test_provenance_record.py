@@ -18,7 +18,7 @@ from aptl.core.provenance.record import (
     build_provenance_record,
     publish_provenance_record,
 )
-from aptl.core.runstore import LocalRunStore, RunStoreConflictError, SecretInvariantError
+from aptl.core.runstore import LocalRunStore, RunStoreConflictError
 
 _RUN_ID = "run_20260101T000000Z"
 
@@ -152,25 +152,6 @@ class TestPublication:
                 store=store, run_id=_RUN_ID, collection=conflicting
             )
 
-    def test_a_secret_shaped_payload_is_refused_by_the_store_invariant(self, tmp_path):
-        """Defense in depth behind the providers' allowlist."""
-        store = _store(tmp_path)
-        store.create_run(_RUN_ID)
-        leaky = _collection(
-            sections={
-                "apparatus": ProvenanceSection(
-                    provider_id="apparatus",
-                    status=ProvenanceStatus.COLLECTED,
-                    declaration_digest="sha256:" + "a" * 64,
-                    content_identity="sha256:" + "b" * 64,
-                    payload={"password": "hunter2"},
-                    leaf_count=1,
-                ),
-                "experiment": _experiment_section(),
-            }
-        )
-        with pytest.raises(SecretInvariantError):
-            publish_provenance_record(store=store, run_id=_RUN_ID, collection=leaky)
 
     def test_the_record_never_lands_outside_the_run_directory(self, tmp_path):
         store = _store(tmp_path)

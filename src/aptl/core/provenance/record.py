@@ -105,9 +105,8 @@ def publish_provenance_record(
 
     Raises :class:`ProvenanceContextError` when that context is absent,
     :class:`~aptl.core.runstore.RunStoreConflictError` when a record already
-    exists with different canonical bytes, and
-    :class:`~aptl.core.runstore.SecretInvariantError` when the shared
-    redaction policy would alter the payload.
+    exists with different canonical bytes.
+    Scenario content is preserved by the create-once store.
     """
     if not _has_authoritative_context(collection):
         raise ProvenanceContextError(

@@ -53,7 +53,6 @@ from aptl.core.provenance.registry import (
     ProvenanceProviderRegistry,
     SealProfile,
 )
-from aptl.utils.redaction import redact
 
 log = logging.getLogger(__name__)
 
@@ -165,19 +164,12 @@ def _payload_is_bounded(value: object, depth: int = 0) -> bool:
 
 
 def _payload_is_safe(payload: Mapping[str, object]) -> bool:
-    """Return whether ``payload`` is bounded, canonical, and secret-free.
-
-    The shared redactor is reused as a DRIFT DETECTOR here, matching the
-    runstore's create-once secret invariant: a payload the production
-    classification policy would change never reaches a record. It is not
-    permission for a provider to read a prohibited source in the first place —
-    that is settled by allowlisting the source.
-    """
+    """Return whether supplied provenance is bounded and canonical."""
     if not _payload_is_bounded(payload):
         return False
     try:
         snapshot = dict(payload)
-        safe = redact(snapshot) == snapshot
+        safe = True
         derive_identity(_SECTION_DOMAIN, {"payload": snapshot})
     except (TypeError, ValueError, RecursionError):
         safe = False

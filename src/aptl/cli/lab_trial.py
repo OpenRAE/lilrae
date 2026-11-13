@@ -30,7 +30,6 @@ from aptl.core.participant_binding import LilraeParticipantBinding
 from aptl.core.mcp_policy import configured_server_ids
 from aptl.core.opencode import OpenCodeInvocationEvidence
 from aptl.core.runstore import LocalRunStore
-from aptl.utils.redaction import redact
 from aptl.utils.logging import get_logger
 from aptl.core.trial_attempt import TrialAttempt
 from aptl.core.trial_control import TrialControl
@@ -358,8 +357,8 @@ def _evaluate_trial(
         run_id,
         "trial/evaluated-runtime.json",
         {
-            "redaction_policy": "redact_secrets",
-            "snapshot": redact(runtime_snapshot_record_payload(snapshot)),
+            "redaction_policy": "none",
+            "snapshot": runtime_snapshot_record_payload(snapshot),
         },
     )
     return _outcome_status(objectives)

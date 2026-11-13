@@ -43,14 +43,14 @@ def capture_request(tmp_path):
         disclosure="redacted",
         retention_policy_refs=frozenset({"run_lifetime"}),
         export_policy="not-required",
-        redaction_policy="redact_secrets",
+        redaction_policy=None,
     )
     registration = replace(
         _registration(),
         channel_kind="backend-log",
         capture_offer=offer,
         integrity_modes=frozenset({"checksum"}),
-        redaction_policies=frozenset({"redact_secrets"}),
+        redaction_policies=frozenset(),
         retention_policies=frozenset({"run_lifetime"}),
     )
     registry = CollectorRegistry((registration,))
@@ -73,7 +73,7 @@ def capture_request(tmp_path):
         sensitivity="internal",
         disclosure="redacted",
         retention_policy_refs=("run_lifetime",),
-        redaction_policy="redact_secrets",
+        redaction_policy=None,
     )
     plan = admit_capture_demands(
         (demand,), source_identity="sha256:" + "a" * 64, registry=registry

@@ -32,8 +32,7 @@ from aptl.core.evidence.records import (
     RecordScope,
     build_evidence_record,
 )
-from aptl.core.evidence._bounded_json import capture_prefix
-from aptl.core.experiment.capture_registry import CaptureBinding, CaptureVisibility
+from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.redaction import redact
 
@@ -58,7 +57,6 @@ _EVIDENCE_SUBDIR = "evidence/blobs"
 
 #: Run-relative subdirectory for the explicit, create-once evidence-record ledger.
 _LEDGER_SUBDIR = "evidence/records"
-_MAX_REDACTION_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -159,17 +157,12 @@ def _prepare_bytes(
             raise ValueError("capture media type has no trusted redaction adapter")
         return outcome.chunks, "none", False
 
-    input_limit = binding.limits.max_bytes
-    if media_type == _JSON_MEDIA_TYPE and isinstance(outcome.chunks, (tuple, list)):
-        input_limit = max(input_limit, _MAX_REDACTION_BYTES)
-    raw = _consume_bounded_chunks(outcome.chunks, input_limit)
+    raw = _consume_bounded_chunks(outcome.chunks, binding.limits.max_bytes)
     handler = _redaction_handler(binding)
     redacted, changed = _prepare_redactable_bytes(raw, media_type, handler)
-    truncated = len(redacted) > binding.limits.max_bytes
-    if truncated and media_type == _JSON_MEDIA_TYPE:
-        prefix = capture_prefix(json.loads(redacted), {}, binding.limits.max_bytes)
-        redacted = json.dumps([prefix], separators=(",", ":")).encode()
-    return [redacted], ("redacted" if changed else "none"), truncated
+    if len(redacted) > binding.limits.max_bytes:
+        raise BufferError("capture exceeds its admitted byte budget")
+    return [redacted], ("redacted" if changed else "none"), False
 
 
 def _consume_bounded_chunks(chunks: Sequence[bytes], max_bytes: int) -> bytes:
@@ -243,6 +236,8 @@ def _prepare_json_lines(
         else:
             lines.append(_redact_json_bytes(line, handler))
     changed = any(was_changed for _, was_changed in lines)
+    if handler is None:
+        return raw, False
     redacted = b"\n".join(line for line, _ in lines) + (b"\n" if lines else b"")
     return redacted, changed
 
@@ -285,16 +280,7 @@ def persist_success_outcome(
         content = replace(content, truncated=True)
     effective_status = _effective_status(outcome, content=content, binding=binding)
 
-    withheld = binding.visibility_class in (
-        CaptureVisibility.EVALUATOR_ONLY,
-        CaptureVisibility.APPARATUS_ONLY,
-    )
-    if withheld and not outcome.source_pipeline.get("typed_description"):
-        redaction_state = "withheld"
-    elif binding.redaction_policy:
-        redaction_state = "redacted"
-    else:
-        redaction_state = structured_redaction_state
+    redaction_state = structured_redaction_state
     loss_disclosure = _loss_disclosure(
         outcome, effective_status=effective_status, redaction_state=redaction_state
     )

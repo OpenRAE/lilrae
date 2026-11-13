@@ -29,7 +29,7 @@ def _captured(tmp_path, *, unavailable=False):
             status=CollectorStatus.SOURCE_UNAVAILABLE
             if unavailable
             else CollectorStatus.OK,
-            records=[] if unavailable else [{"observation": "retained"}],
+            records=[] if unavailable else [{"observation": "retained", "password": "scenario-fixture"}],
         )
     )
     result = acquire_trial_evidence(
@@ -100,3 +100,34 @@ def test_a_fixed_file_list_cannot_replace_the_admitted_capture_plan(tmp_path):
     store.write_json(record.run_id, "trial/soc/manifest.json", {})
     seal = _seal(request, record.model_copy(update={"capture_plan_id": None}))
     assert seal["completeness"]["complete"] is False
+
+
+def test_final_results_and_seal_preserve_scenario_content(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from raes_contracts.runtime_state import RuntimeSnapshot
+    from aptl.backends import raes_evaluator
+    from aptl.cli.lab_trial import _evaluate_trial
+
+    request, capture, record = _captured(tmp_path)
+    truths = {"evaluation.assertion.demo-credentials-present": {"assertion_outcome": "false"}}
+    snapshot = RuntimeSnapshot(
+        evaluation_results={"evaluation.objective.demo": {"passed": False}},
+        proposition_truth_results=truths,
+    )
+    # Resume at the completed native evaluation; exercise the actual output writer.
+    monkeypatch.setattr(raes_evaluator, "refresh_evidence_truth", lambda **kwargs: None)
+    started = SimpleNamespace(
+        admitted=SimpleNamespace(target=None, execution_plan=None),
+        runtime=SimpleNamespace(snapshot=snapshot),
+        initial_evidence=(),
+    )
+    status = _evaluate_trial(started, request.run_store, record.run_id, capture)
+    root = request.run_store.get_run_path(record.run_id)
+    assert status == "failed"
+    assert json.loads((root / "trial/evaluation.json").read_bytes())["proposition_truth_results"] == truths
+    assert json.loads((root / "trial/evaluated-runtime.json").read_bytes())["snapshot"]["proposition_truth_results"] == truths
+    captured = json.loads((root / capture.refs[0].content_uri).read_bytes())
+    assert captured == [{"observation": "retained", "password": "scenario-fixture"}]
+    seal = _seal(request, record.model_copy(update={"outcome_status": status}))
+    assert seal["completeness"]["complete"] is True
+    assert seal["outcome_status"] == "failed"

@@ -12,7 +12,6 @@ from aptl.core.evidence._participant_tools import (
     aggregate_tool_calls,
     tool_sequence_complete,
 )
-from aptl.core.evidence._bounded_json import capture_prefix as _capture_prefix
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.protocol import RunScope
 from aptl.core.experiment.capture_registry import (
@@ -30,7 +29,6 @@ from aptl.utils.pathsafe import (
     open_contained_nofollow,
 )
 from aptl.core.evidence._participant_calls import aggregate_model_calls
-from aptl.utils.redaction import redact
 from aptl.utils.strict_json import loads_strict
 
 _IDENTITY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
@@ -69,7 +67,7 @@ def participant_capture_registration(
         "field_selectors": ("",),
         "window_kinds": frozenset({"run"}),
         "media_types": frozenset({"application/json"}),
-        "redaction_policy": "redact_secrets",
+        "redaction_policy": None,
         "channel_kinds": frozenset({"participant-observation"}),
         "source_classes": frozenset({"apparatus"}),
         "scopes": frozenset({"participant"}),
@@ -78,7 +76,7 @@ def participant_capture_registration(
     if not all(getattr(offer, key) == value for key, value in expected.items()):
         raise ValueError("participant capture offer is unsupported")
     supported = (
-        offer.sensitivity in {"internal", "restricted", "redacted"},
+        offer.sensitivity in {"plain", "internal", "restricted", "redacted"},
         offer.integrity_modes <= {"none", "checksum", "sha256-digest"},
         offer.retention_policy_refs <= {"run_lifetime"},
         _capture_limits_supported(limits),
@@ -96,14 +94,14 @@ def participant_capture_registration(
         media_types=offer.media_types,
         required_artifact_roles=offer.artifact_roles,
         supported_sensitivities=frozenset({offer.sensitivity}),
-        supports_redaction=True,
+        supports_redaction=False,
         integrity_modes=offer.integrity_modes,
         sealing_modes=frozenset({"digest"}),
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
         limits=limits,
-        redaction_policies=frozenset({"redact_secrets"}),
+        redaction_policies=frozenset(),
         retention_policies=offer.retention_policy_refs,
         capture_offer=offer,
     )
@@ -123,9 +121,7 @@ class ParticipantCaptureGrant:
         if (
             self.binding.visibility_class
             not in {CaptureVisibility.EVALUATOR_ONLY, CaptureVisibility.APPARATUS_ONLY}
-            or not self.binding.redaction_required
-            or self.binding.redaction_policy != "redact_secrets"
-            or self.binding.sensitivity not in {"internal", "restricted", "redacted"}
+            or self.binding.sensitivity not in {"plain", "internal", "restricted", "redacted"}
             or "application/json" not in self.binding.expected_media_types
             or any(
                 not isinstance(value, str) or not _IDENTITY.fullmatch(value)
@@ -196,7 +192,7 @@ class ParticipantCaptureArchive:
             raise ValueError("tool capture identity is invalid")
         identity = hashlib.sha256(f"{invocation}:{ordinal}".encode()).hexdigest()
         record = {
-            **redact(dict(payload)),
+            **dict(payload),
             **self.grant.identity(),
             "schema": "lilrae.participant-tool-capture/v1",
         }
@@ -228,7 +224,7 @@ class ParticipantCaptureArchive:
         if not isinstance(invocation, str) or not _IDENTITY.fullmatch(invocation):
             raise ValueError("participant capture invocation is invalid")
         self.expect_invocation(invocation)
-        safe = redact(dict(payload))
+        safe = dict(payload)
         record = {
             **safe,
             **self.grant.identity(),
@@ -237,21 +233,9 @@ class ParticipantCaptureArchive:
         }
         encoded = json.dumps(record, allow_nan=False).encode()
         if len(encoded) > self.grant.binding.limits.max_bytes:
-            record = _capture_prefix(
-                record,
-                {
-                    **self.grant.identity(),
-                    "schema": _CAPTURE_SCHEMA,
-                    "tool_observation_write_failed": self._tool_write_failed,
-                    "invocation_id": invocation,
-                    "calls": [],
-                    "records": [],
-                    "harness_failure_reason": record.get("harness_failure_reason"),
-                    "prompt_delivery": record.get("prompt_delivery"),
-                },
-                self.grant.binding.limits.max_bytes // 2,
-            )
+            raise BufferError("participant capture exceeds its admitted byte limit")
         name = hashlib.sha256(invocation.encode()).hexdigest() + _JSON_SUFFIX
+
         self.store.create_run_json_once(
             self.grant.scope.run_id, (self._relative / name).as_posix(), record
         )
@@ -422,14 +406,7 @@ class ParticipantCaptureArchive:
             len(json.dumps(records, separators=(",", ":")).encode())
             > self.grant.binding.limits.max_bytes
         ):
-            records = [
-                _capture_prefix(
-                    records[0],
-                    self.grant.identity(),
-                    self.grant.binding.limits.max_bytes,
-                )
-            ]
-            truncated = True
+            raise BufferError("participant capture exceeds its admitted byte limit")
         status = CollectorStatus.OK if complete else CollectorStatus.MID_RUN_LOSS
         if truncated:
             status = CollectorStatus.TRUNCATION
