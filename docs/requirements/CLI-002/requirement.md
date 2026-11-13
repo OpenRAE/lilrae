@@ -38,3 +38,8 @@ The bash script passed invalid configurations silently, causing containers to fa
 - IMPLEMENTS → GITHUB_ISSUE `138` (Issue 138: implement stubbed CLI commands)
 - IMPLEMENTS → ADR `docs/adrs/adr-025-strict-first-party-config-schema.md` (ADR-025: Strict first-party config schema)
 - TESTS → TEST `conformance/testdata/cases/config.txtar` (Black-box config validation of unknown fields, invalid JSON, and a missing file)
+- IMPLEMENTS → CODE_FILE `internal/config/decode.go` (Go strict decoding of aptl.json with the presence rules)
+- IMPLEMENTS → CODE_FILE `internal/config/checks.go` (Go semantic checks of aptl.json)
+- IMPLEMENTS → CODE_FILE `internal/config/migrate.go` (Go configuration migration)
+- TESTS → TEST `internal/config/decode_test.go` (Go strict decoding, rejections, and semantic checks)
+- TESTS → TEST `internal/config/migrate_test.go` (Go configuration migration)

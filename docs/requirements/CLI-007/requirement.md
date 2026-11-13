@@ -33,3 +33,5 @@ CLI-002 covers configuration *validation* but not inspection. Users currently ha
 - TESTS → TEST `tests/test_cli_config.py` (CLI config validate/show tests)
 - IMPLEMENTS → GITHUB_ISSUE `138` (Issue 138: implement stubbed CLI commands)
 - TESTS → TEST `conformance/testdata/cases/config.txtar` (Black-box config show text and JSON with defaults)
+- IMPLEMENTS → CODE_FILE `internal/config/config.go` (Go configuration discovery, loading, and resolved form)
+- TESTS → TEST `internal/config/config_test.go` (Go discovery, loading, and resolved form)
