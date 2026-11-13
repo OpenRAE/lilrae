@@ -4,13 +4,7 @@ Provides a protocol for storing per-run experiment data and a local
 filesystem implementation. Each run is identified by a UUID and
 stored in a self-contained directory with all collected artifacts.
 
-This module is the Python persistence serialization boundary for run
-archives (ADR-029): structured writes (``write_json`` / ``write_jsonl``
-/ ``append_jsonl``) run the shared :func:`aptl.utils.redaction.redact`
-helper so control-plane/operator secrets are masked before bytes hit
-disk. ``write_file`` (opaque bytes) and ``copy_file`` (arbitrary files)
-cannot be structurally redacted and are pass-through by design —
-callers must not route control-plane secrets through them.
+Run artifacts preserve the supplied scenario content.
 
 Directories are created ``0700`` and files ``0600`` whatever the umask
 (ADR-033); see :func:`aptl.core.runstore_internals._make_private_run_dirs`.
@@ -35,8 +29,6 @@ from aptl.core.runstore_internals import (
     RunManifest,
     RunStoreConflictError,
     SealedRunError,
-    SecretInvariantError,
-    _assert_no_secret_drift,
     _canonicalize_payload,
     _copy_private,
     _HeldLock,
@@ -57,7 +49,6 @@ from aptl.utils.pathsafe import (
     open_dir_contained_nofollow,
     read_contained_nofollow,
 )
-from aptl.utils.redaction import redact
 
 __all__ = [
     "LocalRunStore",
@@ -66,7 +57,6 @@ __all__ = [
     "RunStoreConflictError",
     "SEAL_MARKER_RELPATH",
     "SealedRunError",
-    "SecretInvariantError",
     "resolve_active_run_dir",
 ]
 
@@ -302,20 +292,14 @@ class LocalRunStore:
             log.debug("Wrote %d bytes to %s", len(data), target)
 
     def write_json(self, run_id: str, relative_path: str, obj: object) -> None:
-        # Redact at the persistence boundary (ADR-029) so individual
-        # callers do not own the policy and run-archive contents are
-        # control-plane-secret-safe by construction. ``default`` runs
-        # through redaction too — see :func:`_safe_default`.
-        safe = redact(obj)
-        data = json.dumps(safe, indent=2, default=_safe_default).encode("utf-8")
+        data = json.dumps(obj, indent=2, default=_safe_default).encode("utf-8")
         self.write_file(run_id, relative_path, data)
 
     def write_jsonl(
         self, run_id: str, relative_path: str, records: list[dict[str, Any]]
     ) -> None:
-        # Redact each record at the persistence boundary (ADR-029).
         lines = [
-            json.dumps(redact(r), separators=(",", ":"), default=_safe_default)
+            json.dumps(r, separators=(",", ":"), default=_safe_default)
             for r in records
         ]
         data = ("\n".join(lines) + "\n").encode("utf-8") if lines else b""
@@ -336,9 +320,8 @@ class LocalRunStore:
         with self.finalization_lock(run_id):
             self._reject_if_sealed(run_id, relative_path)
             target = self._prepare_target_parent(run_id, relative_path)
-            # Redact each record at the persistence boundary (ADR-029).
             lines = [
-                json.dumps(redact(r), separators=(",", ":"), default=_safe_default)
+                json.dumps(r, separators=(",", ":"), default=_safe_default)
                 for r in records
             ]
             chunk = ("\n".join(lines) + "\n").encode("utf-8")
@@ -374,8 +357,7 @@ class LocalRunStore:
         safe_run_id = _validate_id(run_id, "run_id")
         safe_relpath = _validate_relative_path(relative_path).replace("\\", "/")
         contained_relpath = f"{safe_run_id}/{safe_relpath}"
-        canonical, normalized = _canonicalize_payload(payload)
-        _assert_no_secret_drift(normalized)
+        canonical, _ = _canonicalize_payload(payload)
         _private_store_entry(self._base_dir, safe_run_id)
         target = self._base_dir / safe_run_id / PurePosixPath(safe_relpath)
         try:
@@ -409,29 +391,16 @@ class LocalRunStore:
         ``manifest.json`` and is invisible to :meth:`list_runs`.
 
         Semantics:
-          1. Canonicalize ``payload`` ONCE to RFC 8785 bytes, after a JSON
-             round-trip so both the secret-invariant comparison and the
-             persisted bytes reflect exactly the same structure (a tuple or
-             other non-JSON shape cannot silently disagree with what lands
-             on disk).
-          2. Secret invariant: if the shared ``redact()`` policy would
-             change the canonicalized structure at all, raise
-             :class:`SecretInvariantError` — never silently persist a
-             payload that differs from what was approved.
-          3. Publish with ``O_CREAT | O_EXCL`` under a descriptor-relative,
-             no-follow path (:mod:`aptl.utils.pathsafe`), so a pre-existing
-             symlink at any path component cannot redirect the write
-             outside ``base_dir``.
-          4. Idempotent: a target that already exists with byte-identical
-             canonical content is a no-op success. Different existing
-             bytes raise :class:`RunStoreConflictError`.
+          1. Canonicalize the supplied structure to RFC 8785 bytes.
+             Preserve scenario content without classification or redaction.
+          2. Publish atomically beneath the store root without following symlinks.
+          3. Accept identical existing bytes and reject conflicting bytes.
 
         Returns the absolute path written (or already present).
         """
         safe_namespace = _validate_id(namespace, "namespace")
         safe_name = _validate_id(name, "name")
-        canonical, normalized = _canonicalize_payload(payload)
-        _assert_no_secret_drift(normalized)
+        canonical, _ = _canonicalize_payload(payload)
 
         _private_store_entry(self._base_dir, safe_namespace)
         relative_path = f"{safe_namespace}/{safe_name}.json"

@@ -20,7 +20,7 @@ import pytest
 @pytest.mark.parametrize(
     "participants", [("agents.operator",), ("agents.red", "agents.blue")]
 )
-def test_native_usage_survives_the_real_acquisition_and_redaction_path(
+def test_native_usage_and_scenario_credentials_survive_acquisition(
     tmp_path, participants
 ):
     request, _ = capture_request(tmp_path)
@@ -31,7 +31,7 @@ def test_native_usage_survives_the_real_acquisition_and_redaction_path(
         capture_kind="log",
         artifact_roles=("lilrae.participant-sessions",),
         channel_refs=("lilrae.participant-sessions",),
-        sensitivity="redacted",
+        sensitivity="plain",
     )
     registry = CollectorRegistry((registration,))
     plan = admit_capture_demands(
@@ -73,7 +73,7 @@ def test_native_usage_survives_the_real_acquisition_and_redaction_path(
     content = (
         request.run_store.get_run_path(request.run_id) / result.refs[0].content_uri
     ).read_bytes()
-    assert b"private-test-credential" not in content
+    assert b"private-test-credential" in content
     payload = json.loads(content)
     assert len(payload) == len(participants)
     for item in payload:

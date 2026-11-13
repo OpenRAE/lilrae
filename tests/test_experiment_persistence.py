@@ -17,7 +17,6 @@ import rfc8785
 from aptl.core.runstore import (
     LocalRunStore,
     RunStoreConflictError,
-    SecretInvariantError,
 )
 from aptl.utils.pathsafe import PathContainmentError
 
@@ -113,35 +112,6 @@ class TestCreateJsonOnceSymlinkContainment:
         assert not outside_target.exists()
 
 
-class TestCreateJsonOnceSecretInvariant:
-    def test_rejects_payload_with_a_sensitive_key(self, tmp_path):
-        store = LocalRunStore(tmp_path / "store")
-
-        with pytest.raises(SecretInvariantError):
-            store.create_json_once(
-                "ns", "plan-1", {"condition_id": "c1", "api_key": "should-not-persist"}
-            )
-
-        assert not (tmp_path / "store" / "ns" / "plan-1.json").exists()
-
-    def test_rejects_payload_with_embedded_credential_shaped_string(self, tmp_path):
-        store = LocalRunStore(tmp_path / "store")
-
-        with pytest.raises(SecretInvariantError):
-            store.create_json_once(
-                "ns",
-                "plan-1",
-                {"note": "boot ok; Authorization: Bearer XYZ.TOKEN"},
-            )
-
-        assert not (tmp_path / "store" / "ns" / "plan-1.json").exists()
-
-    def test_accepts_a_payload_with_no_secret_shaped_content(self, tmp_path):
-        store = LocalRunStore(tmp_path / "store")
-        path = store.create_json_once(
-            "ns", "plan-1", {"condition_id": "c1", "trial_count": 3}
-        )
-        assert json.loads(path.read_bytes()) == {"condition_id": "c1", "trial_count": 3}
 
 
 class TestCreateJsonOnceInputValidation:

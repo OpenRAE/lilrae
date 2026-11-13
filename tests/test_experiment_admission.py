@@ -1535,7 +1535,7 @@ class _MismatchedReadBackRunStore:
 
 class _RaisingRunStore:
     """A fake ``run_store`` whose ``create_json_once`` always raises --
-    simulating a ``RunStoreConflictError``/``SecretInvariantError`` (both
+    simulating a ``RunStoreConflictError`` (a
     ``ValueError`` subclasses) from the real ``LocalRunStore``.
     """
 

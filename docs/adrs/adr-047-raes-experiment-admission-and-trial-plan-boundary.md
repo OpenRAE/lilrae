@@ -249,15 +249,11 @@ The existing `LocalRunStore.write_json()` performs lexical path validation and
 redaction, but it is overwrite-capable, follows existing symlink components,
 and emits presentation JSON rather than canonical bytes.
 Immutability therefore requires a narrow create-once canonical JSON operation
-on the existing run-store protocol, not a second experiment repository. The operation enforces secret classification and canonicalizes once. Atomic exclusive creation accepts identical existing bytes and rejects conflicting bytes. `write_file()` and `copy_file()` are not acceptable for structured plans
-because they bypass structural redaction.
-
-The create-once operation must preserve semantic bytes: admission rejects a
-plan projection if applying the shared secret classifier/redaction policy would
-change an identity-bearing value. It must never persist a silently redacted
-plan that differs from the plan approved for execution. RFC 8785 is a direct
-runtime dependency for this operation; do not rely on it only as a transitive
-dependency of `raes`.
+on the existing run-store protocol, not a second experiment repository.
+Persistence preserves scenario content, including scenario credentials and
+credential-shaped identifiers. It canonicalizes once, accepts identical
+existing bytes, and rejects conflicting bytes without silently changing data.
+RFC 8785 is a direct runtime dependency for this operation.
 
 Issue #557 reuses this primitive for a distinct run-scoped integrity need.
 `LocalRunStore.create_run_json_once()` publishes an immutable action-evidence

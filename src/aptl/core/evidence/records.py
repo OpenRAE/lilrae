@@ -238,5 +238,5 @@ def build_evidence_record(
         sensitivity=disclosure.sensitivity,
         redaction_state=disclosure.redaction_state,
         redaction_policy=redaction_policy,
-        typed_description=redact(outcome.source_pipeline.get("typed_description")),
+        typed_description=(redact(outcome.source_pipeline.get("typed_description")) if binding.redaction_required else outcome.source_pipeline.get("typed_description")),
     )

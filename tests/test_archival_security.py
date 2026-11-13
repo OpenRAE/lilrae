@@ -16,7 +16,7 @@ from tests.archival_fixtures import completed_context
 from aptl.core.archival.coordinator import finalize_terminal_attempt
 from aptl.core.archival.layout import RUN_MANIFEST_RELPATH, SEAL_MARKER_RELPATH
 from aptl.core.archival.seal import SealedArtifactSpec
-from aptl.core.runstore import LocalRunStore, SecretInvariantError
+from aptl.core.runstore import LocalRunStore
 from aptl.utils.pathsafe import PathContainmentError
 
 # A secret-shaped value the shared redactor flags (a PEM private-key block).
@@ -51,15 +51,6 @@ class TestContainment:
 
 
 class TestSecretInvariant:
-    def test_secret_shaped_completeness_statement_is_rejected(self, tmp_path):
-        store = _store(tmp_path)
-        context = completed_context()
-        with pytest.raises(SecretInvariantError):
-            finalize_terminal_attempt(
-                context,
-                store=store,
-                completeness_statement=f"sealed with token {_FAKE_SECRET}",
-            )
 
     def test_sealed_marker_and_manifest_carry_no_secret(self, tmp_path):
         store = _store(tmp_path)
