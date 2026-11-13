@@ -1,0 +1,21 @@
+{
+  "build_sha256": "7df4e4136301f16589b0f30bf91a61380fca5f8ef22dd36570f5ebe1d4ec802c",
+  "build_version": "1.19.5",
+  "cleanup_residual": [],
+  "completed": false,
+  "cost_reported": 0,
+  "credential_local_cleanup": "succeeded",
+  "endpoint": "https://openrouter.ai/api/v1",
+  "failure_type": "BoundedProcessError",
+  "input_tokens": 1981,
+  "model": "openrouter/liquid/lfm-2.5-2.6b:free",
+  "output_token_cap": 16,
+  "output_tokens": 0,
+  "scope": "single bounded free-model connectivity and trigger smoke; not experiment qualification",
+  "served_model": null,
+  "served_provider": null,
+  "serving_provider_requested": "liquid/fp8",
+  "status": "failed",
+  "stdout_bytes": 621,
+  "timeout_seconds": 10
+}

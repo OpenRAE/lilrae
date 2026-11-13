@@ -4,7 +4,7 @@ The fixture starts from the public ``aptl lab init`` asset materializer, then
 selects the same small SDL used by the real-Docker materializer integration
 test. The scenario intentionally belongs to APTL's test suite rather than to a
 scenario adapter: it proves the generic parse, plan, qualification, generated
-model, and pre-mutation lifecycle path without borrowing TechVault semantics.
+model, and pre-mutation lifecycle path without borrowing a released pack's semantics.
 It is the SDL of APTL's owned fixture pack (issue #985), selected by explicit
 path exactly as the clean-wheel job selects it, so this is project-tree
 admission; admission of the pack itself is proven in

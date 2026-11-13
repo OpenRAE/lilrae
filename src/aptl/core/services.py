@@ -131,7 +131,9 @@ class WazuhApiProbe:
         return f"{self.phase} phase failed: {self.category}{code}"
 
 
-def probe_indexer_api(url: str, username: str, password: str) -> WazuhApiProbe:
+def probe_indexer_api(
+    url: str, username: str, password: str, *, ca_cert_path: str
+) -> WazuhApiProbe:
     """Probe the Wazuh indexer API phase by phase and classify the outcome.
 
     Transport first, with a credential-free request: any HTTP status proves
@@ -142,13 +144,13 @@ def probe_indexer_api(url: str, username: str, password: str) -> WazuhApiProbe:
     """
 
     base = url.rstrip("/")
-    transport = curl_request(f"{base}/", insecure=True, timeout=10)
+    transport = curl_request(f"{base}/", ca_cert_path=ca_cert_path, timeout=10)
     if transport.http_status is None:
         return _api_failure("transport", transport)
     auth = curl_request(
         f"{base}/",
         auth_header=basic_auth_header(username, password),
-        insecure=True,
+        ca_cert_path=ca_cert_path,
         timeout=10,
     )
     status = auth.http_status
@@ -157,7 +159,9 @@ def probe_indexer_api(url: str, username: str, password: str) -> WazuhApiProbe:
     return _api_failure("authentication", auth)
 
 
-def probe_manager_api(url: str, username: str, password: str) -> WazuhApiProbe:
+def probe_manager_api(
+    url: str, username: str, password: str, *, ca_cert_path: str
+) -> WazuhApiProbe:
     """Probe the Wazuh manager API phase by phase and classify the outcome.
 
     Transport comes first, with a credential-free request: any HTTP status
@@ -169,14 +173,14 @@ def probe_manager_api(url: str, username: str, password: str) -> WazuhApiProbe:
     """
 
     base = url.rstrip("/")
-    transport = curl_request(f"{base}/", insecure=True, timeout=10)
+    transport = curl_request(f"{base}/", ca_cert_path=ca_cert_path, timeout=10)
     if transport.http_status is None:
         return _api_failure("transport", transport)
 
     auth = curl_request(
         f"{base}/security/user/authenticate",
         auth_header=basic_auth_header(username, password),
-        insecure=True,
+        ca_cert_path=ca_cert_path,
         method="POST",
         timeout=10,
     )
@@ -184,16 +188,16 @@ def probe_manager_api(url: str, username: str, password: str) -> WazuhApiProbe:
     if token is None:
         return _api_failure("authentication", auth)
 
-    return _manager_status_probe(base, token)
+    return _manager_status_probe(base, token, ca_cert_path)
 
 
-def _manager_status_probe(base: str, token: str) -> WazuhApiProbe:
+def _manager_status_probe(base: str, token: str, ca_cert_path: str) -> WazuhApiProbe:
     """Run the manager-status phase with an authenticated session token."""
 
     status = curl_request(
         f"{base}/manager/status",
         auth_header=f"Bearer {token}",
-        insecure=True,
+        ca_cert_path=ca_cert_path,
         timeout=10,
     )
     if status.http_status != 200:

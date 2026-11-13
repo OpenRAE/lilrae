@@ -842,6 +842,43 @@ class TestRedactorBounds:
         assert "password=hunter2" not in out
         assert f"password={REDACTED}" in out
 
+    def test_long_dash_run_is_linear_not_redos(self):
+        # The long-flag matcher re-scanned a dash run from each `--` in it.
+        payload = "-" * 20000
+        out, elapsed = self._redact_within_budget(payload)
+        assert elapsed < self._BUDGET_S
+        assert out == payload
+
+    def test_repeated_impacket_targets_are_linear_not_redos(self):
+        # The bare target regex scanned the value again from each `u:` start.
+        payload = "psexec.py " + "u:x!" * 15000
+        out, elapsed = self._redact_within_budget(payload)
+        assert elapsed < self._BUDGET_S
+        assert out == payload
+
+    def test_oversized_input_still_runs_command_flag_passes(self):
+        from aptl.utils.redaction import _MAX_SCAN_LEN
+
+        command = "hydra -l admin -p 1234 ssh://host"
+        payload = ("x" * 100 + "\n") * 2000 + command
+        assert len(payload) > _MAX_SCAN_LEN
+        out, elapsed = self._redact_within_budget(payload)
+        assert elapsed < self._BUDGET_S
+        assert out.endswith(f"hydra -l admin -p {REDACTED} ssh://host")
+
+    def test_command_scan_windows_cover_the_text_in_bounded_parts(self):
+        from aptl.utils.redaction import _MAX_SCAN_LEN, _command_scan_windows
+
+        text = ("y" * (_MAX_SCAN_LEN - 10) + "\n") + "z" * (_MAX_SCAN_LEN + 5) + " tail"
+        windows = _command_scan_windows(text)
+        assert windows[0] == (0, _MAX_SCAN_LEN - 9)  # ends after the newline
+        assert windows[1] == (_MAX_SCAN_LEN - 9, 2 * _MAX_SCAN_LEN - 9)  # hard cut
+        assert windows[-1][1] == len(text)
+        assert all(b == c for (_, b), (c, _) in zip(windows, windows[1:]))
+        assert all(0 < end - start <= _MAX_SCAN_LEN for start, end in windows)
+        assert _command_scan_windows("") == []
+        assert _command_scan_windows("a b") == [(0, 3)]
+
     def test_deep_dict_fails_closed_without_recursionerror(self):
         from aptl.utils.redaction import _MAX_DEPTH
 
@@ -1017,3 +1054,14 @@ class TestIsSecretShapedValuePredicate:
         else:
             baseline = value
         assert is_secret_shaped_value(value) == (redact(value) != baseline)
+@pytest.mark.parametrize("name", ['max_output_tokens', 'max_tokens', 'max_completion_tokens', 'input_tokens', 'output_tokens', 'prompt_tokens', 'completion_tokens', 'total_tokens', 'reasoning_tokens', 'cache_read_tokens', 'cache_write_tokens', 'cached_tokens', 'known_input_tokens_subtotal', 'known_output_tokens_subtotal', 'effective_token_limit'])
+def test_numeric_model_limits_and_usage_are_safe_but_secret_replacements_are_not(name):
+    from aptl.utils.redaction import redact
+
+    for value in (0, 128, None):
+        assert redact({name: value}) == {name: value}
+    for value in ("private-credential", {"api_key": "private-credential"}, True, -1, 2**53):
+        assert redact({name: value}) == {name: "[REDACTED]"}
+    declaration = {"target_id": name, "value_type": "integer", "allowed_value_kinds": ["literal"], "sensitivity": "internal"}
+    assert redact({name: declaration}) == {name: declaration}
+    assert redact({name: {**declaration, "api_key": "private-credential"}}) == {name: "[REDACTED]"}

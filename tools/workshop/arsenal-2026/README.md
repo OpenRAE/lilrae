@@ -1,17 +1,22 @@
-# Historical Arsenal provisioning sources
+<a id="historical-arsenal-provisioning-sources"></a>
 
-Exact source snapshots from `b97746a50442289615c20d00ce5785847fcb34be`
-on `889-cortex-adr088-envpack`. The `.txt` suffix is deliberate: these are
-non-executable references, not installed or supported provisioning commands.
+# Review Historical Arsenal Provisioning Sources
 
-The files preserve the AMI boot service, fleet launcher, desktop setup, and
-temporary SOAR/Suricata/Kali repairs used by the August range. They assume a
-specific baked AMI and cloud account. They include broad Docker cleanup,
-hardcoded host paths, insecure/default credential handling, ignored failures,
-and a capture-admission bypass. Do not run them on the shared host or use them
-as a substitute for `aptl seat start`.
+Use this guide to inspect the August provisioning snapshots before proposing a current repair.
+You need a checkout and the [branch audit](../../../docs/architecture/issue-1022-historical-branch-audit.md).
+The result is a comparison against the current owning module, not a provisioned host.
 
-Useful repairs must be implemented in current canonical owners after checking
-whether later code already incorporates them. See
-[the audit](../../../docs/architecture/issue-1022-historical-branch-audit.md)
-and [the event QA record](../../../docs/workshop/arsenal-2026/qa.md).
+The snapshots come from `b97746a50442289615c20d00ce5785847fcb34be` on `889-cortex-adr088-envpack`.
+Their `.txt` suffix keeps them as non-executable references.
+They preserve the boot service, fleet launcher, desktop setup, and temporary SOAR, Suricata, and Kali repairs.
+They assume one baked AMI and cloud account.
+
+1. Find the relevant snapshot and compare it with the audit.
+2. Locate the current code owner for the behavior.
+3. Check whether the current release already implements the repair.
+4. If a change remains necessary, implement it in that owner through the normal issue workflow.
+5. Verify changed behavior only in CI or an approved isolated VM.
+
+The snapshots include broad Docker cleanup, fixed paths, default credentials, ignored failures, and a capture-admission bypass.
+Do not execute them on a shared host or substitute them for `lilrae seat start`.
+Use the [QA review guide](../../../docs/workshop/arsenal-2026/qa.md) to inspect the event's evidence.

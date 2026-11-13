@@ -1,5 +1,10 @@
 # APP-1 Appliance Boundary Materialization Preflight
 
+> Source record: The last source change was 2026-10-31. Its status review date is 2026-11-06.
+> The original text below keeps historical proposals, decisions, and evidence.
+> It does not establish current runtime behavior or authorize external publication.
+> See the [current validation reference](techvault-static-validation-gate.md) and [live validation reference](techvault-live-validation-gate.md).
+
 **Scope update (2026-10-31):** #1127 implements APP-1 seat-component
 protection as `aptl.appliance-boundary/v3`. V2 seats retain the explicit
 [ADR-060 VM-only contract](../adrs/adr-060-vm-only-seat-containment.md).

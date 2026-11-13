@@ -57,6 +57,10 @@ LAB_CA_PATH = os.getenv(
     "APTL_LAB_CA_PATH",
     os.path.join(PROJECT_ROOT, "config", "soc_certs", "lab-ca.pem"),
 )
+# SEC-009: live requests to the indexer verify against the lab Wazuh CA.
+WAZUH_CA_PATH = os.path.join(
+    PROJECT_ROOT, "config", "wazuh_indexer_ssl_certs", "root-ca.pem"
+)
 
 
 SHUFFLE_URL = os.getenv("SHUFFLE_URL", "https://localhost:3443")
@@ -378,7 +382,7 @@ def curl_indexer(path: str = "", body: dict | None = None) -> dict:
     url = f"{INDEXER_URL}/{path}" if path else INDEXER_URL
     return curl_json(
         url, auth_header=basic_auth_header(INDEXER_USER, INDEXER_PASS),
-        body=body, insecure=True, timeout=40,
+        body=body, ca_cert_path=WAZUH_CA_PATH, timeout=40,
     )
 
 
@@ -455,22 +459,6 @@ def wait_for_alert(
         time.sleep(poll_interval)
 
     pytest.fail(f"Alert not found within {timeout}s: {json.dumps(query, indent=2)}")
-
-
-# --------------------------------------------------------------------------- #
-# Default TechVault scenario (issue #875): tests that parse, plan, or realize
-# the full acquired pack resolve its staged SDL through this helper.
-# --------------------------------------------------------------------------- #
-def techvault_scenario_bundle(staging_root: Path):
-    """Stage the acquired TechVault env-pack beneath ``staging_root``."""
-    from aptl.core.scenario_bundle import env_pack_bundle
-
-    return env_pack_bundle(Path(staging_root) / ".aptl" / "staged-packs", "techvault")
-
-
-def techvault_scenario_path(staging_root: Path) -> Path:
-    """Return the staged SDL path of the acquired TechVault pack (#875)."""
-    return techvault_scenario_bundle(staging_root).sdl_path
 
 
 def docker_ps_inventory_row(

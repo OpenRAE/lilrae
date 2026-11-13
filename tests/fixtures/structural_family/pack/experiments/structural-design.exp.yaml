@@ -63,6 +63,21 @@ factorial_design:
             contract_version: '1'
             validator_id: participant-config
             validator_version: '1'
+        selections:
+        - target:
+            plane: scenario
+            scenario_family_id: structural-fixture
+            variation_point_id: logging
+            target_id: variables.verbosity
+          scenario_family_digest: sha256:eda52df7ca247815954a47ccd17bb0949b4313abe96df2864c97766cff076c27
+          owner:
+            contract_id: sdl-authoring-input-v1
+            contract_version: '1'
+            validator_id: raes-selected-scenario
+            validator_version: '1'
+          outcome:
+            kind: literal
+            value: notice
       full:
         bindings:
         - target:
@@ -81,6 +96,21 @@ factorial_design:
             contract_version: '1'
             validator_id: participant-config
             validator_version: '1'
+        selections:
+        - target:
+            plane: scenario
+            scenario_family_id: structural-fixture
+            variation_point_id: logging
+            target_id: variables.verbosity
+          scenario_family_digest: sha256:eda52df7ca247815954a47ccd17bb0949b4313abe96df2864c97766cff076c27
+          owner:
+            contract_id: sdl-authoring-input-v1
+            contract_version: '1'
+            validator_id: raes-selected-scenario
+            validator_version: '1'
+          outcome:
+            kind: literal
+            value: debug
     operator-prompt:
       terse:
         bindings:
@@ -126,7 +156,7 @@ factorial_design:
             scenario_family_id: structural-fixture
             variation_point_id: sensor-layout
             target_id: nodes.sensor-9.presence
-          scenario_family_digest: sha256:cb0bb9c113268fdc22779039278233808785b0b98cfc5feeaf1a3fba2c01abe1
+          scenario_family_digest: sha256:eda52df7ca247815954a47ccd17bb0949b4313abe96df2864c97766cff076c27
           owner:
             contract_id: sdl-authoring-input-v1
             contract_version: '1'
@@ -142,7 +172,7 @@ factorial_design:
             scenario_family_id: structural-fixture
             variation_point_id: sensor-layout
             target_id: nodes.sensor-9.presence
-          scenario_family_digest: sha256:cb0bb9c113268fdc22779039278233808785b0b98cfc5feeaf1a3fba2c01abe1
+          scenario_family_digest: sha256:eda52df7ca247815954a47ccd17bb0949b4313abe96df2864c97766cff076c27
           owner:
             contract_id: sdl-authoring-input-v1
             contract_version: '1'

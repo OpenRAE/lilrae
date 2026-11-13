@@ -13,17 +13,17 @@ boundaries, so the contract is the capability.
 
 ## Scope
 
-- The inventory describes `src/` at `go-cutover` commit `12d2c11a`, with RAES
-  10.1.0 and raes-env-packs 7.0.0 from `uv.lock`.
-- At that commit, `src/` has 488 import statements of RAES and env-packs
-  modules in 172 files. 418 statements are at module level, 46 are under
-  `TYPE_CHECKING`, and 24 are inside functions. They import 323 names from 97
+- The inventory describes `src/` after the merge of `dev` into `go-cutover`
+  (#1758), with RAES 11.0.0 and raes-env-packs 7.2.4 from `uv.lock`.
+- At that revision, `src/` has 632 import statements of RAES and env-packs
+  modules in 208 files. 543 statements are at module level, 61 are under
+  `TYPE_CHECKING`, and 28 are inside functions. They import 387 names from 127
   modules.
 - The Python `ast` module finds each import statement. The scan does not
   import the product code.
 - The scan also follows each imported RAES module to the attributes that
   `src/` reads from it: `SCHEMAS` and `corpus_family_root` of
-  `raes_contracts.corpus`, and the two snapshot value limits of `raes_runtime`.
+  `raes_contracts.corpus`.
 - `core/evidence_bundle/schemas.py` also reads the installed RAES version with
   `importlib.metadata.version("raes")`. An evidence bundle records that version
   with each RAES schema that it carries. The Go port needs the version of the
@@ -104,8 +104,9 @@ Owner: [rae#1782](https://github.com/OpenRAE/rae/issues/1782).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes` | `SDLError`, `SDLInstantiationError`, `SDLParseError`, `SDLValidationError`, `parse_sdl`, `parse_sdl_file` | `backends`, `core`, `core/experiment`, `validation` |
-| `raes.artifact_requirements` | `ArtifactIdentity`, `ArtifactMechanismProfile`, `ArtifactRequirement`, `ArtifactSatisfactionRoute` | `backends` |
+| `raes` | `SDLError`, `SDLInstantiationError`, `SDLParseError`, `SDLValidationError`, `parse_sdl`, `parse_sdl_file` | `backends`, `cli`, `core`, `core/experiment`, `validation` |
+| `raes.artifact_requirements` | `ArtifactRequirement`, `ArtifactSatisfactionRoute` | `backends` |
+| `raes_contracts.artifact_identity` | `ArtifactIdentity`, `ArtifactMechanismProfile` | `backends` |
 
 ### SDL models, semantic validation, and canonical identity
 
@@ -113,15 +114,16 @@ Owner: [rae#1783](https://github.com/OpenRAE/rae/issues/1783).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes` | `InstantiatedScenarioSnapshot`, `Scenario`, `canonical_instantiated_sdl_bytes`, `canonical_instantiated_sdl_digest`, `canonical_sdl_digest` | `backends`, `core/experiment` |
+| `raes` | `InstantiatedScenarioSnapshot`, `Scenario`, `admit_scenario_family`, `build_declaration_index`, `canonical_instantiated_sdl_bytes`, `canonical_instantiated_sdl_digest`, `canonical_sdl_digest` | `backends`, `core`, `core/experiment`, `core/participant_requests`, `workbench` |
 | `raes.accounts` | `Account` | `validation` |
 | `raes.canonical` | `SDLCanonicalDigest`, `canonical_instantiated_sdl_digest`, `canonical_sdl_digest` | `core/experiment` |
-| `raes.explicitness` | `ExplicitnessClass` | `backends` |
+| `raes.entities` | `flatten_entities` | `core` |
 | `raes.nodes` | `NodeType` | `backends` |
 | `raes.phase_contracts` | `TrialInstantiationProvenance` | `backends` |
 | `raes.prospective_content` | `admit_prospective_content` | `backends` |
 | `raes.realization_designation` | `designation_records`, `resolve_realization_designation` | `backends` |
-| `raes.scenario` | `ExpandedScenario`, `InstantiatedScenario`, `Scenario` | `backends`, `core/experiment`, `validation` |
+| `raes.scenario` | `ExpandedScenario`, `InstantiatedScenario`, `Scenario`, `ScenarioContent` | `backends`, `core`, `core/experiment`, `core/participant_requests`, `validation`, `workbench` |
+| `raes_contracts.explicitness` | `ExplicitnessClass` | `backends` |
 
 ### SDL runtime inventory families
 
@@ -129,9 +131,11 @@ Owner: [rae#1784](https://github.com/OpenRAE/rae/issues/1784).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes.runtime_configuration` | `RuntimeConfiguration`, `RuntimeControlInterface`, `RuntimeOrchestrationAuthority`, `ServiceUnitActiveState`, `ServiceUnitEnabledState` | `aptl_techvault`, `backends`, `core/deployment` |
+| `raes.runtime_configuration` | `GeneratedArtifactValueSource`, `RuntimeConfiguration`, `RuntimeControlInterface`, `RuntimeOrchestrationAuthority`, `ServiceUnitActiveState`, `ServiceUnitEnabledState` | `aptl_techvault`, `backends`, `core/deployment` |
+| `raes.runtime_database` | `RuntimeDatabaseService` | `aptl_techvault` |
 | `raes.runtime_filesystem` | `RuntimeFilesystemEntryType` | `backends` |
 | `raes.runtime_mounts` | `RuntimeMountSourceKind` | `backends` |
+| `raes.runtime_platform_application` | `RuntimePlatformApplication` | `aptl_techvault` |
 
 ### SDL instantiation, variation, and modules
 
@@ -141,6 +145,7 @@ Owner: [rae#1785](https://github.com/OpenRAE/rae/issues/1785).
 | --- | --- | --- |
 | `raes` | `admit_instantiated_scenario`, `instantiate_scenario` | `backends`, `validation` |
 | `raes.instantiate` | `instantiate_scenario` | `core/experiment` |
+| `raes.materialization` | `MaterializedScenario` | `backends` |
 | `raes.module_registry` | `LOCKFILE_NAME` | `backends`, `validation` |
 | `raes.variables` | `VariableType` | `core/experiment` |
 | `raes.variation` | `ParameterVariationPoint` | `core/experiment` |
@@ -151,11 +156,15 @@ Owner: [rae#1779](https://github.com/OpenRAE/rae/issues/1779).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes_contracts.addressing` | `render_compiled_address` | `backends` |
+| `raes_contracts.addressing` | `render_compiled_address` | `backends`, `core`, `workbench` |
+| `raes_contracts.artifact_checksums` | `checksum_hasher` | `backends`, `core/participant_requests` |
 | `raes_contracts.bounded_domains` | `scalar_in_domain` | `core/experiment` |
-| `raes_contracts.canonical` | `canonical_json_bytes`, `canonical_json_digest` | `backends` |
+| `raes_contracts.canonical` | `canonical_json_bytes`, `canonical_json_digest` | `backends`, `core/participant_requests` |
 | `raes_contracts.contracts` | `RandomStreamDrawRecordModel` | `core/archival` |
-| `raes_contracts.errors` | `InvalidInputError` | `core/experiment` |
+| `raes_contracts.contracts.base` | `Rfc3339DateTimeString` | `backends` |
+| `raes_contracts.errors` | `InvalidInputError`, `RaesError` | `backends`, `core`, `core/experiment` |
+| `raes_contracts.json_ingress` | `parse_bounded_json_object` | `backends`, `core` |
+| `raes_contracts.timestamps` | `utc_now` | `core`, `workbench` |
 
 ### Contract bindings, diagnostics, and the published corpus
 
@@ -163,9 +172,10 @@ Owner: [rae#1780](https://github.com/OpenRAE/rae/issues/1780).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes_contracts.associated_artifacts` | `AssociatedArtifactManifestModel`, `AssociatedArtifactValidationLimits`, `load_associated_artifact_manifest_json`, `validate_associated_artifact_manifest` | `core/experiment` |
+| `raes.associated_artifacts` | `ScenarioArtifactParent` | `core/experiment` |
+| `raes_contracts.associated_artifacts` | `ArtifactParent`, `AssociatedArtifactManifestModel`, `AssociatedArtifactValidationLimits`, `ExperimentArtifactParent`, `load_associated_artifact_manifest_json`, `validate_associated_artifact_manifest` | `core/experiment` |
 | `raes_contracts.corpus` | `SCHEMAS`, `corpus_family_root`, module import | `core/evidence_bundle` |
-| `raes_contracts.diagnostics` | `Diagnostic`, `Severity` | `backends`, `cli`, `core/correlation`, `core/evidence`, `core/experiment`, `validation` |
+| `raes_contracts.diagnostics` | `Diagnostic`, `Severity`, `diagnostic_payload` | `backends`, `cli`, `core`, `core/correlation`, `core/evidence`, `core/experiment`, `validation` |
 
 ### Concept authority and vocabularies
 
@@ -175,7 +185,7 @@ Owner: [rae#1781](https://github.com/OpenRAE/rae/issues/1781).
 | --- | --- | --- |
 | `raes_contracts.apparatus` | `RealizationSupportMode`, `RealizationVerificationScope` | `backends` |
 | `raes_contracts.realization_envelope` | `ObservationStrength` | `backends` |
-| `raes_contracts.vocabulary` | `Closure`, `ObservationStrength`, `ParticipantFeatureSupportLevel`, `ProcessResourceLimitKind`, `ProcessResourceLimitScope`, `RealizationVerificationScope`, `WorkflowFeature`, `WorkflowStatePredicateFeature` | `backends` |
+| `raes_contracts.vocabulary` | `Closure`, `ObservationStrength`, `ParticipantFeatureSupportLevel`, `ProcessResourceLimitKind`, `ProcessResourceLimitScope`, `RealizationVerificationScope`, `WorkflowFeature`, `WorkflowStatePredicateFeature` | `aptl_techvault`, `backends`, `core` |
 
 ### Processor compiler, planner, and realization semantics
 
@@ -185,12 +195,12 @@ Owner: [rae#1787](https://github.com/OpenRAE/rae/issues/1787).
 | --- | --- | --- |
 | `raes_contracts.artifact_requirements` | `ArtifactAvailabilityContext` | `backends` |
 | `raes_contracts.augmentation_preparation` | `AugmentationEffect`, `AugmentationPreparation` | `backends` |
-| `raes_contracts.contracts` | `ArtifactAcquisitionTimingModel`, `ArtifactAvailabilityContext`, `ArtifactMechanismCapability`, `ArtifactRequirementAvailability`, `PROCESSOR_MANIFEST_V2_SCHEMA_VERSION` | `backends`, `core/experiment` |
-| `raes_contracts.plan_projection` | `runtime_plan_digest` | `backends` |
-| `raes_contracts.planning` | `ChangeAction`, `EvaluationPlan`, `OrchestrationPlan`, `PlanScope`, `PlannedResource`, `ProvisionOp`, `ProvisioningPlan`, `RealizationAuthorityMode`, `RealizationResolutionSource`, `ResolvedRealizationAuthority`, `RuntimeDomain` | `backends`, `core/deployment`, `core/experiment`, `validation` |
+| `raes_contracts.contracts` | `ArtifactAcquisitionTimingModel`, `ArtifactAvailabilityContext`, `ArtifactMechanismCapability`, `ArtifactRequirementAvailability`, `PROCESSOR_MANIFEST_V2_SCHEMA_VERSION` | `backends`, `core`, `core/experiment` |
+| `raes_contracts.contracts.plan_projection` | `runtime_plan_digest` | `backends` |
+| `raes_contracts.contracts.realization_preparation` | `RealizationPreparation`, `preparation_snapshot_digest` | `backends` |
+| `raes_contracts.planning` | `ChangeAction`, `EvaluationPlan`, `OrchestrationPlan`, `PlanScope`, `PlannedResource`, `ProvisionOp`, `ProvisioningPlan`, `RealizationAuthorityMode`, `ResolvedRealizationAuthority`, `RuntimeDomain` | `backends`, `core`, `core/deployment`, `core/experiment`, `validation` |
 | `raes_contracts.realization_authority` | `RealizationAuthorityMode` | `backends` |
 | `raes_contracts.realization_collections` | `node_collection_members` | `backends` |
-| `raes_contracts.realization_preparation` | `RealizationPreparation`, `preparation_snapshot_digest` | `backends` |
 | `raes_contracts.realization_profiles` | `PlanProfileAuthority` | `backends` |
 | `raes_contracts.realization_structure` | `evaluate_realization_constraint`, `validate_realization_value` | `backends` |
 | `raes_contracts.run_scope` | `PlanScope` | `backends` |
@@ -199,13 +209,13 @@ Owner: [rae#1787](https://github.com/OpenRAE/rae/issues/1787).
 | `raes_processor.compiler` | `compile_runtime_model`, `compile_scenario_runtime_model`, `materialization_differences` | `backends`, `validation` |
 | `raes_processor.manifest` | `create_reference_processor_manifest`, `reference_processor_manifest_payload` | `core/experiment`, `core/provenance` |
 | `raes_processor.models` | `ExecutionPlan`, `ParticipantAutonomousExecutionRuntime`, `ParticipantBehaviorHistoryEvent`, `ParticipantBehaviorSpecificationRuntime`, `RuntimeModel`, `resolve_participant_action_arguments` | `backends` |
-| `raes_processor.planner` | `plan`, `realization_authority_disclosure` | `backends` |
+| `raes_processor.planner` | `plan`, `realization_authority_diagnostics`, `realization_authority_disclosure` | `backends` |
 | `raes_processor.planner.augmentation_admission` | `admit_augmentation_preparation` | `backends` |
 | `raes_processor.planner.realization_collections` | `planned_node_collection` | `backends` |
 | `raes_processor.reference` | `ReferenceProcessorResult`, `ScenarioInput`, `run_reference_processor` | `core/experiment` |
 | `raes_processor.semantics.realization` | `CONCERN_PAYLOAD_PATH`, `CompiledRealizationRequirement`, `project_realization_concern` | `aptl_techvault`, `backends` |
 | `raes_processor.semantics.realization_concerns` | `realization_concern_descriptor`, `realization_concern_descriptors` | `backends` |
-| `raes_processor.trial_realization` | `instantiate_admitted_trial_entry` | `backends` |
+| `raes_processor.trial_realization` | `TrialRealization`, `TrialRealizationInputs`, `instantiate_admitted_trial_entry`, `realize_admitted_trial_entry` | `backends`, `core` |
 
 ### Experiments, trial plans, and experiment records
 
@@ -213,12 +223,14 @@ Owner: [rae#1788](https://github.com/OpenRAE/rae/issues/1788).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes_contracts.contracts` | `AdmittedTrialPlanModel`, `BindingOwnerModel`, `BindingScalarType`, `ConfigurationTargetDeclarationModel`, `ConfigurationTargetRegistryModel`, `ExperimentApparatusCompatibilityReferenceModel`, `ExperimentApparatusComponentModel`, `ExperimentApparatusConstraintModel`, `ExperimentApparatusContextModel`, `ExperimentArtifactRefModel`, `ExperimentAugmentationDisclosureModel`, `ExperimentBackendReferenceModel`, `ExperimentBindingDescriptorModel`, `ExperimentBindingDescriptorSetModel`, `ExperimentCaptureRequirementModel`, `ExperimentCaptureSpecModel`, `ExperimentCaptureSpecReferenceModel`, `ExperimentChecksumModel`, `ExperimentClockContextModel`, `ExperimentEvidenceRecordModel`, `ExperimentEvidenceRecordReferenceModel`, `ExperimentInvalidationModel`, `ExperimentManifestReferenceModel`, `ExperimentMeasurementChannelReferenceModel`, `ExperimentParameterModel`, `ExperimentProcessorReferenceModel`, `ExperimentRealizedFormDisclosureModel`, `ExperimentReferenceModel`, `ExperimentResultSummaryModel`, `ExperimentRunModel`, `ExperimentRunTraceabilityModel`, `ExperimentScenarioSnapshotReferenceModel`, `ExperimentSpecModel`, `ExperimentStochasticControlModel`, `ExperimentTaskModel`, `ExperimentTaskReferenceModel`, `ExperimentValidityNoteModel`, `LiteralBindingValueModel`, `ParticipantConfigurationModel`, `ParticipantConfigurationResultModel`, `ParticipantImplementationBindingTargetModel`, `RealizedBindingProvenanceModel`, `ScenarioBindingTargetModel`, `validate_experiment_run_archival_datetimes`, `validate_experiment_run_structure_against_task`, `validate_experiment_run_time_model` | `aptl_techvault`, `backends`, `core`, `core/archival`, `core/evidence`, `core/evidence_bundle`, `core/execution`, `core/experiment`, `workbench` |
+| `raes_contracts.assigned_trial` | `TrialAssignmentControlModel`, `TrialAssignmentModel`, `TrialOutcomeModel` | `backends` |
+| `raes_contracts.contracts` | `AdmittedTrialPlanModel`, `BindingOwnerModel`, `BindingScalarType`, `ConfigurationTargetDeclarationModel`, `ConfigurationTargetRegistryModel`, `ExperimentApparatusCompatibilityReferenceModel`, `ExperimentApparatusComponentModel`, `ExperimentApparatusConstraintModel`, `ExperimentApparatusContextModel`, `ExperimentArtifactRefModel`, `ExperimentAugmentationDisclosureModel`, `ExperimentBackendReferenceModel`, `ExperimentBindingDescriptorModel`, `ExperimentBindingDescriptorSetModel`, `ExperimentCaptureRequirementModel`, `ExperimentCaptureSpecModel`, `ExperimentCaptureSpecReferenceModel`, `ExperimentChecksumModel`, `ExperimentClockContextModel`, `ExperimentEvidenceRecordModel`, `ExperimentEvidenceRecordReferenceModel`, `ExperimentInvalidationModel`, `ExperimentManifestReferenceModel`, `ExperimentMeasurementChannelReferenceModel`, `ExperimentParameterModel`, `ExperimentProcessorReferenceModel`, `ExperimentRealizedFormDisclosureModel`, `ExperimentReferenceModel`, `ExperimentResultSummaryModel`, `ExperimentRunModel`, `ExperimentRunTraceabilityModel`, `ExperimentScenarioSnapshotReferenceModel`, `ExperimentSpecModel`, `ExperimentStochasticControlModel`, `ExperimentTaskModel`, `ExperimentTaskReferenceModel`, `ExperimentValidityNoteModel`, `LiteralBindingValueModel`, `ParticipantConfigurationModel`, `ParticipantConfigurationResultModel`, `ParticipantImplementationBindingTargetModel`, `RealizedBindingProvenanceModel`, `RealizedConfigurationValueModel`, `ScenarioBindingTargetModel`, `validate_admitted_trial_run`, `validate_experiment_run_archival_datetimes`, `validate_experiment_run_structure_against_task`, `validate_experiment_run_time_model` | `aptl_techvault`, `backends`, `core`, `core/archival`, `core/evidence`, `core/evidence_bundle`, `core/execution`, `core/experiment`, `core/participant_requests`, `workbench` |
 | `raes_contracts.contracts.capabilities` | `ApparatusIdentityModel` | `core/execution` |
 | `raes_contracts.contracts.experiment_capture` | `ExperimentRawEvidenceContentModel` | `core/evidence`, `core/execution` |
 | `raes_contracts.contracts.experiment_manifest_references` | `ExperimentEvidenceSatisfactionReferenceModel`, `ExperimentManifestReferenceModel`, `ExperimentRunEvidenceArtifactReferenceModel` | `core/execution` |
 | `raes_contracts.experiment_bindings` | `ApparatusManifestKey`, `ParticipantManifestKey`, `ScenarioBindingResolution`, `validate_experiment_binding_targets` | `core/experiment` |
 | `raes_contracts.experiment_spec` | `ExperimentSpecModel`, `ExperimentSpecValidationError`, `parse_experiment_spec` | `core/experiment` |
+| `raes_runtime.experiment_records` | `ExperimentEvidenceReader`, `ExperimentRecordArchive`, `ExperimentRecordBundle`, `ExperimentRecordSource`, `ExperimentRunMetadata` | `backends` |
 
 ### Processor analysis services
 
@@ -226,7 +238,7 @@ Owner: [rae#1789](https://github.com/OpenRAE/rae/issues/1789).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes_contracts.satisfiability` | `canonical_contract_digest` | `backends`, `core/archival`, `core/experiment` |
+| `raes_contracts.canonical` | `canonical_contract_digest` | `backends`, `core`, `core/archival`, `core/experiment`, `core/participant_requests`, `workbench` |
 
 ### Backend contracts, interfaces, manifests, and realization envelopes
 
@@ -234,16 +246,16 @@ Owner: [rae#1790](https://github.com/OpenRAE/rae/issues/1790).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes_backend_protocols.capabilities` | `BackendManifest`, `EvaluatorCapabilities`, `ObservationCapabilities`, `ObservationCaptureOffer`, `OperatingSystemCompatibility`, `OrchestratorCapabilities`, `ParticipantExecutionBinding`, `ParticipantFeatureSupport`, `ParticipantRuntimeCapabilities`, `ProvisionerCapabilities`, `TIME_CAPABILITY_REQUIRED_CONTRACTS`, `TimeCapabilities` | `aptl_techvault`, `backends`, `core/experiment` |
+| `raes_backend_protocols.capabilities` | `BackendManifest`, `CleanupCapabilities`, `EvaluatorCapabilities`, `ObservationCapabilities`, `ObservationCaptureOffer`, `OperatingSystemCompatibility`, `OrchestratorCapabilities`, `ParticipantExecutionBinding`, `ParticipantFeatureSupport`, `ParticipantRuntimeCapabilities`, `ProvisionerCapabilities`, `TIME_CAPABILITY_REQUIRED_CONTRACTS`, `TimeCapabilities` | `aptl_techvault`, `backends`, `core`, `core/evidence`, `core/experiment`, `core/participant_tools` |
 | `raes_backend_protocols.manifest` | `BackendManifest`, `backend_manifest_payload`, `backend_manifest_v2_model` | `backends`, `core/experiment`, `core/provenance` |
 | `raes_backend_protocols.participant_action_commit` | `reject_participant_action_outcome` | `backends` |
 | `raes_backend_protocols.participant_runtime_base` | `BaseParticipantRuntime` | `backends` |
 | `raes_backend_protocols.provisioner_capabilities` | `ProvisionerCapabilities` | `backends` |
 | `raes_contracts.apparatus` | `ConceptBinding`, `ProcessResourceLimitCapability`, `RealizationObservationCapability`, `RealizationSupportDeclaration` | `backends` |
 | `raes_contracts.contracts` | `BACKEND_MANIFEST_V2_SCHEMA_VERSION`, `BackendManifestV2Model` | `backends`, `core/experiment` |
-| `raes_contracts.contracts.materialization_attestation` | `MaterializationArchiveRecord` | `backends` |
+| `raes_contracts.contracts.materialization_attestation` | `MaterializationArchiveRecord`, `require_materialization_records` | `backends` |
 | `raes_contracts.manifest_authority` | `BACKEND_SUPPORTED_CONTRACT_IDS`, `PARTICIPANT_RUNTIME_CAPABILITY_REQUIRED_CONTRACTS` | `backends` |
-| `raes_contracts.materialization` | `MATERIALIZATION_MAX_BYTES`, `MaterializationSubmission`, `require_materialization_records` | `backends` |
+| `raes_contracts.materialization` | `MATERIALIZATION_MAX_BYTES`, `MaterializationSubmission` | `backends` |
 | `raes_contracts.materialization_inventory` | `RuntimeDescendantBinding`, `RuntimeInventoryEvidence`, `RuntimeInventoryReport` | `backends` |
 | `raes_contracts.realization_envelope` | `BackendRealizationEnvelopeModel`, `RealizationConcern`, `realization_envelope_digest`, `realizer_configuration_digest` | `backends` |
 
@@ -253,24 +265,34 @@ Owner: [rae#1791](https://github.com/OpenRAE/rae/issues/1791).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
+| `raes_backend_protocols.trial_unit` | `BackendTrialUnit` | `backends` |
 | `raes_contracts.account_credentials` | `account_placement_has_credential_bindings`, `value_free_account_placement_payload` | `backends` |
+| `raes_contracts.canonical` | `jsonable_fallback` | `backends` |
+| `raes_contracts.contracts` | `CleanupObligationModel`, `CleanupObligationResultModel`, `TrialCleanupPlanModel`, `TrialCleanupReceiptModel`, `validate_trial_cleanup_receipt` | `backends` |
 | `raes_contracts.contracts.time_model` | `RealizedTimeModelProvenanceModel`, `TimeModelDeclarationModel` | `core/archival` |
+| `raes_contracts.contracts.trial_replacement_archive` | `replacement_resources_reusable` | `backends` |
 | `raes_contracts.evaluation` | `EvaluationExecutionState`, `EvaluationHistoryEvent`, `EvaluationHistoryEventType`, `EvaluationResultContract`, `EvaluationResultStatus` | `backends` |
-| `raes_contracts.realization_observation` | `ObservedOperatingSystemIdentity`, `RealizationObservation`, `RealizationObservationDisclosure`, `bind_compute_substrate_observations`, `bind_operating_system_observations` | `backends` |
+| `raes_contracts.realization_observation` | `ObservedOperatingSystemIdentity`, `RealizationObservation`, `RealizationObservationDisclosure` | `backends` |
 | `raes_contracts.realization_observation_demand` | `compute_substrate_collection_addresses` | `backends` |
-| `raes_contracts.realization_preparation` | `jsonable_fallback`, `to_jsonable_python` | `backends` |
-| `raes_contracts.runtime_state` | `ApplyResult`, `OperationReceipt`, `OperationState`, `OperationStatus`, `RealizationObservationDisclosure`, `RuntimeSnapshot`, `RuntimeSnapshotEnvelope`, `SnapshotEntry` | `backends`, `core`, `validation` |
+| `raes_contracts.realization_operational_observation` | `bind_compute_substrate_observations`, `bind_operating_system_observations` | `backends` |
+| `raes_contracts.runtime_state` | `ApplyResult`, `OperationReceipt`, `OperationState`, `OperationStatus`, `RuntimeSnapshot`, `RuntimeSnapshotEnvelope`, `SnapshotEntry` | `backends`, `core`, `validation` |
+| `raes_contracts.trial_unit` | `TrialUnitRequest`, `TrialUnitResult`, `validate_trial_unit_result` | `backends`, `core`, `workbench` |
 | `raes_contracts.workflow` | `WorkflowExecutionContract`, `WorkflowExecutionState`, `WorkflowHistoryEvent`, `WorkflowHistoryEventType`, `WorkflowResultContract`, `WorkflowStatus`, `WorkflowStepExecutionState`, `WorkflowStepLifecycle`, `WorkflowStepOutcome` | `backends`, `core/runtime` |
-| `raes_runtime` | `backend_input_contracts`, `backend_snapshot_contracts` | `backends` |
+| `raes_runtime` | `RuntimeControlPlane` | `backends` |
 | `raes_runtime.backend_account_credentials` | `plan_has_account_credentials` | `backends` |
-| `raes_runtime.backend_input_contracts` | `RUNTIME_SNAPSHOT_VALUE_LIMITS` | `backends` |
-| `raes_runtime.backend_snapshot_contracts` | `_VALUE_LIMITS` | `backends` |
 | `raes_runtime.control_plane` | `RuntimeControlPlane` | `backends`, `validation` |
 | `raes_runtime.control_plane_execution` | `execute_participant_action` | `backends`, `validation` |
 | `raes_runtime.control_plane_security` | `ControlPlaneIdentity`, `ControlPlaneRole`, `ParticipantControlSubjectBinding` | `backends` |
+| `raes_runtime.errors` | `TrialPending` | `backends` |
 | `raes_runtime.manager` | `RuntimeManager` | `backends` |
+| `raes_runtime.operation_execution_adapter` | `LocalExecutionAdapter` | `backends`, `core` |
 | `raes_runtime.operation_supervision_configuration` | `OperationSupervisionConfiguration` | `backends` |
 | `raes_runtime.registry` | `ReferenceTimeRuntime`, `RuntimeTarget` | `backends`, `validation` |
+| `raes_runtime.runtime_assigned_trial` | `AssignedTrial` | `backends` |
+| `raes_runtime.runtime_trial_decisions` | `TrialAttemptDecision` | `workbench` |
+| `raes_runtime.runtime_trial_services` | `TrialCaptureObservation`, `TrialCleanupObservation`, `TrialConfigurationObservation`, `TrialExecutionObservation`, `TrialObservation`, `TrialRuntimeServices` | `backends` |
+| `raes_runtime.runtime_trial_unit` | `TrialPending` | `backends` |
+| `raes_runtime.snapshot_contract` | `runtime_snapshot_contract_model` | `backends` |
 
 ### Participant control, crossing, and decision surfaces
 
@@ -278,9 +300,11 @@ Owner: [rae#1794](https://github.com/OpenRAE/rae/issues/1794).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes_contracts.contracts` | `ParticipantDecisionSurfaceDeliveryV2Model`, `ParticipantDecisionSurfaceDerivationAnchorV2Model`, `ParticipantDecisionSurfaceSelectionV2Model`, `ParticipantDecisionSurfaceV2Model` | `backends` |
-| `raes_contracts.contracts.participant_crossing` | `ParticipantCrossingGateDisposition`, `ParticipantCrossingPolicyReferenceModel` | `backends` |
+| `raes.participant_control_context` | `SDLControlContextConfigurationValidator`, `resolve_authored_control_context` | `core`, `core/participant_requests` |
+| `raes_contracts.contracts` | `ParticipantControlContextAssetModel`, `ParticipantControlContextAssetReferenceModel`, `ParticipantControlContextConfigurationSelectionModel`, `ParticipantDecisionSurfaceDeliveryV2Model`, `ParticipantDecisionSurfaceDerivationAnchorV2Model`, `ParticipantDecisionSurfaceSelectionV2Model`, `ParticipantDecisionSurfaceV2Model` | `backends`, `cli`, `core/participant_requests`, `workbench` |
+| `raes_contracts.contracts.participant_crossing` | `ParticipantCrossingGateDisposition`, `ParticipantCrossingPolicyReferenceModel`, `ParticipantCrossingSubjectKind` | `backends` |
 | `raes_contracts.participant_binding_v2` | `ParticipantDecisionSurfaceBindingResolversV2` | `backends` |
+| `raes_contracts.participant_control_context` | `control_context_asset_reference` | `core/participant_requests` |
 | `raes_contracts.participant_decision_surface_delivery` | `deliver_participant_decision_surface_v2` | `backends` |
 | `raes_processor.models` | `ParticipantBehaviorProjectionAnchorRequestV2`, `ParticipantDecisionSurfaceActionAssessment`, `ParticipantDecisionSurfaceProjectionInputV2`, `ParticipantExposureAssessment`, `ParticipantExposureAuthorizationRecordV2`, `ParticipantExposurePolicyDecisionV2`, `ParticipantExposureResolversV2`, `project_participant_decision_surface_v2`, `resolve_participant_behavior_projection_anchor_v2`, `resolve_participant_episode_readiness_anchor_v2` | `backends` |
 | `raes_runtime.participant_control_intents` | `ParticipantExternalDirectionControlIntent`, `ParticipantProposalControlIntent` | `backends` |
@@ -292,15 +316,22 @@ Owner: [rae#1795](https://github.com/OpenRAE/rae/issues/1795).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes_contracts.contracts` | `ParticipantActionResultModel`, `ParticipantImplementationManifestModel`, `ParticipantImplementationProvenanceModel`, `ParticipantImplementationSelectionModel`, `ParticipantTemporalRuntimeContextModel` | `backends`, `core/archival`, `core/execution`, `core/experiment` |
+| `raes_backend_protocols.participant_invocation_tools` | `ParticipantInvocationToolActionPort` | `backends` |
+| `raes_contracts.contracts` | `ParticipantActionResultModel`, `ParticipantAutonomousExecutionStateModel`, `ParticipantImplementationManifestModel`, `ParticipantImplementationProvenanceModel`, `ParticipantImplementationSelectionModel`, `ParticipantTemporalRuntimeContextModel` | `backends`, `core`, `core/archival`, `core/execution`, `core/experiment`, `core/participant_requests`, `workbench` |
+| `raes_contracts.contracts.participant_action_admission` | `ParticipantActionAdmissionRequest` | `backends`, `validation` |
+| `raes_contracts.contracts.participant_configuration` | `ConfigurationOverrideModel`, `ParticipantConfigurationValidator`, `realize_participant_configuration`, `validate_participant_configuration_selection` | `core`, `core/experiment` |
+| `raes_contracts.contracts.participant_invocation_tools` | `ParticipantInvocationToolActionCapabilitiesModel` | `backends` |
+| `raes_contracts.contracts.participant_tool_support` | `ParticipantToolProfilesModel` | `backends` |
 | `raes_contracts.participant_autonomous_state` | `require_participant_autonomous_runtime_snapshot` | `backends` |
 | `raes_contracts.participant_behavior` | `ParticipantBehaviorHistoryEventType`, `ParticipantLifecycleOperationState`, `ParticipantObservationStatus`, `ParticipantPhaseRealization`, `ParticipantRuntimeLifecyclePhase`, `iter_participant_behavior_snapshot_violations` | `backends`, `validation` |
-| `raes_contracts.participant_binding` | `ParticipantActionAdmissionRequest`, `ParticipantActionApplyResult`, `ParticipantNativeActionExecution` | `backends`, `validation` |
+| `raes_contracts.participant_binding` | `ParticipantActionApplyResult`, `ParticipantNativeActionExecution` | `backends` |
 | `raes_contracts.participant_concurrency` | `iter_participant_concurrency_snapshot_violations` | `validation` |
-| `raes_contracts.participant_configuration` | `ConfigurationOverrideModel`, `realize_participant_configuration`, `validate_participant_configuration_selection` | `backends`, `core/experiment` |
-| `raes_contracts.participant_episode` | `ParticipantEpisodeExecutionState`, `ParticipantEpisodeHistoryEventType`, `ParticipantEpisodeTerminalReason`, `iter_participant_episode_snapshot_violations` | `backends`, `validation` |
+| `raes_contracts.participant_episode` | `ParticipantEpisodeExecutionState`, `ParticipantEpisodeHistoryEventType`, `ParticipantEpisodeTerminalReason` | `backends` |
+| `raes_contracts.participant_episode_snapshot` | `iter_participant_episode_snapshot_violations` | `validation` |
 | `raes_contracts.participant_native_execution` | `ParticipantNativeActionExecution` | `backends` |
 | `raes_contracts.participant_shared_state` | `iter_participant_shared_state_snapshot_violations` | `validation` |
+| `raes_contracts.participant_tool_actions` | `ParticipantToolActionRequest` | `backends` |
+| `raes_processor.models` | `ParticipantBehaviorRuntime` | `backends` |
 
 ### Backend conformance
 
@@ -332,7 +363,7 @@ Owner: [env-packs#565](https://github.com/OpenRAE/env-packs/issues/565).
 
 | Module | Names | LilRAE areas |
 | --- | --- | --- |
-| `raes_env_packs` | `PackDigestError`, `resolve_pack_artifact`, `validate_pack_content_manifest` | `aptl_techvault`, `backends`, `core`, `core/deployment` |
+| `raes_env_packs` | `PackDigestError`, `resolve_pack_artifact`, `validate_pack_content_manifest` | `aptl_techvault`, `backends`, `cli`, `core`, `core/deployment` |
 
 ### Pack catalog
 
@@ -344,7 +375,7 @@ Owner: [env-packs#572](https://github.com/OpenRAE/env-packs/issues/572).
 
 ## Extended classes
 
-LilRAE extends three RAES classes. In RAES 10.1.0, `RuntimeManager` is another
+LilRAE extends three RAES classes. In RAES 11.0.0, `RuntimeManager` is another
 name for `RuntimeControlPlane`, so two of the classes extend the same base.
 LilRAE also uses private RAES members. Go has no inheritance. The Go port uses
 the extension points that RAES Go sets for this behavior, and it is blocked on
@@ -353,7 +384,7 @@ not change RAES state that is not public.
 
 | LilRAE class | RAES base | Overrides and the behavior that they add | Private RAES members | Owner |
 | --- | --- | --- | --- | --- |
-| `AptlRuntimeManager` in `backends/raes_planning_compat.py` | `raes_runtime.manager.RuntimeManager` | `__init__` binds the scenario bundle, the admitted planning compatibility decision, and native evidence capture. `apply` runs in the admitted runtime node budget, then captures native evidence. `refresh_inventory` and `evaluate` capture native evidence after the RAES call. `plan` compiles the scenario once, applies the admitted compatibility change, and plans against the committed snapshot. | `_target`. `_runtime_value_limits` replaces `raes_runtime.backend_input_contracts.RUNTIME_SNAPSHOT_VALUE_LIMITS` and the private `raes_runtime.backend_snapshot_contracts._VALUE_LIMITS` during a call, under a process lock. | [rae#1791](https://github.com/OpenRAE/rae/issues/1791) |
+| `AptlRuntimeManager` in `backends/raes_runtime.py` | `raes_runtime.manager.RuntimeManager` | `__init__` binds the run scope, the scenario bundle, and native evidence capture. `apply`, `refresh_inventory`, and `evaluate` capture native evidence after the RAES call. `plan` plans against the committed snapshot with the run scope of the runtime. It adds `collect_evidence`, which collects the trial evidence of the run only for the backend and the capture plan of the runtime. | `_target` | [rae#1791](https://github.com/OpenRAE/rae/issues/1791) |
 | `AptlParticipantControlPlane` in `backends/raes_participant_driver.py` | `raes_runtime.control_plane.RuntimeControlPlane` | No override. It adds `solicit_participant_selection`, which RAES does not have. The method runs the provider solicitation through `execute_participant_action`. Thus the operation is durable before the provider runs, and a timeout or malformed output becomes a failed operation. | `_target`, `_reject_submission` | [rae#1791](https://github.com/OpenRAE/rae/issues/1791) |
 | `AptlParticipantRuntime` in `backends/raes_participant_runtime.py` | `raes_backend_protocols.participant_runtime_base.BaseParticipantRuntime` | `__init__` binds the deployment backend, the action specifications, the plan authority, and the autonomous bindings. `admit_actions_concurrently` checks each installed binding before RAES dispatches the batch. `admit_action` keeps the committed behavior history and publishes the action evidence. A publication failure adds diagnostics and keeps the accepted transition. `status` adds the backend name, the action participants, and the scenario source digest. `_model_action` sends an admitted action to its LilRAE realization. | `_model_action`, a private method that the class overrides | [rae#1790](https://github.com/OpenRAE/rae/issues/1790) |
 

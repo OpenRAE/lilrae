@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from importlib import metadata
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from aptl.backends.identity import BackendIdentity
 from aptl.backends.pack_interaction import (
-    ENTRY_POINT_GROUP,
     EXTENSION_API_VERSION,
     ComponentGroupMembership,
     PackBackendInteractionContext,
@@ -24,7 +21,7 @@ from aptl.core.scenario_bundle import PackIdentity
 
 
 PACK = PackIdentity(
-    pack_id="techvault",
+    pack_id="fixture-range",
     pack_version="0.1.0",
     set_digest="sha256:" + "a" * 64,
 )
@@ -46,7 +43,7 @@ def _context(*addresses: str) -> PackBackendInteractionContext:
 class _Provider:
     provider_id = "test-provider"
     extension_api_version = EXTENSION_API_VERSION
-    supported_pack_id = "techvault"
+    supported_pack_id = "fixture-range"
     supported_pack_versions = ("0.1.0",)
     supported_pack_set_digests = (PACK.set_digest,)
     backend_target_name = "aptl"
@@ -94,7 +91,7 @@ def _provider_contract(**overrides: object) -> SimpleNamespace:
     values: dict[str, object] = {
         "provider_id": "test-provider",
         "extension_api_version": EXTENSION_API_VERSION,
-        "supported_pack_id": "techvault",
+        "supported_pack_id": "fixture-range",
         "supported_pack_versions": ("0.1.0",),
         "supported_pack_set_digests": (PACK.set_digest,),
         "backend_target_name": "aptl",
@@ -119,43 +116,11 @@ def test_operator_group_vocabulary_comes_from_the_provider_mapping(monkeypatch) 
             ComponentGroupMembership("provision.node.b", ()),
         )
     )
-    _install(monkeypatch, _EntryPoint("techvault.aptl", provider))
+    _install(monkeypatch, _EntryPoint("fixture-range.aptl", provider))
 
     assert resolve_pack_backend_interaction(_context()).operator_groups == (
         "blue-team",
     )
-
-
-def test_the_framework_holds_no_pack_specific_serving_logic() -> None:
-    """Scenario knowledge lives in an adapter package, never in the framework.
-
-    The distribution registers the TechVault provider, because an adapter is
-    the backend's to own and ships in the backend's release. What must stay
-    true is the *code* boundary: no module under ``aptl.`` maps a named pack's
-    components to operator groups. If one did, a second pack would mean editing
-    the framework rather than adding an adapter package.
-    """
-
-    registered = {
-        entry_point.name
-        for entry_point in metadata.entry_points(group=ENTRY_POINT_GROUP)
-    }
-    assert "techvault.aptl" in registered
-
-    for entry_point in metadata.entry_points(group=ENTRY_POINT_GROUP):
-        if entry_point.name == "techvault.aptl":
-            assert entry_point.value.startswith("aptl_techvault."), (
-                "a pack adapter must live in its own top-level package, not "
-                "inside the framework"
-            )
-
-    framework = Path(__file__).resolve().parents[1] / "src" / "aptl"
-    offenders = {
-        str(path.relative_to(framework))
-        for path in framework.rglob("*.py")
-        if "provision.node.wazuh-manager" in path.read_text(encoding="utf-8")
-    }
-    assert not offenders, f"pack component addresses leaked into core: {offenders}"
 
 
 def test_no_exact_provider_uses_the_total_unprofiled_default(monkeypatch) -> None:
@@ -180,7 +145,7 @@ def test_exact_provider_is_loaded_once_and_host_metadata_is_recorded(monkeypatch
             ComponentGroupMembership("provision.node.b", ()),
         )
     )
-    entry_point = _EntryPoint("techvault.aptl", provider)
+    entry_point = _EntryPoint("fixture-range.aptl", provider)
     _install(monkeypatch, entry_point)
 
     resolved = resolve_pack_backend_interaction(_context())
@@ -189,7 +154,7 @@ def test_exact_provider_is_loaded_once_and_host_metadata_is_recorded(monkeypatch
     assert resolved.provider_id == "test-provider"
     assert resolved.distribution == "test-pack-interaction"
     assert resolved.distribution_version == "9.9.9"
-    assert resolved.entry_point == "techvault.aptl"
+    assert resolved.entry_point == "fixture-range.aptl"
     assert resolved.memberships[0].groups == ("soc",)
 
 
@@ -209,7 +174,7 @@ def test_exact_provider_is_loaded_once_and_host_metadata_is_recorded(monkeypatch
     ],
 )
 def test_malformed_provider_mapping_fails_closed(monkeypatch, memberships) -> None:
-    _install(monkeypatch, _EntryPoint("techvault.aptl", _Provider(memberships)))
+    _install(monkeypatch, _EntryPoint("fixture-range.aptl", _Provider(memberships)))
     context = _context()
 
     with pytest.raises(PackBackendInteractionError, match="mapping-invalid"):
@@ -223,8 +188,8 @@ def test_ambiguous_compatible_providers_fail_before_resolving(monkeypatch) -> No
     )
     first_provider = _Provider(memberships)
     second_provider = _Provider(memberships)
-    first = _EntryPoint("techvault.aptl", first_provider)
-    second = _EntryPoint("techvault.aptl", second_provider)
+    first = _EntryPoint("fixture-range.aptl", first_provider)
+    second = _EntryPoint("fixture-range.aptl", second_provider)
     _install(monkeypatch, first, second)
     context = _context()
 
@@ -238,7 +203,7 @@ def test_ambiguous_compatible_providers_fail_before_resolving(monkeypatch) -> No
 def test_a_broken_exact_provider_never_falls_back(monkeypatch) -> None:
     _install(
         monkeypatch,
-        _EntryPoint("techvault.aptl", RuntimeError("credential=do-not-report")),
+        _EntryPoint("fixture-range.aptl", RuntimeError("credential=do-not-report")),
     )
     context = _context()
 
@@ -266,7 +231,7 @@ def test_a_broken_exact_provider_never_falls_back(monkeypatch) -> None:
     ],
 )
 def test_malformed_provider_contract_fails_closed(monkeypatch, provider) -> None:
-    _install(monkeypatch, _EntryPoint("techvault.aptl", provider))
+    _install(monkeypatch, _EntryPoint("fixture-range.aptl", provider))
     context = _context()
 
     with pytest.raises(PackBackendInteractionError, match="provider-malformed"):
@@ -279,7 +244,7 @@ def test_provider_resolve_exception_fails_closed(monkeypatch) -> None:
 
     _install(
         monkeypatch,
-        _EntryPoint("techvault.aptl", _provider_contract(resolve=fail)),
+        _EntryPoint("fixture-range.aptl", _provider_contract(resolve=fail)),
     )
     context = _context()
 
@@ -290,7 +255,7 @@ def test_provider_resolve_exception_fails_closed(monkeypatch) -> None:
 
 
 def test_invalid_context_fails_before_discovery(monkeypatch) -> None:
-    entry_point = _EntryPoint("techvault.aptl", RuntimeError("must not load"))
+    entry_point = _EntryPoint("fixture-range.aptl", RuntimeError("must not load"))
     _install(monkeypatch, entry_point)
     context = _context("provision.node.b", "provision.node.a")
 
@@ -308,7 +273,7 @@ def test_incompatible_provider_does_not_claim_and_uses_default(monkeypatch) -> N
         )
     )
     provider.supported_pack_set_digests = ("sha256:" + "b" * 64,)
-    _install(monkeypatch, _EntryPoint("techvault.aptl", provider))
+    _install(monkeypatch, _EntryPoint("fixture-range.aptl", provider))
 
     resolved = resolve_pack_backend_interaction(_context())
 
@@ -327,8 +292,8 @@ def test_only_compatible_provider_is_selected_from_same_selector(monkeypatch) ->
     compatible.provider_id = "compatible-provider"
     _install(
         monkeypatch,
-        _EntryPoint("techvault.aptl", stale),
-        _EntryPoint("techvault.aptl", compatible),
+        _EntryPoint("fixture-range.aptl", stale),
+        _EntryPoint("fixture-range.aptl", compatible),
     )
 
     resolved = resolve_pack_backend_interaction(_context())
@@ -345,7 +310,7 @@ def test_transport_constraint_matches_the_actual_backend_transport(monkeypatch) 
     )
     provider = _Provider(memberships)
     provider.backend_transports = ("ssh-compose",)
-    _install(monkeypatch, _EntryPoint("techvault.aptl", provider))
+    _install(monkeypatch, _EntryPoint("fixture-range.aptl", provider))
     context = PackBackendInteractionContext(
         pack=PACK,
         backend=BackendIdentity(

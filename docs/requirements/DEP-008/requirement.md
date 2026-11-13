@@ -11,6 +11,13 @@ updated_at: 2026-10-13T00:00:00.000000Z
 
 # DEP-008: Self-Contained Distribution of Lab Assets from Installed Package
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/DEP-008/requirement.md).
+
+
 ## Statement
 
 The platform shall bundle all lab assets required to run a lab, comprising the Docker Compose definition (docker-compose.yml), scenario definitions (scenarios/), configuration files (config/: Wazuh/Suricata configs, cert templates, active-response lists), and container build contexts (all Dockerfiles and build contexts under containers/), inside the installed lilrae distribution, and shall provide a materialization entry point (`lilrae lab init <dir>`) that copies those assets out of the installed distribution into a working directory. Code that reads lab assets shall resolve them against the materialized working directory or the installed distribution, not against a current working directory that it assumes is a repository checkout. As a result, an installation of the released lilrae distribution followed by `lilrae lab init` and `lilrae lab start` shall produce a working lab without a clone of the repository.

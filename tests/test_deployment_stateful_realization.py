@@ -23,6 +23,10 @@ from cryptography.x509.oid import NameOID
 from aptl.core.credentials import PathContainmentError
 from aptl.core.certs import CertResult
 from aptl.core.deployment.docker_compose import DockerComposeBackend
+from aptl.core.deployment._misp_cache_credential import MISP_CACHE_CREDENTIAL_PROFILE
+from aptl.core.deployment._compose_stateful_constants import SOC_CERT_PROFILE
+from aptl.core.deployment._flag_signing_keys import FLAG_SIGNING_PROFILE_V2
+from aptl.core.deployment._ssh_key_bundle import SSH_ACCESS_PROFILE_V1
 from aptl.core.deployment._compose_stateful_artifact_helpers import (
     base_container_environment_bindings,
     write_artifact_environment_files,
@@ -212,7 +216,7 @@ def _cache_credential_spec() -> DeploymentRealizationSpec:
         name="misp-cache-credential",
         generator="rendered_config",
         lifecycle="reuse_valid",
-        provenance="techvault:misp-cache-credential/v2",
+        provenance=MISP_CACHE_CREDENTIAL_PROFILE,
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name="cache-password",
@@ -1449,17 +1453,19 @@ def test_stateful_wazuh_readiness_is_authenticated_and_observed(
     tmp_path: Path, monkeypatch
 ) -> None:
     backend = _readiness_backend(tmp_path, monkeypatch)
-    checked: list[tuple[str, str, str]] = []
+    checked: list[tuple[str, str, str, str]] = []
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda url, username, password: (
-            checked.append((url, username, password)) or _indexer_probe(200)
+        lambda url, username, password, *, ca_cert_path: (
+            checked.append((url, username, password, ca_cert_path))
+            or _indexer_probe(200)
         ),
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: (
-            checked.append((url, username, password)) or _manager_probe(*_MANAGER_READY)
+        lambda url, username, password, *, ca_cert_path: (
+            checked.append((url, username, password, ca_cert_path))
+            or _manager_probe(*_MANAGER_READY)
         ),
     )
 
@@ -1468,9 +1474,11 @@ def test_stateful_wazuh_readiness_is_authenticated_and_observed(
     )
 
     assert result is None
+    # SEC-009: both probes verify against the lab Wazuh CA of the project.
+    ca = str(backend._project_dir / "config/wazuh_indexer_ssl_certs/root-ca.pem")
     assert checked == [
-        ("https://localhost:19200", "indexer-user", "indexer-password"),
-        ("https://localhost:55001", "api-user", "api-password"),
+        ("https://localhost:19200", "indexer-user", "indexer-password", ca),
+        ("https://localhost:55001", "api-user", "api-password", ca),
     ]
     assert backend.authenticated_readiness == {
         "wazuh.indexer": True,
@@ -1509,11 +1517,11 @@ def test_wazuh_api_is_not_contacted_without_a_declared_native_service(
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda *_args: pytest.fail("undeclared indexer connection"),
+        lambda *_args, **_kwargs: pytest.fail("undeclared indexer connection"),
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda *_args: pytest.fail("undeclared manager connection"),
+        lambda *_args, **_kwargs: pytest.fail("undeclared manager connection"),
     )
 
     assert backend._verify_stateful_authenticated_readiness(spec) is None
@@ -1545,11 +1553,11 @@ def test_manager_native_attestation_does_not_require_listener_host_publication(
     )
     spec = replace(spec, nodes=(*spec.nodes[:-1], replace(manager, runtime=runtime)))
     monkeypatch.setattr(
-        f"{_READINESS}.probe_indexer_api", lambda *_args: _indexer_probe(200)
+        f"{_READINESS}.probe_indexer_api", lambda *_args, **_kwargs: _indexer_probe(200)
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda *_args: _manager_probe(*_MANAGER_READY),
+        lambda *_args, **_kwargs: _manager_probe(*_MANAGER_READY),
     )
 
     assert backend._verify_stateful_authenticated_readiness(spec) is None
@@ -1585,11 +1593,11 @@ def test_declared_indexer_fact_mismatch_fails_realization(
     spec = replace(spec, nodes=(replace(indexer, runtime=runtime), *spec.nodes[1:]))
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda *_args: _indexer_probe(200),
+        lambda *_args, **_kwargs: _indexer_probe(200),
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda *_args: _manager_probe(*_MANAGER_READY),
+        lambda *_args, **_kwargs: _manager_probe(*_MANAGER_READY),
     )
     monkeypatch.setattr(
         f"{_READINESS}.observe_indexer_declared_facts",
@@ -1627,11 +1635,13 @@ def test_authenticated_readiness_polls_until_credentials_are_accepted(
     statuses = iter([401, 401, 200])
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda url, username, password: _indexer_probe(next(statuses)),
+        lambda url, username, password, *, ca_cert_path: _indexer_probe(next(statuses)),
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: _manager_probe(*_MANAGER_READY),
+        lambda url, username, password, *, ca_cert_path: _manager_probe(
+            *_MANAGER_READY
+        ),
     )
     slept = _polling(monkeypatch, timeout=300, clock=[0.0, 5.0, 10.0])
 
@@ -1660,7 +1670,7 @@ def test_manager_tls_warm_up_is_retried_quietly_then_ready(
     backend = _readiness_backend(tmp_path, monkeypatch)
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda url, username, password: _indexer_probe(200),
+        lambda url, username, password, *, ca_cert_path: _indexer_probe(200),
     )
     probes = iter(
         [
@@ -1672,7 +1682,7 @@ def test_manager_tls_warm_up_is_retried_quietly_then_ready(
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: next(probes),
+        lambda url, username, password, *, ca_cert_path: next(probes),
     )
     slept = _polling(monkeypatch, timeout=300, clock=[0.0, 5.0, 10.0, 15.0])
 
@@ -1702,7 +1712,7 @@ def test_a_proven_service_is_not_reprobed_while_another_warms_up(
     indexer_probes: list[str] = []
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda url, username, password: (
+        lambda url, username, password, *, ca_cert_path: (
             indexer_probes.append(url) or _indexer_probe(next(indexer_statuses))
         ),
     )
@@ -1715,7 +1725,7 @@ def test_a_proven_service_is_not_reprobed_while_another_warms_up(
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: next(probes),
+        lambda url, username, password, *, ca_cert_path: next(probes),
     )
     slept = _polling(monkeypatch, timeout=300, clock=[0.0, 5.0, 10.0])
 
@@ -1740,12 +1750,12 @@ def test_persistent_manager_tls_failure_fails_closed_with_its_phase(
     backend = _readiness_backend(tmp_path, monkeypatch)
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda url, username, password: _indexer_probe(200),
+        lambda url, username, password, *, ca_cert_path: _indexer_probe(200),
     )
     probes: list[str] = []
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: (
+        lambda url, username, password, *, ca_cert_path: (
             probes.append(url) or _manager_probe(*_MANAGER_TLS_WARMUP, curl_exit=35)
         ),
     )
@@ -1781,12 +1791,12 @@ def test_readiness_retry_sleep_is_clamped_to_the_remaining_budget(
     backend = _readiness_backend(tmp_path, monkeypatch)
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda url, username, password: _indexer_probe(200),
+        lambda url, username, password, *, ca_cert_path: _indexer_probe(200),
     )
     probes: list[str] = []
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: (
+        lambda url, username, password, *, ca_cert_path: (
             probes.append(url) or _manager_probe(*_MANAGER_TLS_WARMUP, curl_exit=35)
         ),
     )
@@ -1811,11 +1821,11 @@ def test_persistent_credential_rejection_names_both_services_without_secrets(
     backend = _readiness_backend(tmp_path, monkeypatch)
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda url, username, password: _indexer_probe(401),
+        lambda url, username, password, *, ca_cert_path: _indexer_probe(401),
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: _manager_probe(
+        lambda url, username, password, *, ca_cert_path: _manager_probe(
             "authentication", "credentials_rejected", http_status=401
         ),
     )
@@ -1853,11 +1863,13 @@ def test_indexer_failures_are_classified_from_its_status_probe(
     backend = _readiness_backend(tmp_path, monkeypatch)
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda url, username, password: _indexer_probe(status),
+        lambda url, username, password, *, ca_cert_path: _indexer_probe(status),
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: _manager_probe(*_MANAGER_READY),
+        lambda url, username, password, *, ca_cert_path: _manager_probe(
+            *_MANAGER_READY
+        ),
     )
     _polling(monkeypatch, timeout=0, clock=[0.0, 0.0])
 
@@ -1880,11 +1892,13 @@ def test_unpublished_api_port_is_reported_without_probing(
     probed: list[str] = []
     monkeypatch.setattr(
         f"{_READINESS}.probe_indexer_api",
-        lambda url, username, password: probed.append(url) or _indexer_probe(200),
+        lambda url, username, password, *, ca_cert_path: (
+            probed.append(url) or _indexer_probe(200)
+        ),
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: (
+        lambda url, username, password, *, ca_cert_path: (
             probed.append(url) or _manager_probe(*_MANAGER_READY)
         ),
     )
@@ -1928,7 +1942,9 @@ def test_authenticated_readiness_rejects_an_unapplied_manager_config(
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: _manager_probe(*_MANAGER_READY),
+        lambda url, username, password, *, ca_cert_path: _manager_probe(
+            *_MANAGER_READY
+        ),
     )
     commands: list[tuple[str, list[str]]] = []
 
@@ -1983,7 +1999,9 @@ def test_authenticated_readiness_accepts_an_applied_manager_config(
     )
     monkeypatch.setattr(
         f"{_READINESS}.probe_manager_api",
-        lambda url, username, password: _manager_probe(*_MANAGER_READY),
+        lambda url, username, password, *, ca_cert_path: _manager_probe(
+            *_MANAGER_READY
+        ),
     )
     executed: list[str] = []
 
@@ -2010,14 +2028,14 @@ _EMPTY_REALIZATION = DeploymentRealizationSpec(profiles=(), nodes=(), networks=(
 
 
 def _ssh_artifact(consumers=()) -> DeploymentGeneratedArtifactRealization:
-    """An ssh_key_bundle artifact shaped like the TechVault declaration."""
+    """An ssh_key_bundle artifact shaped like a scenario declaration."""
 
     return DeploymentGeneratedArtifactRealization(
-        address="provision.generated-artifact.techvault-ssh-keys",
-        name="techvault-ssh-keys",
+        address="provision.generated-artifact.range-ssh-keys",
+        name="range-ssh-keys",
         generator="ssh_key_bundle",
         lifecycle="regenerate_on_change",
-        provenance="techvault:ssh-access-profile/v1",
+        provenance=SSH_ACCESS_PROFILE_V1,
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name="operator-private-key",
@@ -2082,7 +2100,7 @@ def test_ssh_key_bundle_is_generated_under_its_canonical_contained_root(
     )
 
     assert staged == [
-        tmp_path.resolve() / SSH_KEY_BUNDLE_ROOT_RELPATH / "techvault-ssh-keys"
+        tmp_path.resolve() / SSH_KEY_BUNDLE_ROOT_RELPATH / "range-ssh-keys"
     ]
 
 
@@ -2293,7 +2311,7 @@ def _soc_artifact(
         name="soc-certs",
         generator="certificate_bundle",
         lifecycle="regenerate_on_change",
-        provenance="techvault:soc-certificate-profile/v1",
+        provenance=SOC_CERT_PROFILE,
         outputs=tuple(
             DeploymentGeneratedArtifactOutput(
                 name=path.replace("/", "-"), path=path, sensitivity="restricted"
@@ -2390,7 +2408,7 @@ def _flag_artifact():
         name="flag-keys",
         generator="rendered_config",
         lifecycle="regenerate_on_change",
-        provenance="techvault:flag-signing-profile/v2",
+        provenance=FLAG_SIGNING_PROFILE_V2,
         outputs=(
             DeploymentGeneratedArtifactOutput(
                 name="webapp-key", path="webapp/flag.key", sensitivity="secret"

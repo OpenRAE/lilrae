@@ -24,6 +24,7 @@ vi.mock('node:http', () => ({
 }));
 
 import https from 'node:https';
+import { TLS_VERIFICATION_REQUIRED } from '../src/config.js';
 import { HTTPClient } from '../src/http.js';
 
 const mockedHttpsRequest = vi.mocked(https.request);
@@ -121,27 +122,11 @@ describe('HTTPClient — SEC-006 CA-aware verification path', () => {
     expect(mockedHttpsRequest).not.toHaveBeenCalled();
   });
 
-  it('still uses the insecureAgent path when verify_ssl=false (SEC-004 unaffected)', async () => {
-    const res = fakeResponse(200, '{"ok":true}');
-    const req = fakeRequest();
-    mockedHttpsRequest.mockImplementation((_opts: any, cb: any) => {
-      cb(res);
-      return req;
-    });
-
-    const client = clientWith({ verify_ssl: false, ca_cert_path: caPath });
-    const result = await client.makeRequest('/test');
-
-    expect(mockedHttpsRequest).toHaveBeenCalledTimes(1);
-    const opts = mockedHttpsRequest.mock.calls[0][0] as https.RequestOptions;
-    expect(opts.agent).toBeDefined();
-    const agent = opts.agent as any;
-    // verify_ssl=false ALWAYS wins — the CA-aware agent is bypassed.
-    expect(agent.options.rejectUnauthorized).toBe(false);
-    // The insecure path still has to parse and return the response
-    // body. Status-code-only assertions miss parseBody regressions.
-    expect(result.status).toBe(200);
-    expect(result.data).toEqual({ ok: true });
+  it('refuses verify_ssl=false even with a CA (SEC-009)', () => {
+    expect(() => clientWith({ verify_ssl: false, ca_cert_path: caPath })).toThrow(
+      TLS_VERIFICATION_REQUIRED,
+    );
+    expect(mockedHttpsRequest).not.toHaveBeenCalled();
   });
 
   it('throws at HTTPClient construction when ca_cert_path is set but unreadable', () => {
@@ -155,19 +140,5 @@ describe('HTTPClient — SEC-006 CA-aware verification path', () => {
         ca_cert_path: missing,
       })
     ).toThrow(/not readable/i);
-  });
-
-  it('does not throw when ca_cert_path is set but verify_ssl=false (CA agent simply not built)', () => {
-    const missing = join(workdir, 'not-here.pem');
-    // verify_ssl=false → the CA-aware path is never used, the missing
-    // file should not crash the client.
-    expect(() =>
-      new HTTPClient({
-        baseUrl: 'https://misp.lab',
-        auth: { type: 'apikey' as const, header: 'Authorization', apiKey: 'k' },
-        verify_ssl: false,
-        ca_cert_path: missing,
-      })
-    ).not.toThrow();
   });
 });

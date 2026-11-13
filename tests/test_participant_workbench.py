@@ -13,7 +13,8 @@ from fastapi.testclient import TestClient
 
 from aptl.core.runstore import LocalRunStore
 from aptl.core.session import ScenarioSession
-from aptl.workbench.runtime import WorkbenchPaths
+from aptl.workbench.runtime import GuestRuntimeBinding, WorkbenchPaths
+from aptl.workbench.profiles import profile_for
 
 
 def _runtime_paths(payload_root: Path, generated_config_dir: Path) -> WorkbenchPaths:
@@ -223,7 +224,7 @@ def test_profile_switch_closes_the_previous_runtime_and_records_the_active_trace
     from aptl.workbench import ProfileId, WorkbenchRuntime
 
     session_manager = ScenarioSession(tmp_path / "state")
-    active_session = session_manager.start("techvault")
+    active_session = session_manager.start("fixture-range")
     adapter = _FakeAdapter()
     credentials = _FakeCredentials()
     payload_root = _payload_with_all_artifacts(tmp_path / "payload")
@@ -231,6 +232,7 @@ def test_profile_switch_closes_the_previous_runtime_and_records_the_active_trace
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(payload_root, tmp_path / "generated"),
         credential_broker=credentials,
         model="claude-sonnet-4-5-20250929",
@@ -265,6 +267,7 @@ def test_profile_runtime_fails_closed_without_an_active_scenario(
         ScenarioSession(tmp_path / "state"),
         _FakeAdapter(),
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -283,12 +286,13 @@ def test_runtime_creates_its_managed_config_parent_on_fresh_state(
     from aptl.workbench import ProfileId, WorkbenchRuntime
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     generated = tmp_path / "state" / "workbench" / "mcp-config"
     runtime = WorkbenchRuntime(
         session_manager,
         _FakeAdapter(),
         LocalRunStore(tmp_path / "state" / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             generated,
@@ -309,12 +313,13 @@ def test_failed_agent_start_revokes_credentials_and_removes_generated_config(
     from aptl.workbench import ProfileId, WorkbenchRuntime
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     credentials = _FakeCredentials()
     runtime = WorkbenchRuntime(
         session_manager,
         _FailingAdapter(),
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -336,13 +341,14 @@ def test_runtime_rejects_a_profile_with_an_unexpected_mcp_tool_inventory(
     from aptl.workbench import ProfileId, WorkbenchRuntime, WorkbenchStateError
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     adapter = _UnexpectedInventoryAdapter()
     credentials = _FakeCredentials()
     runtime = WorkbenchRuntime(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -365,13 +371,14 @@ def test_runtime_keeps_a_rejected_agent_until_failed_cleanup_is_retried(
     from aptl.workbench import ProfileId, WorkbenchRuntime, WorkbenchStateError
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     adapter = _InventoryFailureWithFailedCloseAdapter()
     credentials = _FakeCredentials()
     runtime = WorkbenchRuntime(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -408,13 +415,14 @@ def test_runtime_validates_a_switch_target_before_closing_the_active_profile(
     )
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     adapter = _FakeAdapter()
     credentials = _FakeCredentials()
     runtime = WorkbenchRuntime(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -439,12 +447,13 @@ def test_profile_switch_waits_for_an_active_agent_turn(tmp_path: Path) -> None:
     from aptl.workbench import ProfileId, WorkbenchRuntime
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     adapter = _BlockingAdapter()
     runtime = WorkbenchRuntime(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -484,11 +493,12 @@ def test_browser_workbench_is_a_separate_authenticated_profile_surface(
     from aptl.workbench.app import BrowserPrincipal, create_participant_workbench_app
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     runtime = WorkbenchRuntime(
         session_manager,
         _FakeAdapter(),
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",
@@ -654,11 +664,12 @@ def _send_one_message(tmp_path: Path, adapter: object) -> tuple[object, str]:
     from aptl.workbench.app import BrowserPrincipal, create_participant_workbench_app
 
     session_manager = ScenarioSession(tmp_path / "state")
-    session_manager.start("techvault")
+    session_manager.start("fixture-range")
     runtime = WorkbenchRuntime(
         session_manager,
         adapter,
         LocalRunStore(tmp_path / "runs"),
+        guest_binding=GuestRuntimeBinding(profile_resolver=lambda role, run_id: profile_for(role)),
         paths=_runtime_paths(
             _payload_with_all_artifacts(tmp_path / "payload"),
             tmp_path / "generated",

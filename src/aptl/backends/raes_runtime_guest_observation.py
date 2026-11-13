@@ -185,8 +185,8 @@ def observe_software_components(
 ) -> object | None:
     """Corroborate the supported Wazuh agent component in the guest."""
 
-    components = tuple(runtime.software_components)
-    if len(components) != 1 or not _supported_wazuh_agent(components[0]):
+    components = tuple(item for item in runtime.software_components if _supported_wazuh_agent(item))
+    if len(components) != 1:
         return None
     component = components[0]
     output = _exec_stdout(

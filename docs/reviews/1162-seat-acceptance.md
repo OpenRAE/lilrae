@@ -1,5 +1,13 @@
 # Issue #1162: Seat Acceptance
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/reviews/1162-seat-acceptance.md).
+Its last recorded file change before this rewrite was `0ae249947abb`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This record covers manual checks performed on 2026-09-23 and 2026-09-24 for
 [issue #1162](https://github.com/Brad-Edwards/aptl/issues/1162).
 The checks used the existing `aptl` CLI, public GHCR artifacts and a real

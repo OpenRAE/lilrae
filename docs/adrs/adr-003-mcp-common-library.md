@@ -14,81 +14,111 @@ stays. The TypeScript library stays in force until Go port 31 removes it.
 
 ## Context
 
-By v2.0.5, APTL had two MCP (Model Context Protocol) servers, `mcp-red` (Kali) and `mcp-blue` (Wazuh), that allowed AI agents to control lab containers and query the SIEM. Both servers were standalone TypeScript projects with significant code duplication:
+By v2.0.5, APTL had separate TypeScript MCP servers for Kali and Wazuh.
+Their names were `mcp-red` and `mcp-blue`.
+Both provided agent access to lab containers and the SIEM, but their implementations repeated substantial code.
 
 ### Problems
 
-1. **Duplicated SSH handling**: Each server implemented its own SSH connection logic—creating connections, managing sessions, handling timeouts, parsing output. The connection management code was nearly identical.
-2. **Identical entry points**: Every `src/index.ts` was the same boilerplate: import config, create server, register tools, start listening. Copy-paste across servers led to wrong doc comments (for example, `mcp-reverse` said "APTL Kali Red Team MCP Server").
-3. **`any`-typed tool arguments**: All MCP tool handlers received `args: any` and cast internally with `as`. No compile-time safety. The MCP SDK validates args against JSON Schema at runtime, but TypeScript couldn't catch type errors during development.
-4. **No shared HTTP client**: API-based servers (Wazuh, indexer) each implemented their own HTTP request handling with inconsistent error handling and a process-global `NODE_TLS_REJECT_UNAUTHORIZED = '0'` that disabled SSL verification for all outbound requests.
+1. Each server repeated SSH connection, session, timeout, and output handling.
+2. Each entry point repeated configuration loading, server creation, tool registration, and startup.
+3. Copied comments and SSH prefixes could name the wrong server.
+4. Tool handlers accepted `args: any` and used internal casts, so TypeScript could not find all argument errors.
+5. Separate HTTP clients handled errors differently.
+6. A process-wide `NODE_TLS_REJECT_UNAUTHORIZED = '0'` disabled TLS verification for all outbound requests.
 
-Adding a third MCP server meant copying one of the existing servers and modifying it—propagating all these problems. The reverse engineering MCP server (`mcp-reverse`) was created this way and inherited the SSH prefix bug and wrong doc comment.
+The early `mcp-reverse` copy inherited the SSH-prefix problem and the comment `APTL Kali Red Team MCP Server`.
+Another copied server would also copy those defects.
+JSON Schema validation remained a runtime boundary, distinct from TypeScript checking.
 
 ### Scale
 
-When this decision was made, there were 2-3 MCP servers. The architecture needed to support 8+ servers (Kali, Wazuh, indexer, reverse, MISP, TheHive, Shuffle, Suricata) as the SOC stack grew.
+The decision covered 2–3 existing servers and planned support for at least eight.
+The planned targets were Kali, Wazuh, Indexer, reverse engineering, MISP, TheHive, Shuffle, and Suricata.
+Those historical counts do not identify the current installed inventory.
+[ADR-063](adr-063-remove-thehive-and-cortex.md) later removed TheHive and `mcp-casemgmt`.
 
 ## Decision
 
-Create `mcp/aptl-mcp-common/` as a shared TypeScript library that all MCP servers depend on. The library provides:
+Use `mcp/aptl-mcp-common/` as the shared TypeScript library for MCP server behavior.
+Configuration selects the target and tools; common owners implement transport and dispatch.
+This reduces copied code while keeping server configuration explicit.
 
 ### Core Components
 
-1. **`PersistentSession`** (ssh.ts): Long-lived SSH session management with command queuing, delimiter-based output parsing, buffer overflow protection, keepalive, and per-command timeouts. See [ADR-004](adr-004-persistent-ssh-sessions.md) for the full session architecture.
+| Component | Original responsibility | Current ownership distinction |
+| --- | --- | --- |
+| `PersistentSession` | Long-lived shells, queued commands, delimiters, output bounds, keepalive, and command timeouts | `ssh.ts` exports the session contract; split session modules implement it |
+| `SSHConnectionManager` | Session pool, lifecycle, and metadata | The SSH manager retains its existing shared ownership |
+| `HTTPClient` | Shared API requests, TLS, and errors | `http.ts` keeps system-trust, configured-CA, and explicit insecure states distinct |
+| `createMCPServer(config)` | Build tools and handlers from server configuration | `server.ts` also retains current validation and participant-admission boundaries |
+| `startServer(callerMetaUrl)` | Load the caller's configuration and start its server | `index.ts` remains the common entry point |
+| Argument interfaces | Replace repeated untyped handler arguments with named types | The original 10 SSH and three API handler counts are historical; current signatures are the contract |
+| Shell formatters | Format commands for bash, sh, PowerShell, and cmd | `shells.ts` owns shell-specific environment, directory, and command syntax |
 
-2. **`SSHConnectionManager`** (ssh.ts): Connection pool managing multiple `PersistentSession` instances. Handles connection lifecycle, session creation/destruction, and metadata tracking.
+The original entry-point example remains:
 
-3. **`HTTPClient`** (http.ts): Shared HTTP client for API-based MCP servers. Uses per-request `https.Agent` with `rejectUnauthorized: false` (instead of mutating `process.env`) for self-signed certificates in the lab environment.
+```typescript
+import { startServer } from 'aptl-mcp-common';
+startServer(import.meta.url);
+```
 
-   **Amendment (SEC-006 / ADR-034, issue #258, 2026-05-18):** SEC-004's `rejectUnauthorized: false` allowance is now narrowed to Wazuh inter-component traffic only. SOC stack consumers (MISP, TheHive, Cortex, Shuffle) verify against the lab-managed CA generated by `aptl.core.soc_ca`. The HTTPClient adds a third TLS state (`verify_ssl=true` + `ca_cert_path` set) which uses a per-instance `https.Agent` with the lab CA pinned (`rejectUnauthorized: true`). Wazuh-targeting MCP configs (`mcp-wazuh`, `mcp-indexer`, `mcp-network`) keep `verify_ssl: false`; SOC-targeting MCP configs (`mcp-threatintel`, `mcp-casemgmt`, `mcp-soar`) flip to `verify_ssl: true` with `ca_cert_path` pointing at the lab CA.
+The original HTTP decision used a request-scoped HTTPS agent with `rejectUnauthorized: false` for self-signed lab certificates.
+It removed the process-wide TLS override.
+This historical rationale does not grant a general current exception to TLS verification.
 
-4. **`createMCPServer(config)`** (server.ts): Factory function that generates a fully configured MCP server from a `docker-lab-config.json` file. Registers SSH tool definitions, API tool definitions, and their handlers based on the config.
+**Amendment (SEC-006 / ADR-034, issue #258, 2026-05-18):**
+SEC-004's insecure allowance narrows to Wazuh inter-component traffic.
+SOC consumers use the CA generated by `aptl.core.soc_ca`.
+`verify_ssl=true` with `ca_cert_path` selects a per-instance agent with `rejectUnauthorized: true`.
+Wazuh-targeting `mcp-wazuh`, `mcp-indexer`, and `mcp-network` keep their explicit `verify_ssl: false` configurations.
 
-5. **`startServer(callerMetaUrl)`** (index.ts): Standard entry point for all APTL MCP servers. Loads config relative to the calling module's directory, creates the server, and starts it. A new MCP server's `src/index.ts` is now ~4 lines:
+**Amendment (SEC-009, issue #1767):**
+`mcp-wazuh`, `mcp-indexer`, and `mcp-network` verify TLS against the lab Wazuh CA.
+The common HTTP client refuses `verify_ssl: false`.
 
-   ```typescript
-   import { startServer } from 'aptl-mcp-common';
-   startServer(import.meta.url);
-   ```
-
-6. **Typed argument interfaces** (tools/handlers.ts): Named interfaces (`RunCommandArgs`, `SessionCommandArgs`, `ListSessionsArgs`, etc.) for all 10 SSH tool handlers and 3 API tool handlers. Replaces `args: any` with compile-time type checking.
-
-7. **Shell formatters** (shells.ts): Strategy pattern for shell-specific command formatting—bash, sh, PowerShell, cmd. Each formatter knows how to set environment variables, change directories, and format commands for its shell.
+The update selected CA verification for `mcp-threatintel`, `mcp-casemgmt`, and `mcp-soar`.
+The later removal of `mcp-casemgmt` does not reverse the remaining CA requirements.
+[ADR-034](adr-034-lab-managed-soc-tls-ca.md) defines the TLS boundary.
 
 ### Config-Driven Architecture
 
-Each MCP server is defined by a `docker-lab-config.json` file containing:
+`docker-lab-config.json` supplies server identity, target connection details, SSH tools, API endpoint templates, and shell type.
+The common factory creates the advertised tools and their handlers.
+A new configuration can reuse existing tool types without another transport implementation.
+It cannot supply an arbitrary new implementation or bypass validation and admission.
 
-- Server name and description
-- Target container connection details (host, port, username, key path)
-- SSH tool definitions (if applicable)
-- API tool definitions with endpoint templates (if applicable)
-- Shell type (bash, sh, powershell, cmd)
-
-The `createMCPServer()` factory reads this config and generates the full server (tool definitions, handlers, connection management) without any server-specific code. Adding a new container to the MCP layer requires only a new config file and a 4-line `index.ts`.
+[Participant action enforcement](../architecture/participant-action-enforcement.md) explains the later invocation boundary.
+[MCP Reference](../reference/mcp.md) owns maintained tool and configuration facts.
+The factory and current source types, rather than an old handler count, determine supported behavior.
 
 ### Build System
 
-All MCP servers are built via `mcp/build-all-mcps.sh`, which iterates through every `mcp/mcp-*` directory and runs `npm run build`. The common library is built first as a dependency.
+The original build used `mcp/build-all-mcps.sh` to build the common library before dependent servers.
+A shared-library change still requires its consumers' verification.
+CI owns their complete rebuild and checks.
+The [MCP operations guide](../reference/mcp-operations.md) owns supported build tasks.
 
 ## Consequences
 
 ### Positive
 
-- **DRY**: SSH handling, HTTP clients, entry points, tool registration—all written once
-- **Type safety**: Named argument interfaces catch type errors at compile time. The `queryConfig.endpoint` → `queryConfig.url` bug was found during the typed args migration.
-- **Consistency**: All 8 MCP servers behave identically for connection management, error handling, and response formatting
-- **Rapid server creation**: New MCP server = `docker-lab-config.json` + 4-line `index.ts`. The SOC stack MCP servers (MISP, TheHive, Shuffle, Suricata) were created using this pattern.
-- **Centralized fixes**: Bug fixes to SSH session handling or HTTP requests propagate to all servers automatically
+- Common transport, entry points, and tool registration avoid repeated fixes.
+- Named argument types can find errors during development.
+- The recorded migration found the `queryConfig.endpoint` to `queryConfig.url` error.
+- Configuration reuses common SSH, HTTP, error, and result handling.
+- The original SOC servers reused the same pattern.
 
 ### Negative
 
-- **Coupling**: All servers depend on the common library. A breaking change requires updating and rebuilding all servers.
-- **Abstraction overhead**: The config-driven approach is powerful but less transparent than explicit code. Debugging requires understanding the factory pattern and config schema.
-- **Monorepo structure**: The `mcp/` directory contains 9 npm packages (1 library + 8 servers) without a workspace manager like Turborepo or Nx. Build ordering depends on `build-all-mcps.sh`.
+- All consumers depend on the common library, so a breaking change needs coordinated updates and builds.
+- Debugging needs knowledge of the factory and configuration schema.
+- The original tree held nine npm packages: one library and eight servers.
+- It used the build script rather than Turborepo or Nx for ordering.
+- These package counts record that tree, not a current inventory guarantee.
 
 ### Risks
 
-- Config schema evolution: Adding new tool types or connection methods requires updating the common library's config parser, factory, and handler generators
-- The common library is a single point of failure—a bug in `PersistentSession` affects all SSH-based MCP servers simultaneously
+A new tool type or connection method can require common parser, factory, and handler changes.
+A shared session defect can affect every SSH-based consumer.
+The existing shared tests and consumer checks must therefore exercise the affected boundary.

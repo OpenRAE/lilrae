@@ -19,7 +19,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from aptl.appliance import guest_surfaces
-from aptl.appliance.policy import write_full_techvault_boundary_policy
 from aptl.appliance.seat import access as seat_access
 from aptl.appliance.seat import overlay_identity, readiness
 from aptl.appliance.seat.access import (
@@ -44,9 +43,6 @@ from aptl.validation.participant_qualification_evidence import (
     ParticipantQualificationReport,
     participant_qualification_attestation_payload,
 )
-from aptl_techvault.evidence import techvault as techvault_evidence
-from aptl_techvault.evidence.techvault_readiness import SuricataRuleReadinessSource
-from aptl_techvault.evidence import techvault_misp_readiness, techvault_readiness_probes, techvault_wazuh_agent_readiness
 from aptl.appliance.seat import image_selection, image_trust
 from aptl.appliance.seat.image import parse_seat_image_reference
 from aptl.appliance.seat.observation import observation_id_for
@@ -58,7 +54,6 @@ from aptl.backends.lilrae_apparatus_reporting import apparatus_node_name
 from aptl.backends.raes import admit_raes_scenario
 from aptl.backends.raes_participant_candidates import candidate_selections
 from aptl.backends.raes_runtime_model_artifact import compiled_runtime_model_bytes, compiled_runtime_model_sha256
-from aptl.backends.raes_participant_fixture_core import participant_episode_state_dir
 from aptl.backends.raes_participant_support import binding_post_state_digest
 from aptl.core.appliance_boundary_observation import HostBoundaryObservation
 from aptl.core.certs import _cert_generator_project_name
@@ -96,13 +91,6 @@ from raes_contracts.contracts import ExperimentBindingDescriptorModel
 from aptl.workbench.codex_agent import CodexManagedAgentAdapter
 from aptl.workbench.dispatch import key_fingerprint
 from aptl.workbench.process import AgentExecutionError
-from aptl_techvault.database_access import _scram_verifier
-from aptl_techvault.evidence.techvault_transcript import (
-    TranscriptFrame,
-    TranscriptSession,
-    _transcript_chain,
-    _transcript_result,
-)
 
 
 class Rejected(Exception):
@@ -111,10 +99,6 @@ class Rejected(Exception):
     def __init__(self, stage: str) -> None:
         super().__init__(stage)
         self.stage = stage
-
-
-def _episode_state_dir(case_input: dict) -> dict[str, str]:
-    return {"text": participant_episode_state_dir(case_input["participant_address"], case_input["episode_id"])}
 
 
 def _binding_post_state_digest(case_input: dict) -> dict[str, str]:
@@ -172,18 +156,6 @@ def _ssh_key_fingerprint(case_input: dict) -> dict[str, str]:
         return {"text": key_fingerprint(case_input["public_key"])}
     except ValueError as exc:
         raise Rejected("validate") from exc
-
-
-def _scram(case_input: dict) -> dict[str, str]:
-    return {"text": _scram_verifier(case_input["password"], salt=bytes.fromhex(case_input["salt_hex"]))}
-
-
-def _transcript(case_input: dict) -> dict[str, str]:
-    frames = [
-        TranscriptFrame(frame["sequence"], frame["timestamp"], frame["direction"], bytes.fromhex(frame["data_hex"]))
-        for frame in case_input["frames"]
-    ]
-    return {"text": _transcript_chain(frames)}
 
 
 def _trial_id_and_seed(case_input: dict) -> dict[str, object]:
@@ -319,11 +291,6 @@ def _readiness_challenge(case_input: dict) -> dict[str, str]:
     return {"hex": data.hex()}
 
 
-def _techvault_boundary_policy(_case_input: dict) -> dict[str, object]:
-    data = _written(write_full_techvault_boundary_policy, "policy.json")
-    return {"value": {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}}
-
-
 def _runtime_evidence_json(case_input: object) -> dict[str, str]:
     try:
         return {"hex": lilrae_runtime_evidence._json_bytes(case_input).hex()}
@@ -393,17 +360,6 @@ def _operator_groups(case_input: dict) -> dict[str, object]:
             raise Rejected("validate") from exc
         (path,) = (root / ".aptl/lifecycle/operator-groups-v1").iterdir()
         return {"value": {"name": path.name, "hex": path.read_bytes().hex()}}
-
-
-def _techvault_bounded_json(case_input: dict) -> dict[str, object]:
-    native = techvault_evidence._bounded_json(case_input["value"])
-    readiness = techvault_readiness_probes.bounded_json(case_input["value"], case_input["limit"])
-    return {
-        "value": {
-            "native_hex": None if native is None else native.hex(),
-            "readiness_hex": None if readiness is None else readiness.hex(),
-        }
-    }
 
 
 def _compose_ownership_override(case_input: dict) -> dict[str, object]:
@@ -531,63 +487,6 @@ def _capture_plan(case_input: dict) -> dict[str, object]:
     }
 
 
-def _bytes_or_none(data: bytes | None) -> dict[str, object]:
-    return {"value": None if data is None else data.hex()}
-
-
-def _misp_readiness(case_input: dict) -> dict[str, object]:
-    admitted = techvault_misp_readiness.AdmittedMispState(**case_input["admitted"])
-    return _bytes_or_none(techvault_misp_readiness._readiness_document(case_input["payload"], admitted))
-
-
-def _wazuh_agent_readiness(case_input: dict) -> dict[str, object]:
-    return _bytes_or_none(
-        techvault_wazuh_agent_readiness._readiness_document(case_input["payload"], tuple(case_input["expected_nodes"]))
-    )
-
-
-def _source_result(result: object) -> dict[str, object]:
-    return {
-        "value": {
-            "status": result.status.value,
-            "chunks_hex": [chunk.hex() for chunk in result.chunks],
-            "source_pipeline": result.source_pipeline,
-        }
-    }
-
-
-def _sqli_correlation(case_input: dict) -> dict[str, object]:
-    source = techvault_evidence.SuricataWazuhSqliSource(
-        lambda: case_input["trigger"],
-        lambda _start, _end: case_input["suricata_events"],
-        lambda _start, _end: case_input["wazuh_events"],
-    )
-    return _source_result(source.fetch(case_input["start"], case_input["end"]))
-
-
-def _suricata_readiness(case_input: dict) -> dict[str, object]:
-    source = SuricataRuleReadinessSource(lambda _start, _end: case_input["payload"])
-    return _source_result(source.fetch(case_input["start"], case_input["end"]))
-
-
-def _transcript_document(case_input: dict) -> dict[str, object]:
-    sessions = tuple(
-        TranscriptSession(
-            session_id=item["session_id"],
-            started_at=item["started_at"],
-            finished_at=item["finished_at"],
-            close_reason=item["close_reason"],
-            frames=tuple(
-                TranscriptFrame(frame["sequence"], frame["timestamp"], frame["direction"], bytes.fromhex(frame["data_hex"]))
-                for frame in item["frames"]
-            ),
-            final_chain_digest=item["final_chain_digest"],
-        )
-        for item in case_input["sessions"]
-    )
-    return _source_result(_transcript_result(sessions, case_input["start"], case_input["end"]))
-
-
 def _crossing_policies(case_input: dict) -> dict[str, object]:
     turns = tuple(SimpleNamespace(**turn) for turn in case_input["turns"])
     try:
@@ -634,9 +533,8 @@ def _native_cleanup(case_input: dict) -> dict[str, object]:
             workspace_id=ownership.workspace_id, project_name=ownership.project_name, **case_input["receipt"]
         )
         ownership.record(receipt)
-        with (
-            patch.object(lilrae_native_evidence, "datetime", _pinned_datetime(datetime.fromisoformat(case_input["recorded_at"]))),
-            patch.object(lilrae_native_evidence, "uuid4", return_value=SimpleNamespace(hex=case_input["uuid_hex"])),
+        with patch.object(
+            lilrae_native_evidence, "datetime", _pinned_datetime(datetime.fromisoformat(case_input["recorded_at"]))
         ):
             try:
                 lilrae_native_evidence.record_cleanup(ownership, receipt, cause=case_input["cause"])
@@ -692,7 +590,6 @@ def _candidate_selections(case_input: dict) -> dict[str, object]:
 
 
 OWNER_SCHEMES: dict[str, Callable[[dict], dict[str, object]]] = {
-    "participant-episode-state-dir": _episode_state_dir,
     "participant-binding-post-state-digest": _binding_post_state_digest,
     "cert-generator-project-name": _cert_generator_name,
     "correlation-stable-ref": _stable_ref,
@@ -701,8 +598,6 @@ OWNER_SCHEMES: dict[str, Callable[[dict], dict[str, object]]] = {
     "attempt-directory-names": _attempt_directories,
     "sealed-output-schema-name": _sealed_schema_name,
     "ssh-key-fingerprint": _ssh_key_fingerprint,
-    "postgres-scram-verifier": _scram,
-    "techvault-transcript-chain": _transcript,
     "trial-id-and-seed": _trial_id_and_seed,
     "participant-control-intent": _control_intent,
     "apparatus-node-name": _apparatus_node_name,
@@ -718,7 +613,6 @@ OWNER_SCHEMES: dict[str, Callable[[dict], dict[str, object]]] = {
     "seat-record": _seat_record,
     "seat-guest-readiness": _guest_readiness,
     "seat-readiness-challenge": _readiness_challenge,
-    "techvault-boundary-policy": _techvault_boundary_policy,
     "runtime-evidence-json": _runtime_evidence_json,
     "docker-recording-json": _docker_recording_json,
     "cleanup-action-record": _cleanup_action_record,
@@ -727,7 +621,6 @@ OWNER_SCHEMES: dict[str, Callable[[dict], dict[str, object]]] = {
     "participant-qualification-attestation": _qualification_attestation,
     "family-target-encoding": _family_target,
     "operator-group-record": _operator_groups,
-    "techvault-bounded-json": _techvault_bounded_json,
     "compose-ownership-override": _compose_ownership_override,
     "bundle-jsonl-projection": _jsonl_projection,
     "lifecycle-attestation": _lifecycle_attestation,
@@ -735,11 +628,6 @@ OWNER_SCHEMES: dict[str, Callable[[dict], dict[str, object]]] = {
     "runtime-facts-provenance": _runtime_facts,
     "apparatus-configuration-digest": _apparatus_configuration_digest,
     "capture-plan": _capture_plan,
-    "techvault-misp-readiness": _misp_readiness,
-    "techvault-wazuh-agent-readiness": _wazuh_agent_readiness,
-    "techvault-sqli-correlation": _sqli_correlation,
-    "techvault-suricata-readiness": _suricata_readiness,
-    "techvault-transcript-document": _transcript_document,
     "participant-crossing-policies": _crossing_policies,
     "participant-delivery-evidence": _delivery_evidence,
     "native-cleanup-observation": _native_cleanup,

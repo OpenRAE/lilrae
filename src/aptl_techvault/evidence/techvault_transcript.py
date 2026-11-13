@@ -46,7 +46,7 @@ class TranscriptSession:
 
 
 class RedteamSessionTranscriptSource:
-    """Require complete sidecar-owned custody for every admitted session."""
+    """Validate sidecar custody and disclose census sessions without records."""
 
     def __init__(
         self,
@@ -59,14 +59,46 @@ class RedteamSessionTranscriptSource:
         self._read_sessions = read_sessions
 
     def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
-        """Validate complete custody and return a bounded transcript result."""
+        """Validate accepted custody and retain bounded evidence with any gaps."""
 
         expected = self._expected_session_ids()
         sessions = self._read_sessions()
         status = _session_failure_status(expected, sessions, start_iso, end_iso)
         if status is not None:
             return SourceResult(status=status)
-        return _transcript_result(sessions or (), start_iso, end_iso)
+        result = _transcript_result(sessions or (), start_iso, end_iso)
+        accepted = sorted(session.session_id for session in sessions or ())
+        missing = sorted(set(expected or ()) - set(accepted))
+        if not missing:
+            return result
+        payload = json.loads(result.chunks[0])
+        payload["reconciliation"] = {
+            "census_refs": sorted(_capture_ref(item) for item in expected or ()),
+            "accepted_refs": sorted(_capture_ref(item) for item in accepted),
+            "missing_refs": sorted(_capture_ref(item) for item in missing),
+            "census_count": len(expected or ()),
+            "accepted_count": len(accepted),
+            "missing_count": len(missing),
+            "reason": "no broker record; cause unknown",
+        }
+        # The coordinator persists content first, then turns dropped_count into
+        # MID_RUN_LOSS with a mandatory disclosure. No failure bytes are discarded.
+        return SourceResult(
+            status=CollectorStatus.OK,
+            dropped_count=len(missing),
+            media_type=result.media_type,
+            source_min_time=result.source_min_time,
+            source_max_time=result.source_max_time,
+            source_pipeline=result.source_pipeline,
+            chunks=(
+                json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(),
+            ),
+        )
+
+
+def _capture_ref(identity: str) -> str:
+    """Project a private census identity into a non-replayable evidence reference."""
+    return "capture-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
 def _session_failure_status(
@@ -82,7 +114,7 @@ def _session_failure_status(
     invalid_identity = (
         len(expected) != len(set(expected))
         or len(sessions) != len({session.session_id for session in sessions})
-        or set(expected) != {session.session_id for session in sessions}
+        or {session.session_id for session in sessions} - set(expected)
     )
     invalid_session = any(
         not _valid_transcript_session(session, start_iso, end_iso)
@@ -255,16 +287,64 @@ def validate_retained_transcript(
     entries = _retained_entries(payload)
     if expected_entries is not None and len(entries) != expected_entries:
         raise ValueError("retained transcript count disagrees with source")
+    if "reconciliation" in payload:
+        _validate_reconciliation(payload["reconciliation"], len(entries))
     frame_count = _validate_retained_entries(entries)
     if expected_frames is not None and frame_count != expected_frames:
         raise ValueError("retained frame count disagrees with source")
+
+
+def _validate_reconciliation(report: object, entry_count: int) -> None:
+    """Keep gap disclosures internally consistent in portable evidence."""
+    if not isinstance(report, dict) or set(report) != {
+        "census_refs",
+        "accepted_refs",
+        "missing_refs",
+        "census_count",
+        "accepted_count",
+        "missing_count",
+        "reason",
+    }:
+        raise ValueError("invalid transcript reconciliation")
+    groups = [
+        _reconciliation_refs(report, name) for name in ("census", "accepted", "missing")
+    ]
+    census, accepted, missing = groups
+    if (
+        not missing
+        or accepted & missing
+        or census != accepted | missing
+        or len(accepted) != entry_count
+        or report["reason"] != "no broker record; cause unknown"
+    ):
+        raise ValueError("invalid transcript reconciliation partition")
+
+
+def _reconciliation_refs(report: dict[str, object], name: str) -> set[str]:
+    """Validate one bounded identity-reference group and its count."""
+    ids = report[f"{name}_refs"]
+    if (
+        not isinstance(ids, list)
+        or not all(
+            isinstance(item, str) and re.fullmatch(r"capture-[0-9a-f]{64}", item)
+            for item in ids
+        )
+        or len(set(ids)) != len(ids)
+        or report[f"{name}_count"] != len(ids)
+    ):
+        raise ValueError("invalid transcript reconciliation identities")
+    return set(ids)
 
 
 def _retained_entries(payload: object) -> list[object]:
     """Check the retained envelope and return its transcript entries."""
     if (
         not isinstance(payload, dict)
-        or set(payload) != {"schema_version", "transcript_entries"}
+        or set(payload)
+        not in (
+            {"schema_version", "transcript_entries"},
+            {"schema_version", "transcript_entries", "reconciliation"},
+        )
         or payload["schema_version"] != _RETAINED_SCHEMA
         or not isinstance(payload["transcript_entries"], list)
     ):
@@ -367,7 +447,7 @@ def _inside_window(value: object, start_iso: str, end_iso: str) -> bool:
         instant = datetime.fromisoformat(str(value).replace("Z", _UTC_OFFSET))
         start = datetime.fromisoformat(start_iso.replace("Z", _UTC_OFFSET))
         end = datetime.fromisoformat(end_iso.replace("Z", _UTC_OFFSET))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     try:
         return start <= instant <= end

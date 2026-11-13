@@ -171,7 +171,7 @@ vi.mock('node:child_process', () => ({
 
 import { harvestSession, finalizeCaptureSession } from '../src/captures.js';
 import { loadLabConfig } from '../src/config.js';
-import { resolveCaptureContainer } from '../src/tools/handlers.js';
+import { resolveCaptureContainer } from '../src/tools/session-capture.js';
 
 // tests/ -> aptl-mcp-common/ -> mcp/, then the shipped red server config.
 const RED_CONFIG = join(

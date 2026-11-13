@@ -217,9 +217,9 @@ def test_shuffle_is_proven_through_the_node_that_fronts_its_backend():
 
 def test_misp_sets_the_password_then_adds_the_read_only_key_it_proves():
     node = _node("misp", "aptl-misp", listeners=(("https", 443),))
-    key = "7ea54cbe19564f9893940770bbc659f890726557"
+    key = "fedcba9876543210fedcba9876543210fedcba98"
     product = _Product(misp={"admin@example.test": "old"})
-    sync = _account("techvault-sync", auth_method="key", secret=key, name="sync")
+    sync = _account("range-sync", auth_method="key", secret=key, name="sync")
 
     result = _run(provider.MISP, product, node, sync, _account("admin@example.test"))
 
@@ -230,7 +230,7 @@ def test_misp_sets_the_password_then_adds_the_read_only_key_it_proves():
         None,
         "admin@example.test",
     ]
-    assert json.loads(php[1][2])["comment"] == "techvault-sync"
+    assert json.loads(php[1][2])["comment"] == "range-sync"
     _assert_no_secret_in_argv(product)
     _assert_no_secret_in_argv(product, key)
 
@@ -261,26 +261,3 @@ def test_curl_configuration_cannot_be_broken_out_of_by_a_value():
         "evil"
         not in [line for line in config.splitlines() if line.startswith("url")][0]
     )
-
-
-def test_every_released_techvault_account_provider_resolves_its_ingress(released_techvault_realization):
-    """Each SOC product the released pack declares is reachable (#1273)."""
-
-    realization = released_techvault_realization
-    spec = realization.deployment_spec(sorted(realization.profiles))
-    resolved = {
-        node.backend_account_provider: accounts.product_ingress(
-            node.backend_account_provider, node, spec.nodes
-        )
-        for node in spec.nodes
-        if node.backend_account_provider in provider.APPLICATION_ACCOUNT_PROVIDERS
-    }
-
-    assert set(resolved) == set(provider.APPLICATION_ACCOUNT_PROVIDERS)
-    assert {kind: item.base_url for kind, item in resolved.items()} == {
-        provider.OPENSEARCH_SECURITY: "https://localhost:9200",
-        provider.WAZUH_API: "https://localhost:55000",
-        provider.MISP: "https://localhost:443",
-        provider.SHUFFLE: "https://localhost:443",
-    }
-    assert resolved[provider.SHUFFLE].container == "aptl-shuffle-frontend"

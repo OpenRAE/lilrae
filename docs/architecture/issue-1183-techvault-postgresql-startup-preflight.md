@@ -1,5 +1,13 @@
 # Issue #1183: TechVault PostgreSQL Startup Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1183-techvault-postgresql-startup-preflight.md).
+Its last recorded file change before this rewrite was `103ebfbcb223`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The supplied issue is the contract; no formal requirement is attached.
 This note sets design guardrails, not an implementation plan. Existing ADR-029,
 ADR-046/051, ADR-037, and ADR-060/061 already establish the relevant boundaries;

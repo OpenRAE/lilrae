@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/OpenRAE/lilrae/internal/canonical"
 )
@@ -62,6 +63,9 @@ func decodeConfig(o *object) Config {
 	if c, ok := o.child("seat", false, false); ok {
 		cfg.Seat = decodeSeat(c)
 	}
+	if c, ok := o.child("mcp", false, false); ok {
+		cfg.MCP = decodeMCPPolicy(c)
+	}
 	o.finish()
 	return cfg
 }
@@ -91,6 +95,9 @@ func decodeContainers(o *object) Containers {
 
 func decodeDeployment(o *object) Deployment {
 	d := defaultDeployment()
+	for _, e := range o.items("range_egress_allowances") {
+		d.RangeEgressAllowances = append(d.RangeEgressAllowances, decodeAllowance(e))
+	}
 	if provider, ok := o.str("provider", d.Provider, false); ok {
 		d.Provider = provider
 		o.check("provider", checkProvider(provider))
@@ -107,6 +114,27 @@ func decodeDeployment(o *object) Deployment {
 	d.EnvironmentGrants = decodeGrants(o)
 	o.finish()
 	return d
+}
+
+func decodeAllowance(o *object) RangeEgressAllowance {
+	var a RangeEgressAllowance
+	if destination, ok := o.str("destination", "", true); ok {
+		normalized, err := normalizeEgressDestination(destination)
+		a.Destination = normalized
+		o.check("destination", err)
+	}
+	if protocol, ok := o.str("protocol", "", true); ok {
+		a.Protocol = protocol
+		o.check("protocol", checkTransport(protocol))
+	}
+	if v, ok := o.value("port", true); ok {
+		if port, isInteger := o.asInteger("port", v); isInteger {
+			a.Port = port
+			o.check("port", checkPort(port))
+		}
+	}
+	o.finish()
+	return a
 }
 
 func decodeGrants(o *object) []EnvironmentGrant {
@@ -245,23 +273,56 @@ func decodeExperiment(o *object) Experiment {
 	if c, ok := o.child("participant_credential_sources", false, false); ok {
 		e.ParticipantCredentialSources = decodeParticipantSources(c)
 	}
+	if c, ok := o.child("participant_serving_providers", false, false); ok {
+		e.ParticipantServingProviders = decodeServingProviders(c)
+	}
+	if path, ok := o.optStr("opencode_executable"); ok {
+		e.OpencodeExecutable = path
+		o.check("opencode_executable", checkOpencodeExecutable(*path))
+	}
 	o.finish()
 	return e
 }
 
+// decodeServingProviders reads an object of string values. It has no fixed
+// members, so it marks each member as used.
+func decodeServingProviders(o *object) ServingProviders {
+	providers := make(ServingProviders, len(o.members))
+	if len(o.members) > maxServingProviders {
+		o.r.fail(o.path, "must have at most 64 entries")
+	}
+	names := make([]string, 0, len(o.members))
+	for name := range o.members {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		v, _ := o.take(name)
+		if provider, isString := v.(string); isString {
+			providers[name] = provider
+			continue
+		}
+		label := name
+		if !plainNamePattern.MatchString(label) {
+			label = unknownName
+		}
+		o.fail(label, ruleString)
+	}
+	return providers
+}
+
 func decodeParticipantModels(o *object) ParticipantModels {
 	var m ParticipantModels
-	for _, provider := range []string{"claude", "codex"} {
-		model, ok := o.optStr(provider)
+	for _, f := range []struct {
+		provider string
+		model    **string
+	}{{"claude", &m.Claude}, {"codex", &m.Codex}, {"opencode", &m.Opencode}} {
+		model, ok := o.optStr(f.provider)
 		if !ok {
 			continue
 		}
-		o.check(provider, checkParticipantModel(provider, *model))
-		if provider == "claude" {
-			m.Claude = model
-		} else {
-			m.Codex = model
-		}
+		o.check(f.provider, checkParticipantModel(f.provider, *model))
+		*f.model = model
 	}
 	o.finish()
 	return m
@@ -277,8 +338,61 @@ func decodeParticipantSources(o *object) ParticipantCredentialSources {
 		source := decodeSource(c, SourceProcessEnvironment)
 		s.Codex = &source
 	}
+	if c, ok := o.child("opencode", false, true); ok {
+		source := decodeSource(c, SourceProcessEnvironment)
+		s.Opencode = &source
+	}
+	if c, ok := o.child("vertex", false, true); ok {
+		source := decodeVertexSource(c)
+		s.Vertex = &source
+	}
 	o.finish()
 	return s
+}
+
+// decodeVertexSource reads the kind first, as the Pydantic discriminator
+// does, and then the members of that kind. Without a valid kind, only the
+// kind is an error, as in the Python release.
+func decodeVertexSource(o *object) VertexSource {
+	var s VertexSource
+	kind, ok := o.str("kind", "", true)
+	if !ok {
+		return s
+	}
+	s.Kind = kind
+	switch kind {
+	case SourceProcessEnvironment:
+		if variable, present := o.str("variable", "", true); present {
+			s.Variable = &variable
+			o.check("variable", checkSourceVariable(kind, variable))
+		}
+	case SourceAttachedServiceAccount:
+		if project, present := o.str("project", "", true); present {
+			s.Project = &project
+			o.check("project", checkGoogleProject(project))
+		}
+	default:
+		o.check("kind", errUnknownSourceKind)
+		return s
+	}
+	o.finish()
+	return s
+}
+
+func decodeMCPPolicy(o *object) MCPPolicy {
+	p := defaultMCPPolicy()
+	errorsBefore := len(o.r.fields)
+	if allowed, ok := o.strings("allowed_servers"); ok {
+		p.AllowedServers = allowed
+	}
+	if required, ok := o.strings("required_servers"); ok {
+		p.RequiredServers = required
+	}
+	o.finish()
+	if len(o.r.fields) == errorsBefore {
+		o.r.check(o.path, checkMCPCeiling(p))
+	}
+	return p
 }
 
 func decodeSeat(o *object) Seat {

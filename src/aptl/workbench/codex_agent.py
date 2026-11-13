@@ -8,6 +8,7 @@ import json
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from aptl.workbench.agent_usage import AgentUsage, AgentUsageRecorder
 
 from aptl.core.config import validate_installed_participant_model_id
 from aptl.utils.pathsafe import (
@@ -26,7 +27,9 @@ from aptl.workbench.process import (
     BoundedProcessRunner,
     ProcessRunner,
 )
+from aptl.workbench.agent_responses import parse_codex_result, classify_codex_failure
 from aptl.workbench.runtime import AgentLaunch, DecisionAgentLaunch
+from aptl.workbench.participant_request import validate_request, request_arguments
 
 _MODEL_CREDENTIAL = "CODEX_API_KEY"
 _BASE_ENVIRONMENT = {
@@ -44,6 +47,7 @@ class _CodexHandle:
     environment: dict[str, str]
     ready: bool = False
     closed: bool = False
+    usage: AgentUsage = AgentUsage()
 
 
 class CodexManagedAgentAdapter:
@@ -69,6 +73,7 @@ class CodexManagedAgentAdapter:
         self._xdg_config_home = _prepare_work_dir(self._private_home / ".config")
         self._codex_home = _prepare_work_dir(self._work_dir / "codex-home")
         self._runner = runner or BoundedProcessRunner()
+        self._usage = AgentUsageRecorder("codex")
         self._timeout_seconds = timeout_seconds
         self._max_output_bytes = max_output_bytes
         self._max_prompt_chars = max_prompt_chars
@@ -84,6 +89,10 @@ class CodexManagedAgentAdapter:
             raise AgentExecutionError("Codex adapter supports decision-only launches")
         if launch.provider != "codex":
             raise AgentExecutionError("agent launch provider does not match adapter")
+        validate_request(
+            launch.request, provider="codex", model=launch.model,
+            executable=self._executable, binding=launch.request_binding,
+        )
         try:
             validate_installed_participant_model_id(launch.provider, launch.model)
         except ValueError as exc:
@@ -148,6 +157,12 @@ class CodexManagedAgentAdapter:
         active = _require_handle(handle)
         if active.closed or not active.ready:
             raise AgentExecutionError("agent profile is not ready")
+        validate_request(
+            active.launch.request, provider="codex", model=active.launch.model,
+            executable=self._executable, binding=active.launch.request_binding,
+        )
+        if active.launch.request is not None:
+            message = active.launch.request.prompt + message
         schema_json = admit_decision_response_schema(
             active.launch,
             response_schema,
@@ -159,6 +174,7 @@ class CodexManagedAgentAdapter:
             raise AgentExecutionError(
                 "participant message exceeds the configured limit"
             )
+        active.usage = AgentUsage()
         result = self._runner.run(
             self._argv(self._executable, active, schema_path),
             env=dict(active.environment),
@@ -167,9 +183,15 @@ class CodexManagedAgentAdapter:
             timeout_seconds=self._timeout_seconds,
             max_output_bytes=self._max_output_bytes,
         )
+        active.usage = self._usage.record(active.launch, result)
         if result.returncode != 0:
-            raise AgentExecutionError(_classify_failed_request(result.stdout))
-        return _parse_codex_result(result.stdout)
+            raise AgentExecutionError(classify_codex_failure(result.stdout))
+        return parse_codex_result(result.stdout)
+
+    @staticmethod
+    def usage(handle: object) -> AgentUsage:
+        """Return only the latest invocation's reported token counters."""
+        return _require_handle(handle).usage
 
     def _sealed_output_schema(self, schema_json: str) -> Path:
         """Create or verify one private schema file keyed by its exact bytes."""
@@ -246,6 +268,7 @@ class CodexManagedAgentAdapter:
             "--output-schema",
             str(response_schema_path),
             "--json",
+            *request_arguments(handle.launch.request),
             "-",
         )
 
@@ -256,58 +279,6 @@ def _require_handle(handle: object) -> _CodexHandle:
         raise AgentExecutionError("unknown agent handle")
     return handle
 
-
-def _parse_codex_result(stdout: bytes) -> str:
-    """Return the last completed agent message from Codex JSONL."""
-
-    final_message: str | None = None
-    try:
-        for raw_line in stdout.decode("utf-8").splitlines():
-            payload = json.loads(raw_line)
-            item = payload.get("item")
-            if (
-                payload.get("type") == "item.completed"
-                and isinstance(item, Mapping)
-                and item.get("type") == "agent_message"
-                and isinstance(item.get("text"), str)
-                and item["text"]
-            ):
-                final_message = item["text"]
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise AgentExecutionError("agent returned an invalid result") from exc
-    if final_message is None:
-        raise AgentExecutionError("agent returned an invalid result")
-    return final_message
-
-
-def _classify_failed_request(stdout: bytes) -> str:
-    """Map known hostile provider failures to stable, secret-free diagnostics."""
-
-    try:
-        events = [
-            json.loads(raw_line)
-            for raw_line in stdout.decode("utf-8").splitlines()
-            if raw_line
-        ]
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return "agent request failed"
-    messages: list[str] = []
-    for event in events:
-        if not isinstance(event, Mapping):
-            continue
-        if isinstance(event.get("message"), str):
-            messages.append(event["message"])
-        item = event.get("item")
-        if isinstance(item, Mapping) and isinstance(item.get("message"), str):
-            messages.append(item["message"])
-    if any(
-        "does not have access to model" in message.lower()
-        or "model_not_found" in message.lower()
-        or "model not found" in message.lower()
-        for message in messages
-    ):
-        return "agent model is unavailable"
-    return "agent request failed"
 
 
 __all__ = ("CodexManagedAgentAdapter",)

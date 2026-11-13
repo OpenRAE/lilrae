@@ -235,7 +235,7 @@ def _attach_views(
                 "mcp_servers": [],
                 "allowed_profiles": list(principal.profiles),
             }
-        profile = profile_for(launch.profile)
+        profile = profile_for(launch.profile, server_ids=launch.server_ids)
         return {
             "allowed_profiles": list(principal.profiles),
             "profile": profile.profile_id.value,

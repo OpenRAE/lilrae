@@ -65,7 +65,7 @@ from pathlib import Path
 from raes_backend_protocols.manifest import BackendManifest
 from raes_contracts.diagnostics import Diagnostic
 from raes_contracts.errors import InvalidInputError
-from raes_contracts.satisfiability import canonical_contract_digest
+from raes_contracts.canonical import canonical_contract_digest
 from raes_processor.capabilities import ProcessorManifest
 from raes_processor.manifest import create_reference_processor_manifest
 

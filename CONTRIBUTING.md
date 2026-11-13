@@ -1,108 +1,86 @@
-# Contributing to APTL
+# Contribute to LilRAE
 
-APTL is an active purple-team lab and autonomous cyber-operations research
-project. Contributions are useful when they make the lab safer, more
-reproducible, easier to operate, easier to test, or more precise for scenario
-authors and agent integrations.
+Use this guide to deliver a complete change through one pull request.
 
 ## Before Opening a Pull Request
 
-- Open an issue before making a pull request, including documentation and test
-  changes. Give the issue explicit acceptance criteria.
-- **One issue = one PR.** The delivery PR must address every acceptance
-  criterion of its issue. Do not split one issue across multiple PRs, including
-  separate code, documentation, and test PRs. Extend an existing delivery PR
-  instead of opening another PR for the same issue.
-- If an issue is too large, create smaller linked issues with explicit
-  acceptance criteria. Each smaller issue gets one complete PR; the parent
-  tracks their delivery and remains open until its criteria are satisfied.
-- Keep unrelated changes in separate pull requests.
-- Base pull requests on `dev`, not `main`. `main` is the stable release line;
-  `dev` is the integration branch.
-- Do not add red-team capability enhancements to the public repository unless
-  the maintainer has explicitly accepted the scope first.
+1. Open an issue with explicit acceptance criteria, including documentation and test changes.
+2. Check for an existing delivery PR. Extend it instead of opening another PR for the same issue.
+3. Deliver all acceptance criteria in one PR, including code, documentation, and verification.
+4. If the issue is too large, create smaller linked issues with explicit acceptance criteria.
+5. Give each smaller issue one complete PR. Keep the parent open until its criteria are satisfied.
+6. Keep unrelated changes in separate PRs.
+7. Base the PR on `dev`. Use `main` only for the documented release process.
+8. Get maintainer acceptance before adding public red-team capability enhancements.
 
 ## Development Setup
 
-Prerequisites:
+Use Python 3.14, Docker with Compose, and [pre-commit](https://pre-commit.com/).
+For MCP or web work, also install the supported [Node.js toolchain](docs/getting-started/host-requirements.md).
+Keep lab execution on CI or an explicitly approved, isolated VM.
 
-- Python 3.14 or newer
-- Docker and Docker Compose
-- Node.js and npm for MCP server and web UI work
-- [pre-commit](https://pre-commit.com/)
-
-Set up the Python control plane:
+Set up the source checkout:
 
 ```shell
 git clone https://github.com/OpenRAE/lilrae.git
 cd lilrae
-python -m venv .venv
+python3.14 -m venv .venv
 . .venv/bin/activate
 pip install -e ".[dev]"
 pre-commit install
 ```
 
-Build the MCP servers when working on agent integrations:
+For agent integration work, build the MCP artifacts:
 
 ```shell
 ./mcp/build-all-mcps.sh
 ```
 
-Install the web UI dependencies when working under `web/`:
+For web work, install the frontend dependencies:
 
 ```shell
 cd web
-npm install
+npm ci
 ```
 
 ## Making Changes
 
 1. Fork the repository and create a branch from `dev`.
-2. Make the smallest coherent change that satisfies all of the issue's
-   acceptance criteria.
-3. Verify changed behavior and risk. Reuse adequate existing tests; add tests
-   only for uncovered behavior. Remove redundant or obsolete cases.
-4. Update scenarios, schemas, documentation, or examples when the public
-   surface changes.
-5. Give the PR a [Conventional Commit](https://www.conventionalcommits.org)
-   title (`feat:`, `fix:`, etc.); release-please derives the changelog and
-   version from it. Do not edit `CHANGELOG.md`.
-6. Run the relevant checks locally.
-7. Open the issue's single pull request against `dev`, or update its existing
-   PR. Describe what changed, why, and how each acceptance criterion was
-   verified. Follow the [coding standards](docs/CODING_STANDARDS.md).
+2. Make the smallest change that satisfies all acceptance criteria.
+3. Select verification for the changed behavior and risk. Reuse adequate existing tests.
+4. Add tests for uncovered behavior. Remove redundant or obsolete tests.
+5. Update affected scenarios, schemas, documentation, and examples.
+6. Follow the [coding standards](docs/CODING_STANDARDS.md).
+7. Run staged hygiene as described below.
+8. Open or update the issue's single PR against `dev`.
+9. Map each acceptance criterion to its change and verification in the PR description.
+10. Use a [Conventional Commit](https://www.conventionalcommits.org/) title with one type and an optional scope.
 
 ## Verification
 
-The local hygiene and secret check operates on staged files:
+Stage only the intended files, then run local hygiene:
 
 ```shell
 git add <files-you-intend-to-commit>
 pre-commit run
 ```
 
-Local commit hooks run secret detection and fast file hygiene only. Full Python,
-MCP and web suites, dependency-lock freshness, complexity and prose checks run in
-CI/CD. Run only the exact tests relevant to a change while developing. Do not
-run bare `pytest`, package-wide `npm test`, `pre-commit run --all-files`, or the
-whole-tree `.pre-commit-ci.yaml` configuration locally.
+Run behavior tests only in CI or an approved isolated VM.
+Follow [Verify a change](docs/testing/index.md) for targeted commands and consumer selection.
+CI owns full suites, coverage, whole-tree lint, dependency checks, and strict documentation builds.
+Do not run `pre-commit run --all-files` or `.pre-commit-ci.yaml` on the workstation.
 
-Examples of targeted checks:
+## Documentation changes
 
-```shell
-pytest tests/test_specific_behavior.py
-pytest -m fuzz tests/test_specific_fuzz_behavior.py
-cd mcp/aptl-mcp-common && npx vitest run tests/specific.test.ts
-cd mcp/mcp-red && npx vitest run tests/specific.test.ts
-cd web && npx vitest run tests/specific.test.ts
-```
+Select one reader purpose: Tutorial, How-to guide, Reference, or Explanation.
+Verify changed claims against code and configuration.
+Preserve facts, conditions, obligations, commands, identifiers, and useful URLs.
 
-When test files changed, `bash tools/run-targeted-tests.sh` derives those
-targets from the branch and worktree. You can instead pass explicit Python or
-Go test paths to the script. CI/CD remains the authority for full suites, coverage,
-whole-tree lint, dependency checks, and prose/build gates.
+Use the existing shared `documentation` skill. Keep it outside repository version control.
+Follow [Write documentation](docs/contributing-documentation.md) for setup, writing checks, and source records.
+Record source paths, revision, checks, and corrected differences in the PR.
 
-### Go code
+## Go code
 
 Milestone 44 adds the Go implementation on the `go-cutover` branch. Its pull
 requests target `go-cutover`, not `dev`
@@ -132,57 +110,32 @@ gives the rules.
 - Do not run the mutation, vulnerability, or full test gates locally. CI runs
   them.
 
-When changing files under `mcp/aptl-mcp-common`, run targeted common and
-dependent-server tests while iterating. CI/CD rebuilds and tests every dependent
-MCP because they consume the local package.
-
-CI runs the ordinary Python suite once on Linux with line coverage.
-macOS and Windows run focused portability tests and CLI smoke commands.
-Changed inputs select relevant jobs; unknown paths select all checks.
-Weekly, manual, and release-tag qualification select the full retained checks.
-Superseded PR jobs are cancelled, while an active lab boot completes teardown.
-Full lab startup on macOS and Windows remains an operator qualification.
-See [CI verification](docs/architecture/ci-verification.md) for routing and budgets.
-
-When changing `docker-compose.yml`, container Dockerfiles, or files under
-`config/`, run only focused contract tests locally. CI/CD owns the clean lab
-stop/start validation so local verification does not expand into a full system
-run.
-
 ## Safety Boundaries
 
-APTL intentionally runs vulnerable services and gives agents access to
-penetration-testing tools. Keep contributions bounded to authorized lab use.
-Do not include real credentials, production secrets, private target data, or
-instructions for using the project against systems you do not own or have
-permission to test.
+Keep contributions within authorized lab use.
+Do not include real credentials, production secrets, or private target data.
+Include instructions only for systems you own or have permission to test.
 
-The repository contains intentional test credentials for lab functionality.
-Those are not production secrets. New credentials should be dummy values unless
-the design explicitly renders or generates them at runtime.
+Existing test credentials are lab fixtures.
+Use dummy credentials unless the design explicitly generates or renders them at runtime.
 
 ## Host Privilege Escalation
 
-Host-side APTL code must not silently escalate privileges. Do not add `sudo -n`,
-passwordless-sudo assumptions, or hidden sudo repair paths. If a host action
-truly needs elevated privileges, either prompt for explicit consent before
-running it or stop and print the exact command for the user to run. Scenario
-containers may still model sudo behavior as lab content; that is separate from
-operator host escalation.
+Do not add silent host privilege escalation, `sudo -n`, or passwordless-sudo assumptions.
+Before an elevated host action, request explicit consent.
+Alternatively, stop and print the exact command for the user to run.
+Scenario containers may model sudo behavior as lab content. That permission does not apply to the operator host.
 
 ## Changelog
 
-Release notes and version bumps are generated by
-[release-please](https://github.com/googleapis/release-please) from Conventional
-Commit PR titles. Do not hand-edit `CHANGELOG.md`. See
-[Releasing](docs/releasing.md).
+Do not hand-edit `CHANGELOG.md` or release versions.
+Follow [Releasing](docs/releasing.md) for the release process and title rules.
 
 ## Security Reports
 
-Do not open public issues for suspected security vulnerabilities. See
-[SECURITY.md](SECURITY.md).
+Report vulnerabilities privately through [SECURITY.md](SECURITY.md).
+Do not put details in public issues, PRs, or discussions.
 
 ## Community Expectations
 
-Participation in this project is covered by
-[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) in project spaces.

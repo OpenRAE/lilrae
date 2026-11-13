@@ -1,5 +1,10 @@
 # Issue 956 candidate manual QA: 2026-09-20
 
+This historical Reference preserves the issue’s recorded candidate and qualification limits.
+Its commands and observations do not authorize workstation execution or qualify a later release.
+Use [Verify a change](index.md) for current test boundaries.
+
+
 This is an operator-assisted execution record for the procedure in
 [`smoke-test-plan.md`](smoke-test-plan.md). It tests candidate commit
 `e23fec55fef3e0088ec3dd1e922c71cd335b5862`; it is not a release approval.

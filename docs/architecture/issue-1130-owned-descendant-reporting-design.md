@@ -1,5 +1,11 @@
 # Owned descendant reporting
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1130-owned-descendant-reporting-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 This design covers the combined scope of issues #1128 and #1130.
 The existing shared Docker daemon and its configuration remain unchanged.
 The reporting boundary uses the public contracts introduced in RAES 8.1.0.
@@ -47,18 +53,22 @@ The recorder forwards other daemon requests with their existing authority.
 A child can bypass recording through direct socket access, broad host mounts, or alternate endpoints.
 The recorder does not prevent these operations.
 Known bypass paths produce a bounded recording limitation.
+
 It never adopts other containers from labels, names, images, or namespace membership.
 The recorded inventory describes the cooperative recording boundary, not all possible hostile host activity.
 Build, Swarm, plugin, network, and volume allocation APIs remain permitted.
+
 They produce a recording gap because their effects are outside the container-create response path.
 Inherited mounts and alternate control endpoints also disclose incomplete attribution.
 
 Recorder startup must precede authority delegation.
 Its lifecycle owner must enforce deadlines while holders can create resources.
 Teardown must quiesce holders, drain creation records, and remove verified children.
+
 A crash between native creation and receipt publication must remain an explicit inventory gap.
 Restart recovery must reconcile that gap before claiming complete cleanup.
 One process owns an attempt's listeners and deadline supervision.
+
 It starts only for a lab that delegates Docker authority.
 It ends with that lab's recorder teardown.
 No global service, host daemon change, network listener, or unrelated scheduled task is introduced.
@@ -68,18 +78,22 @@ No global service, host daemon change, network listener, or unrelated scheduled 
 The native provider uses h11 for HTTP framing and protocol transitions.
 It relays streaming bodies and upgraded connections without storing their contents.
 Create requests and responses have bounded inspection buffers.
+
 An oversized or unsupported carrier is forwarded with a recording-gap diagnostic.
 Transport limits bound concurrent connections and pending work.
 The recorder accepts at most 64 concurrent connections and 1024 holder endpoints.
+
 Reaching the inspection or delegation limit forwards the original create with an explicit gap.
 Native receipt retention remains independent of portable report size limits.
 
 Owner-only state uses the existing no-follow path utilities.
 Create intents precede forwarding.
 Successful responses publish immutable creation records and existing `ResourceReceipt` records.
+
 The creation record contains attempt, daemon, source, parent, native ID, time, and safe observed identity.
 Raw requests, environment values, credentials, commands, and host mount paths are not retained.
 Unfinished intents make completeness false after a crash.
+
 They grant no cleanup authority over a guessed container.
 
 Receipt verification checks the durable creation chain and full native ID before a read or action.
@@ -98,23 +112,29 @@ Teardown holds the project lifecycle lock while it quiesces recorder deadline ac
 Teardown closes the recording endpoints to new work and drains in-flight creation responses.
 It removes verified holder and child resources before networks and volumes.
 It retains uncertain receipts and reports residual state.
+
 The recorder can recover existing receipt state without changing a sealed run archive.
 An existing socket bind mount retains its inode after the recorder exits.
 Recreating a socket file cannot repair that mounted endpoint.
+
 An interrupted recorder therefore requires lab teardown and a new admitted start.
 Retry within the same attempt requires the parent's verified proof of complete native cleanup.
 The retry retains the receipt history and deadlines but supplies new mounted socket inodes.
+
 Cleanup can still use already-recorded native identities without the old recorder process.
 
 One deadline thread serves an attempt.
 The control connection remains responsive during a stalled native inspection.
 The recorder is a child operation of the admitted start.
+
 The parent can hold the project lock while workflows create children.
 A child deadline must not wait for its parent to release that lock.
 The recorder therefore acts only on its attempt's verified native child IDs.
+
 Teardown retains the project lock and explicitly quiesces the recorder.
 Quiescence drains both creation responses and deadline actions before resource removal.
 It does not grant another workspace owner or introduce a second workflow engine.
+
 Recorder subprocesses receive a minimal environment without ambient credentials.
 
 ## Components and contracts
@@ -143,9 +163,11 @@ The original authored scenario and executable plan remain unchanged.
 `RuntimeManager` admits resource membership and derives `RealizationProvenanceEntry` values.
 The backend never writes that ledger directly.
 The manifest negotiates `backend-materialization-attestation-v1` and `backend-runtime-descendants-v1` together.
+
 The runtime rejects a report when required evidence or admission context is absent.
 The negotiated materialization contract also applies to orchestration and evaluation results.
 Those adapters submit phase-bound descriptions through the same reporting helper.
+
 Only provisioner inventory operations introduce descendant membership.
 
 ## Observation coverage
@@ -196,9 +218,11 @@ The archive boundary publishes protected bytes before a reference becomes accept
 The admitted run identity is fixed before planning.
 A sealed family trial supplies its existing run identity.
 Planning, native ownership, workflow records, and the archive retain that identity.
+
 An archive mismatch or a sealed run prevents apply.
 Temporary evidence and participant phases retain the same archive owner and configured manifest.
 The single runtime owner keeps component ownership exclusive during those phases.
+
 Ownership receipts are lifecycle state, not experimental evidence or authorization grants.
 
 ## Initial apply and later refresh
@@ -206,18 +230,23 @@ Ownership receipts are lifecycle state, not experimental evidence or authorizati
 Initial apply reports planned resources and every admitted addition observed at that point.
 Backend-created apparatus uses the existing preparation and augmentation admission contracts before creation.
 Targets with capture apparatus negotiate `backend-realization-preparation-v1`.
+
 The pure `prepare()` callback returns additional operations under the original enclosing collection authority.
 Capture containers receive stable backend node addresses in the materialized description.
 The provisioner checks their prospective SDL against the original augmentation and collection authority before deployment.
+
 Only verified capture readback can add those entries to its result proposal.
 The runtime must admit their membership and provenance with the complete report.
 RAES 9.1.0 admits prepared capture membership but omits its per-concern provenance.
+
 [RAES issue 1697](https://github.com/OpenRAE/rae/issues/1697) records that defect.
 Published RAES 9.2.0 fixes the standalone preparation reproduction.
 Environment-packs 6.5.0 supports RAES 9.2.0 and clears that dependency conflict.
+
 [Environment-packs issue 525](https://github.com/OpenRAE/env-packs/issues/525) records the original release dependency.
 The consumer's public-runtime capture regression now passes with the compatible published pair.
 Host traffic-control rules add no scenario container or node.
+
 Their existing apparatus evidence describes the host implementation and observer effects.
 An open concern on one node does not open the enclosing node collection.
 Exact and closed scopes retain their original meaning.
@@ -286,31 +315,39 @@ This delivery does not accept ADR-055's proposed policy model or grant new autho
 `AcesStartOutcome.native_evidence` exposes the producer-owned handoff.
 It binds the admitted plan digest, run identity, and native attempt identity.
 It retains immutable initial, later inventory, and evaluation cuts in protected local run storage.
+
 Each cut contains the public runtime snapshot, concern provenance, archive records, and original archived SDL bytes.
 The backend supplies its original native resource receipts, creation records, and bounded readbacks.
 These bytes remain distinct from requested constraints and from portable provenance classification.
+
 Source-image evidence remains in the existing producer-owned result projection and protected cuts.
 It does not add backend-specific fields to the portable node payload.
 The public typed description used for origin calculation also supplies the serialized materialized SDL.
+
 This keeps selected default values resolvable after native projectors omit non-state metadata.
 
 Native observation changes and verified cleanup observations remain immutable lifecycle evidence.
 Cleanup evidence names the exact receipt, native ID, daemon, and attempt.
 It distinguishes absence after a removal request from an already absent object.
+
 An inspect failure alone does not prove absence.
 Cleanup requires a successful exact-ID or exact-name enumeration on the receipt's verified daemon.
 An unavailable or malformed response retains the receipt and reports failure.
+
 It grants no lifecycle authority.
 It retains a copy of a volume receipt before normal retirement removes that receipt.
 This source evidence stays outside sealed experiment archives.
+
 A collector can retain a final cleanup cut without changing an earlier sealed run.
 
 The handoff's `source(binding)` method returns the existing `WindowedSource` interface.
 Its source scope is the complete bound native attempt.
 It requires an evaluator-only or apparatus-only restricted binding that permits exact bytes.
+
 Participant-visible bindings and bindings that require byte redaction are refused.
 The source returns a standard ZIP archive with a versioned index and original content-addressed members.
 The index retains original versions, lengths, checksums, plan/run/attempt identity, phase, and coverage gaps.
+
 ZIP packaging does not rewrite member bytes.
 The existing evidence coordinator owns capture policy, artifact references, quotas, and sealing.
 Downstream capture does not create missing native proof or provenance.
@@ -318,9 +355,11 @@ Downstream capture does not create missing native proof or provenance.
 Reads use the existing no-follow protected path helpers and verify stored lengths and checksums.
 Archive publication uses the public RAES canonical publisher and the local store's descriptor-relative writes.
 It cannot follow a replaced run parent into another directory.
+
 Per-file, total-byte, and artifact-count limits apply before packaging.
 Missing, changed, incomplete, or over-limit input produces a typed source failure.
 It never becomes an empty successful collection.
+
 No route, service, external transfer, or participant disclosure is added.
 
 ```text
@@ -339,9 +378,11 @@ Trusted collector composition + admitted restricted binding
 The dependency pin and lock select RAES 9.2.0 and environment-packs 6.5.0.
 The application, development environment, CI, and release jobs use Python 3.14.
 Package metadata requires Python `>=3.14,<3.15`, matching both released dependencies.
+
 An incompatible dependency set is not replaced with a resolver override.
 The compiled bounded-participant freeze changes only for RAES 9.2's removal of 199 empty defaults.
 Its authored source, action contracts, participant policy and nonempty compiled values remain identical.
+
 The offline conformance simulator reports its empty native descendant scope without contacting Docker.
 Generated content binds remain bound to their exact realization and output root during effective-model validation.
 An admitted content mount does not authorize another host mount.
@@ -349,20 +390,25 @@ An admitted content mount does not authorize another host mount.
 The released TechVault full source exceeds RAES 9.2's 1 MiB materialization bound.
 Even minimal valid variable bindings produce 1,055,386 canonical bytes.
 [RAES issue #1742](https://github.com/OpenRAE/rae/issues/1742) blocks full-scenario qualification.
+
 The consumer does not truncate source, remove negotiated reporting or patch private limits.
 The existing manifest, deployment protocols, manager wrapper, and snapshot projection carry the new reporting path.
 The archive owner uses the existing protected local storage boundary.
+
 It does not modify a sealed run archive.
 Experiment feasibility uses a deterministic planning-only run scope.
 That plan is never executed.
+
 Execution admission binds the actual run identity and archive before mutation.
 
 One RAES runtime owns the run from apply through evidence, participant delivery, and teardown.
 The constructor receives the admitted run scope and protected materialization archive.
 Later native evidence uses the public `evaluate()` API with a fresh request key.
+
 RAES replans evaluation against its committed snapshot while preserving the original compiled input.
 The application does not clear runtime evaluation state or reacquire private component claims.
 Participant behavior specifications and crossing policy enter through the runtime constructor.
+
 They come from the admitted delivery plan and retain its existing closed policy.
 Delivery uses that same owner; it cannot replace the run, archive, or policy during execution.
 The runtime's operation ledger remains authoritative for every phase and failed operation.

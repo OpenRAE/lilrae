@@ -71,7 +71,7 @@ def family_input(tmp_path):
         )
         payload = json.loads(fixture.read_text())
         entry = payload["entries"]["entry-a"]
-        entry.pop("entry_digest")
+        entry.pop("entry_digest", None)
         entry["bindings"] = []
         entry["stochastic_draws"] = []
         entry["selections"][0]["outcome"] = {"kind": "literal", "value": value}
@@ -86,7 +86,7 @@ def family_input(tmp_path):
             canonical_sdl_digest(selected_family).value
         )
         payload["stochastic_controls"] = {}
-        payload.pop("plan_digest")
+        payload.pop("plan_digest", None)
         payload = {
             name: TypeAdapter(
                 AdmittedTrialPlanModel.model_fields[name].annotation
@@ -130,17 +130,6 @@ def test_serving_context_exposes_no_trial_or_scenario():
     assert not hasattr(context, "scenario")
 
 
-def test_baseline_write_path_rejection_returns_false(monkeypatch, tmp_path):
-    from aptl_techvault.evidence import techvault_enrollment_baseline as baseline
-    from aptl.utils.pathsafe import PathContainmentError, REASON_SYMLINK
-
-    def reject(*args, **kwargs):
-        raise PathContainmentError(REASON_SYMLINK, "private-path-canary")
-
-    monkeypatch.setattr(baseline, "replace_private_nofollow", reject)
-    assert baseline.record_enrollment_baseline(tmp_path, {"agent": "001"}) is False
-
-
 def test_family_retry_operations_keep_admitted_aliases_and_hide_environment():
     from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
     from aptl.core.lab_types import LabResult
@@ -167,6 +156,66 @@ def test_family_retry_operations_keep_admitted_aliases_and_hide_environment():
     assert restarted == ["manager"]
     with pytest.raises(ValueError, match="^runtime-node-not-admitted$"):
         operations.container_restart("outside")
+
+
+def test_inspection_projects_only_network_addresses_and_aliases():
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+    networks = {
+        "range": {
+            "IPAddress": "172.20.0.135",
+            "Aliases": ["misp", "x" * 300, 7],
+            "Gateway": "172.20.0.1",
+            "MacAddress": "02:42:ac:14:00:87",
+            "DriverOpts": {"secret": "driver-canary"},
+        },
+        "spoofed": {"IPAddress": "not-an-address", "Aliases": "misp"},
+    }
+    backend = SimpleNamespace(
+        container_inspect=lambda name: {
+            "State": {"Status": "running"},
+            "Config": {"Env": ["TOKEN=credential-canary"]},
+            "Mounts": [{"Source": "/host/mount-canary"}],
+            "NetworkSettings": {"Networks": networks, "Ports": {"80/tcp": []}},
+        }
+    )
+    node = SimpleNamespace(name="misp", container_name="aptl-misp", aliases=())
+    info = AdmittedRuntimeOperations(backend, (node,)).container_inspect("aptl-misp")
+
+    projected = info["NetworkSettings"]["Networks"]
+    assert projected["range"] == {"IPAddress": "172.20.0.135", "Aliases": ["misp"]}
+    # An invalid address or alias list is dropped, not repaired.
+    assert projected["spoofed"] == {}
+    assert set(info["NetworkSettings"]) == {"Networks"}
+    text = str(info)
+    for canary in ("credential-canary", "mount-canary", "driver-canary", "02:42"):
+        assert canary not in text
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"bad\nname": {"IPAddress": "10.0.0.2"}},
+        {7: {"IPAddress": "10.0.0.2"}},
+        {f"extra-{index}": {"IPAddress": "10.0.0.2"} for index in range(16)},
+    ],
+)
+def test_an_attachment_set_that_cannot_be_shown_whole_is_withheld(extra):
+    """A partial set could turn two attachments into one unique attachment."""
+
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+    networks = {
+        "range": {"IPAddress": "172.20.0.135", "Aliases": ["misp"]},
+        **extra,
+    }
+    backend = SimpleNamespace(
+        container_inspect=lambda name: {"NetworkSettings": {"Networks": networks}}
+    )
+    node = SimpleNamespace(name="misp", container_name="aptl-misp", aliases=())
+    operations = AdmittedRuntimeOperations(backend, (node,))
+
+    assert "NetworkSettings" not in operations.container_inspect("aptl-misp")
 
 
 def test_family_native_capture_uses_trial_entry_identity(
@@ -201,7 +250,8 @@ def test_family_native_capture_uses_trial_entry_identity(
         selected,
     )
     monkeypatch.setattr(
-        "aptl.backends.scenario_capture.family_capture_sources", lambda request: {}
+        "aptl.backends.scenario_capture.family_capture_sources",
+        lambda request, **_: {},
     )
     monkeypatch.setattr(
         "aptl.backends._raes_native_evidence_acquisition.acquire_evidence",
@@ -348,7 +398,7 @@ def test_family_discovery_requires_all_seams_from_one_distribution(
     )
     entries = _install_family_entries(monkeypatch, trial)
     selections = contract.require_family_capabilities(trial)
-    assert len(selections) == 6
+    assert len(selections) == 5
     assert {selection.distribution for selection in selections} == {"example-adapter"}
     entries.pop()
     with pytest.raises(ValueError, match="^family-provider-missing$"):
@@ -392,7 +442,7 @@ def test_family_qualification_checks_the_host_declarations(monkeypatch, family_i
         trial,
         requires=["lilrae", "requests>=999", 'raes>=999; extra == "legacy"'],
     )
-    assert len(contract.require_family_capabilities(trial)) == 6
+    assert len(contract.require_family_capabilities(trial)) == 5
 
     declared = metadata.requires
     monkeypatch.setattr(
@@ -554,13 +604,6 @@ def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_in
         select_scenario_startup,
         ScenarioStartupPlan,
     )
-    from aptl.backends.scenario_planning_compatibility import (
-        ScenarioPlanningCompatibilityContext,
-        PlanningCompatibilityDecision,
-    )
-    from aptl.backends.scenario_planning_compatibility_discovery import (
-        resolve_scenario_planning_compatibility,
-    )
     from aptl.validation.scenario_verification import (
         VerificationContext,
         ScenarioIdentity,
@@ -589,7 +632,7 @@ def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_in
             seen.append(context.trial.snapshot_digest)
             if group == "aptl.scenario_startup":
                 return ScenarioStartupPlan("scripts/seed.sh", ("lab",), ("lab",))
-            return PlanningCompatibilityDecision()
+            raise AssertionError("Unexpected startup capability")
 
         def run(context):
             seen.append(context.trial.snapshot_digest)
@@ -615,12 +658,6 @@ def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_in
 
     monkeypatch.setattr(contract.metadata, "entry_points", entries)
     assert select_scenario_startup(bundle).plan.seed_script == "scripts/seed.sh"
-    assert (
-        resolve_scenario_planning_compatibility(
-            ScenarioPlanningCompatibilityContext(PACK, BACKEND, trial)
-        ).provider_id
-        == "example-provider"
-    )
     scenario = ScenarioIdentity(
         "family-a", trial.target.family_digest, "env-pack", "1.0.0"
     )
@@ -628,16 +665,23 @@ def test_startup_planning_and_verifier_receive_same_trial(monkeypatch, family_in
         VerificationContext("run-a", "attempt-a", scenario, BACKEND, trial=trial)
     )
     assert report.status is VerificationStatus.PASSED
-    assert seen == [trial.snapshot_digest] * 3
+    assert seen == [trial.snapshot_digest] * 2
 
 
 def test_bundled_adapter_uses_no_private_core_imports():
     import ast
     from pathlib import Path
 
+    from tests.declared_adapters import adapter_packages
+
+    bundled = [
+        path for package in sorted(adapter_packages())
+        for path in Path("src", package).rglob("*.py")
+    ]
+    assert bundled, "no bundled adapter source to check"
     violations = []
     for path in [
-        *Path("src/aptl_techvault").rglob("*.py"),
+        *bundled,
         *Path("tests/fixtures/family_adapter/family_adapter").rglob("*.py"),
     ]:
         for node in ast.walk(ast.parse(path.read_text())):
@@ -840,6 +884,90 @@ def test_family_runtime_parameters_are_copied_before_sealing(monkeypatch, family
     sealed_bundle = replace(bundle, trial=trial)
     with pytest.raises(RuntimeParameterProviderError, match="^family-runtime-parameters-invalid$"):
         resolve_family_runtime_parameters(sealed_bundle, trial.target)
+
+
+_NORMALIZED_FAMILY = """name: family-n
+nodes:
+  primary: {type: compute, resources: {ram: 1 GiB, cpu: 1}}
+realization:
+  constraints:
+  - field_pointer: /nodes/primary
+    concern: compute-substrate
+    posture: exact
+    domain: {kind: exact, value: virtual-machine}
+"""
+
+
+@pytest.fixture
+def normalized_family(tmp_path, monkeypatch):
+    """An import-free family whose parsed and admitted digests differ (#1676)."""
+    from raes import admit_scenario_family, canonical_sdl_digest, parse_sdl_file
+    from aptl.backends import scenario_family as contract
+    from aptl.core.scenario_bundle import ScenarioBundle, ScenarioSourceKind
+
+    sdl = tmp_path / "family.yaml"
+    sdl.write_text(_NORMALIZED_FAMILY)
+    parsed = parse_sdl_file(sdl)
+    admitted = canonical_sdl_digest(admit_scenario_family(parsed)).value
+    assert canonical_sdl_digest(parsed).value != admitted
+    target = QualifiedFamilyTarget(PACK, "family-n", admitted, BACKEND)
+    other = replace(target, family_digest="sha256:" + "c" * 64)
+    calls = []
+
+    def entry(qualified, result):
+        provider = _provider(qualified)
+        provider.extension_api_version = "1"
+        provider.provider_id = f"provider-{len(calls)}-{result}"
+        provider.resolve = lambda bundle: calls.append(result) or {"selected": result}
+        return SimpleNamespace(
+            name=PACK.pack_id, load=lambda: provider,
+            dist=SimpleNamespace(name="example-adapter", version="1.0", requires=None),
+        )
+
+    entries = [entry(other, "other"), entry(target, "exact")]
+    monkeypatch.setattr(contract.metadata, "entry_points", lambda **kw: entries)
+    bundle = ScenarioBundle(
+        PACK.pack_id, tmp_path, sdl, ScenarioSourceKind.ENV_PACK, PACK
+    )
+    return bundle, target, calls
+
+
+def test_family_runtime_parameters_admit_normalized_family(normalized_family):
+    from aptl.backends.scenario_runtime_parameters import (
+        resolve_family_runtime_parameters,
+    )
+
+    bundle, target, calls = normalized_family
+    assert resolve_family_runtime_parameters(bundle, target) == {"selected": "exact"}
+    assert calls == ["exact"]
+
+
+@pytest.mark.parametrize("change", [
+    "source", "family_id", "family_digest", "pack", "trial",
+])
+def test_family_runtime_parameters_refuse_mismatch_before_provider(
+    normalized_family, change
+):
+    from aptl.backends.scenario_runtime_parameters import (
+        resolve_family_runtime_parameters, RuntimeParameterProviderError,
+    )
+
+    bundle, target, calls = normalized_family
+    if change == "source":
+        bundle.sdl_path.write_text(_NORMALIZED_FAMILY.replace("cpu: 1", "cpu: 2"))
+    elif change == "family_id":
+        target = replace(target, family_id="family-other")
+    elif change == "family_digest":
+        target = replace(target, family_digest="sha256:" + "d" * 64)
+    elif change == "pack":
+        bundle = replace(bundle, pack_identity=replace(PACK, pack_version="1.0.1"))
+    else:
+        bundle = replace(bundle, trial=SimpleNamespace(target=target))
+    with pytest.raises(
+        RuntimeParameterProviderError, match="^family-runtime-parameters-invalid$"
+    ):
+        resolve_family_runtime_parameters(bundle, target)
+    assert calls == []
 
 
 def test_family_runtime_receives_trial_and_scoped_operations(family_input):
@@ -1123,7 +1251,7 @@ def test_family_capture_sources_contain_callback_failures():
     request.capture_selection.contribution.runtime_adapter = SimpleNamespace(
         native_sources=broken
     )
-    with pytest.raises(ValueError, match="^family-capture-sources-invalid$"):
+    with pytest.raises(RuntimeError, match="^family-capture-sources-unavailable$"):
         family_capture_sources(request)
 
     request.capture_selection.contribution.runtime_adapter.native_sources = (
@@ -1281,9 +1409,8 @@ def test_independent_wheels_use_only_public_contract(
         from aptl.core.evidence.outcomes import AcquisitionDisposition
         from aptl.core.runstore import LocalRunStore
         from types import SimpleNamespace
-        from aptl.backends.scenario_planning_compatibility import ScenarioPlanningCompatibilityContext
-        from aptl.backends.scenario_planning_compatibility_discovery import resolve_scenario_planning_compatibility
-        from aptl.backends.scenario_startup import select_scenario_startup, run_scenario_runtime
+        from aptl.backends.scenario_startup import select_scenario_startup, run_scenario_runtime, observe_scenario_runtime_concerns
+        from subprocess import CompletedProcess
         from aptl.core.scenario_bundle import ScenarioBundle, ScenarioSourceKind
         from aptl.validation.scenario_verification import ScenarioIdentity, VerificationContext, VerificationStatus
         from aptl.validation.scenario_verification_discovery import verify_scenario
@@ -1293,12 +1420,26 @@ def test_independent_wheels_use_only_public_contract(
         for value in json.loads(Path(sys.argv[2]).read_text()):
             trial = AdmittedFamilyTrial(target, value['digest'], value['snapshot'].encode())
             selections = require_family_capabilities(trial)
-            assert len(selections) == 6
+            assert len(selections) == 5
             assert {s.distribution for s in selections} == {'lilrae-family-contract-fixture'}
             assert {s.distribution_version for s in selections} == {sys.argv[3]}
             bundle = ScenarioBundle(target.pack.pack_id, Path.cwd(), Path('unused'), ScenarioSourceKind.ENV_PACK, target.pack, trial)
             startup = select_scenario_startup(bundle)
             assert run_scenario_runtime(target.pack, object(), (), selection=startup) == []
+            path = trial.scenario.content['payload'].path
+            class NativeBackend:
+                missing = False
+                def container_exec(self, name, command, *, timeout):
+                    assert name == 'selected-container' and command == ['test', '-f', path] and timeout == 30
+                    return CompletedProcess(command, 1 if self.missing else 0, '', '')
+            native_backend = NativeBackend()
+            native_node = SimpleNamespace(container_name='selected-container', address='provision.node.shared.primary')
+            reading_path = ('spec', 'node', 'runtime', 'filesystem_inventory')
+            readings = observe_scenario_runtime_concerns(target.pack, native_backend, native_node, selection=startup)
+            assert readings[reading_path].value == [{'path': path, 'entry_type': 'file'}]
+            assert readings[reading_path].source.value == 'guest-observed'
+            native_backend.missing = True
+            assert observe_scenario_runtime_concerns(target.pack, native_backend, native_node, selection=startup) == {}
             assert resolve_pack_backend_interaction(PackBackendInteractionContext(target.pack, target.backend, ('nodes.primary',)), trial=trial).operator_groups == ('lab',)
             capture = resolve_scenario_capture(ScenarioCaptureContext(target.pack, target.backend, trial))
             capture_plan = admit_sdl_evidence(trial.scenario, registry=capture.registry)
@@ -1310,7 +1451,6 @@ def test_independent_wheels_use_only_public_contract(
             ))
             assert acquired.disposition is AcquisitionDisposition.SEALED_READY
             assert len(acquired.records) == 1
-            assert resolve_scenario_planning_compatibility(ScenarioPlanningCompatibilityContext(target.pack, target.backend, trial)) is not None
             scenario = ScenarioIdentity(target.family_id, target.family_digest, 'env-pack', target.pack.pack_version)
             report = verify_scenario(VerificationContext('run-a', 'attempt-a', scenario, target.backend, trial=trial))
             assert report.status is VerificationStatus.PASSED

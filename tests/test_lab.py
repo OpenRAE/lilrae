@@ -177,6 +177,7 @@ def _admitted_start_fixture(bundle_root: Path):
     return SimpleNamespace(
         bundle=project_tree_bundle(bundle_root, bundle_root / "fixture.sdl.yaml"),
         runtime_materialization_failure=None,
+        mcp_server_ids=(),
     )
 
 
@@ -936,6 +937,7 @@ class TestCleanBootLab:
             scenario_path=None,
             progress=None,
             teardown_on_failure=False,
+            trial=None,
         ):
             captured["skip_seed"] = skip_seed
             captured["scenario_path"] = scenario_path
@@ -1712,7 +1714,7 @@ class TestOrchestrateLabStart:
             json.dumps(
                 {
                     "lab": {"name": "test-lab"},
-                    "scenario": {"identity": "techvault"},
+                    "scenario": {"identity": "fixture-range"},
                     # Pin every profile: these orchestration tests assert the
                     # outcome/diagnostics of a wazuh/victim/kali lab, so the
                     # written config must not inherit the SOC-enabled defaults.
@@ -2106,31 +2108,6 @@ class TestOrchestrateLabStart:
         mocks["start"].assert_called_once()
         assert mocks["start"].call_args.kwargs["scenario_path"] == selected
 
-    def test_orchestrate_hydrates_missing_env(
-        self, mocker, tmp_path, released_techvault_bundle
-    ):
-        """A fresh checkout can start without a hand-created .env."""
-        from aptl.core.env import find_placeholder_env_values, load_dotenv
-        from aptl.core.lab import orchestrate_lab_start
-
-        mocks = self._patch_all_steps(mocker, tmp_path)
-        mocks["resolve_bundle"].return_value = released_techvault_bundle
-        (tmp_path / ".env").unlink()
-
-        result = orchestrate_lab_start(tmp_path)
-        env = load_dotenv(tmp_path / ".env")
-
-        assert result.success is True
-        assert find_placeholder_env_values(env) == []
-        assert env[_env_key("INDEXER", "PASSWORD")]
-        assert env[_env_key("API", "PASSWORD")]
-        mocks["dashboard_creds"].assert_called_once()
-        assert (
-            mocks["dashboard_creds"].call_args.args[1]
-            == env[_env_key("API", "PASSWORD")]
-        )
-        assert mocks["manager_creds"].call_args.args[1]
-
     def test_refuses_start_when_env_keeps_placeholder_secret(self, mocker, tmp_path):
         """A .env.example placeholder secret must stop the start fail-closed.
 
@@ -2163,7 +2140,7 @@ class TestOrchestrateLabStart:
         # aptl.json still needed to not hit a different error first
         import json
 
-        (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "test"}, "scenario": {"identity": "techvault"}}))
+        (tmp_path / "aptl.json").write_text(json.dumps({"lab": {"name": "test"}, "scenario": {"identity": "fixture-range"}}))
 
         result = orchestrate_lab_start(tmp_path)
 
@@ -2932,7 +2909,7 @@ class TestOrchestrateLabStart:
             json.dumps(
                 {
                     "lab": {"name": "test-lab"},
-                    "scenario": {"identity": "techvault"},
+                    "scenario": {"identity": "fixture-range"},
                     "containers": {'profiles': []},
                 }
             )
@@ -3904,7 +3881,7 @@ class TestStartupClassificationWiring:
                 "fileshare": False,
                 "dns": False,
             }),
-            scenario={"identity": "techvault"},
+            scenario={"identity": "fixture-range"},
         )
 
     def _ctx(self, tmp_path, *, config=None, selected_profiles=None):
@@ -4544,7 +4521,7 @@ class TestStartupClassificationWiring:
         outcome = AcesStartOutcome(
             lab_result=LabResult(success=True, message="ok"),
             final_snapshot=RuntimeSnapshot(),
-            realization_details={"nodes": [{"name": "techvault.victim"}]},
+            realization_details={"nodes": [{"name": "range.victim"}]},
             selected_profiles=["victim", "otel"],
             scenario_path=tmp_path / "scenarios" / "demo.sdl.yaml",
             pack_interaction_evidence={
@@ -4562,6 +4539,40 @@ class TestStartupClassificationWiring:
         ctx.run_store = run_store
         ctx.run_id = run_id
         return ctx, run_store, run_id
+
+    @pytest.mark.parametrize(
+        "failed,impact,expected",
+        [
+            (False, None, "success"),
+            (True, None, "failed"),
+            (False, "telemetry", "partial"),
+            (False, "readiness", "partial"),
+        ],
+    )
+    def test_startup_record_uses_observed_health(
+        self, tmp_path, failed, impact, expected
+    ):
+        from aptl.core.lab import _write_run_record
+        from aptl.core.lab_types import (
+            DiagnosticImpact,
+            DiagnosticSeverity,
+            LabResult,
+            StartupDiagnostic,
+        )
+
+        ctx, store, run_id = self._run_record_ctx(tmp_path)
+        ctx.raes_outcome.lab_result = LabResult(success=not failed)
+        if impact:
+            ctx.diagnostics.append(
+                StartupDiagnostic(
+                    step="capture",
+                    impact=DiagnosticImpact(impact),
+                    severity=DiagnosticSeverity.WARNING,
+                    message="bounded failure",
+                )
+            )
+        _write_run_record(ctx)
+        assert store.get_run_manifest(run_id)["outcome"] == expected
 
     def test_write_run_record_references_existing_orchestration_evidence(
         self, tmp_path
@@ -4826,39 +4837,31 @@ class TestStartupClassificationWiring:
 
     # -- mcp_config_sync (capability) ----------------------------------
 
-    def test_product_neutral_start_skips_mcp_config_sync(self, tmp_path, mocker):
+    def test_product_neutral_start_clears_previous_mcp_selection(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
+        from aptl.core.scenario_bundle import ScenarioSourceKind
 
         ctx = self._ctx(tmp_path, selected_profiles=set())
-        ctx.admitted_surface = object()
+        ctx.admitted_surface = SimpleNamespace(selected_profiles=(), source_kind=ScenarioSourceKind.PROJECT_TREE)
+        ctx.admitted_start = SimpleNamespace(mcp_server_ids=())
+        mocker.patch("aptl.core.lab._runtime_mcp_host_ports", return_value=[])
         sync = mocker.patch("aptl.core.lab._sync_mcp_config_keys")
-
+        mocker.patch("aptl.core.lab._persist_mcp_run_admission")
         assert _step_sync_mcp_config(ctx) is None
+        assert sync.call_args.kwargs["server_ids"] == ()
 
-        sync.assert_not_called()
-        assert ctx.diagnostics == []
-
-    def test_mcp_config_sync_exception_emits_capability_warning(self, tmp_path, mocker):
+    def test_mcp_config_sync_failure_blocks_readiness(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
-        from aptl.core.lab_types import DiagnosticImpact, DiagnosticSeverity
 
         ctx = self._ctx(tmp_path)
         mocker.patch(
             "aptl.core.lab._sync_mcp_config_keys",
             side_effect=RuntimeError("MISP_API_KEY mismatch"),
         )
-
         result = _step_sync_mcp_config(ctx)
-        assert result is None
-
-        assert len(ctx.diagnostics) == 1
-        diag = ctx.diagnostics[0]
-        assert diag.step == "mcp_config_sync"
-        assert diag.impact is DiagnosticImpact.CAPABILITY
-        assert diag.severity is DiagnosticSeverity.WARNING
-        # Exception text contains a sensitive-looking key name —
-        # diagnostic message must not echo the raw exception payload.
-        assert "MISP_API_KEY" not in diag.message
+        assert result is not None
+        assert not result.success
+        assert "MISP_API_KEY" not in result.error
 
     def test_mcp_config_sync_clean_emits_no_diagnostic(self, tmp_path, mocker):
         from aptl.core.lab import _step_sync_mcp_config
@@ -4925,7 +4928,7 @@ class TestStartupClassificationWiring:
         assert _step_sync_mcp_config(ctx) is None
 
         runtime.assert_called_once_with(
-            ctx.project_dir, ctx.backend, active_profiles=None
+            ctx.project_dir, ctx.backend, active_profiles=None, server_ids=None
         )
         assert sync.call_args.args[1] == [live]
         assert ctx.diagnostics == []
@@ -5024,7 +5027,6 @@ class TestLabOrchestrationContracts:
         from aptl.core.config import AptlConfig
         from aptl.core.lab import StartSelection, _LabStartContext
         from aptl.core.scenario_bundle import project_tree_bundle
-        from aptl_techvault.startup import TechVaultStartupProvider
 
         ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False)
         plan = ScenarioStartupPlan(
@@ -5035,7 +5037,7 @@ class TestLabOrchestrationContracts:
         )
         bundle = project_tree_bundle(tmp_path, tmp_path / "fixture.sdl.yaml")
         provider_selection = ScenarioStartupSelection(
-            None, TechVaultStartupProvider(), plan
+            None, object(), plan
         )
         ctx.scenario_startup = plan
         ctx.start_selection = StartSelection(

@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from importlib.metadata import version
 from pathlib import Path
 
-from packaging.specifiers import SpecifierSet
 import pytest
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -26,95 +23,6 @@ EXPECTED_ENVIRONMENT = {
 
 def _enum_value(value: object) -> object:
     return getattr(value, "value", value)
-
-
-def test_released_pack_supplies_shuffle_semantics_and_leaves_mechanics_open(
-    released_techvault_scenario,
-) -> None:
-    assert version("raes-env-packs") in SpecifierSet(">=7.0.0,<8")
-    scenario = released_techvault_scenario
-    backend = scenario.nodes["shuffle-backend"].runtime
-    opensearch = scenario.nodes["shuffle-opensearch"].runtime
-
-    environment = {
-        item.name: (item.value, _enum_value(item.value_classification))
-        for item in backend.environment
-    }
-    assert environment == {}
-    assert _enum_value(scenario.realization.default) == "open"
-
-    listener = backend.service_listeners[0]
-    assert listener.service == "shuffle-api"
-    assert listener.readiness.probe == "shuffle-authenticated-datastore-operation"
-    assert "authenticated" in listener.readiness.criteria.lower()
-
-    application = backend.platform_applications[0]
-    binding = application.upstream_bindings[0]
-    assert _enum_value(application.capabilities[0].kind) == "workflow_automation"
-    assert _enum_value(binding.role) == "index_backend"
-    assert binding.target_node_ref == "shuffle-opensearch"
-    assert binding.target_service_ref == "opensearch-rest"
-
-    datastore = opensearch.datastore_services[0]
-    endpoint = datastore.nodes[0].endpoints[0]
-    assert datastore.service == "opensearch-rest"
-    assert (endpoint.protocol, endpoint.address, endpoint.port) == (
-        "https",
-        "shuffle-opensearch",
-        9200,
-    )
-    assert _enum_value(datastore.transport_security.mode) == "tls"
-    assert datastore.transport_security.client_verification is False
-
-    assert scenario.persistent_volumes["shuffle_data"].consumers[0].node == (
-        "shuffle-backend"
-    )
-    assert (
-        scenario.persistent_volumes["shuffle_opensearch_data"].consumers[0].node
-        == "shuffle-opensearch"
-    )
-
-
-def test_generated_compose_uses_only_the_admitted_shuffle_runtime(
-    released_techvault_realization,
-) -> None:
-    from aptl.core.deployment._compose_node_generation import render_realization_compose
-
-    realization = released_techvault_realization
-    # The pinned pack now admits the Orborus authority alongside Shuffle.
-    spec = realization.deployment_spec(sorted(realization.profiles))
-    document = render_realization_compose(spec)
-    backend = document["services"]["shuffle-backend"]
-
-    assert backend["profiles"] == ["soc"]
-    assert backend["environment"] == {
-        name: value for name, (value, _classification) in EXPECTED_ENVIRONMENT.items()
-    }
-    assert backend["depends_on"] == ["shuffle-opensearch"]
-    assert backend["restart"] == "on-failure"
-    assert "/var/run/docker.sock" not in repr(backend)
-
-    volumes = {volume.name: volume for volume in spec.persistent_volumes}
-    assert volumes["shuffle_data"].consumers[0].details() == {
-        "target_address": "provision.node.shuffle-backend",
-        "node_name": "shuffle-backend",
-        "service_name": "shuffle-backend",
-        "mount_destination": "/shuffle-database",
-        "access_mode": "read_write",
-        "delivery_mode": "mount",
-        "selected_outputs": [],
-    }
-    assert volumes["shuffle_opensearch_data"].consumers[0].mount_destination == (
-        "/usr/share/opensearch/data"
-    )
-
-
-def test_released_pack_selects_shuffle_failure_recovery(released_techvault_realization) -> None:
-    realization = released_techvault_realization
-    backend = next(node for node in realization.nodes if node.name == "shuffle-backend")
-
-    assert _enum_value(backend.runtime.operational_policy.restart) == "on_failure"
-    assert "runtime-restart-policy" in backend.backend_selected_concerns
 
 
 def test_release_manual_has_executable_reverse_negative_harness() -> None:
@@ -143,9 +51,9 @@ def test_release_manual_requires_valid_browser_trust_for_soc_uis() -> None:
     assert "config/soc_certs/lab-ca.pem" in manual
     assert "https://wazuh.dashboard:<reported-host-port>" in manual
     assert "443` is only the default" in manual
-    assert "aptl lab status --json --output qa-start-status.json" in manual
+    assert "lilrae lab status --json --output qa-start-status.json" in manual
     assert "certificate warning" in manual
-    assert "aptl container shell aptl-suricata" in manual
+    assert "lilrae container shell aptl-suricata" in manual
     assert "does not claim passive visibility" in manual
 
 

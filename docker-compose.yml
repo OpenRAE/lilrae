@@ -52,6 +52,12 @@ services:
       - ./config/wazuh_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/wazuh/root-ca-manager.pem:ro
       - ./config/wazuh_indexer_ssl_certs/wazuh.manager.pem:/etc/ssl/wazuh/wazuh.manager.pem:ro
       - ./config/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/etc/ssl/wazuh/wazuh.manager-key.pem:ro
+      # The manager API serves the INF-005 manager certificate, which also names
+      # localhost for host-run clients. The image copies /wazuh-config-mount over
+      # /var/ossec at each start, so a self-signed API certificate in the
+      # retained volume cannot stay in use (#1767).
+      - ./config/wazuh_indexer_ssl_certs/wazuh.manager.pem:/wazuh-config-mount/api/configuration/ssl/server.crt:ro
+      - ./config/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/wazuh-config-mount/api/configuration/ssl/server.key:ro
       # Credentialized copy rendered by `aptl lab start` from the checked-in
       # template config/wazuh_cluster/wazuh_manager.conf (ADR-028); never edit
       # the .aptl/ copy by hand.

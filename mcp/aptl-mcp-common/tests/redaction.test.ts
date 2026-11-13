@@ -12,6 +12,7 @@ import {
   redactShortPasswordFlag,
   redactBasicAuthUser,
   experimentNoRedactActive,
+  commandScanWindows,
 } from '../src/redaction.js';
 
 describe('redact - sensitive scalars', () => {
@@ -880,6 +881,49 @@ describe('redactor defense-in-depth bounds (issue #386, ARCH-386-01)', () => {
     expect(out).toContain(`password=${REDACTED}`);
   });
 
+  it('a long dash run is linear, not ReDoS', () => {
+    // The long-flag matcher re-scanned a dash run from each `--` in it:
+    // seconds below the 64 KiB scan window, against milliseconds when linear.
+    const payload = '-'.repeat(65000);
+    let out = '';
+    expect(elapsedMs(() => {
+      out = redact(payload) as string;
+    })).toBeLessThan(500);
+    expect(out).toBe(payload);
+  });
+
+  it('repeated impacket targets are linear, not ReDoS', () => {
+    // The bare target regex scanned the value again from each `u:` start.
+    const payload = 'psexec.py ' + 'u:x!'.repeat(15000);
+    let out = '';
+    expect(elapsedMs(() => {
+      out = redact(payload) as string;
+    })).toBeLessThan(500);
+    expect(out).toBe(payload);
+  });
+
+  it('oversized input still runs the command-flag passes', () => {
+    const payload = ('x'.repeat(100) + '\n').repeat(2000) + 'hydra -l admin -p 1234 ssh://host';
+    let out = '';
+    expect(elapsedMs(() => {
+      out = redact(payload) as string;
+    })).toBeLessThan(BUDGET_MS);
+    expect(out.endsWith(`hydra -l admin -p ${REDACTED} ssh://host`)).toBe(true);
+  });
+
+  it('command scan windows count code points and cover the text', () => {
+    const max = 64 * 1024;
+    const text = 'y'.repeat(max - 10) + '\n' + 'z'.repeat(max + 5) + ' tail';
+    const windows = commandScanWindows(text);
+    expect(windows[0]).toBe('y'.repeat(max - 10) + '\n');
+    expect(windows[1]).toBe('z'.repeat(max));
+    expect(windows.join('')).toBe(text);
+    // A supplementary-plane character is one code point but two UTF-16 units.
+    const astral = '\u{1F600}'.repeat(max) + 'x';
+    expect(commandScanWindows(astral)).toEqual(['\u{1F600}'.repeat(max), 'x']);
+    expect(commandScanWindows('')).toEqual([]);
+  });
+
   it('deeply nested object fails closed without a stack overflow', () => {
     const root: Record<string, unknown> = {};
     let node = root;
@@ -919,5 +963,21 @@ describe('redactor defense-in-depth bounds (issue #386, ARCH-386-01)', () => {
     expect(redact({ blob: Buffer.from('api_key=AKIA1234567890') })).toEqual({
       blob: `api_key=${REDACTED}`,
     });
+  });
+});
+describe('numeric model limits and usage', () => {
+  it.each(["max_output_tokens", "max_tokens", "max_completion_tokens", "input_tokens", "output_tokens", "prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens", "cached_tokens", "known_input_tokens_subtotal", "known_output_tokens_subtotal", "effective_token_limit"])('preserves typed %s without exposing credential replacements', (name) => {
+    for (const value of [0, 128, null]) expect(redact({ [name]: value })).toEqual({ [name]: value });
+    for (const value of ['private-credential', { api_key: 'private-credential' }, true, -1, 2 ** 53]) {
+      expect(redact({ [name]: value })).toEqual({ [name]: '[REDACTED]' });
+    }
+    const declaration = { target_id: name, value_type: 'integer', allowed_value_kinds: ['literal'], sensitivity: 'internal' };
+    expect(redact({ [name]: declaration })).toEqual({ [name]: declaration });
+    const withDefault = { ...declaration, default: { kind: 'literal', value: 0 } };
+    expect(redact({ [name]: withDefault })).toEqual({ [name]: withDefault });
+    for (const fallback of [null, [], { kind: 'literal', value: 'private-credential' }, { kind: 'literal', value: true }, { kind: 'environment', value: 0 }]) {
+      expect(redact({ [name]: { ...declaration, default: fallback } })).toEqual({ [name]: '[REDACTED]' });
+    }
+    expect(redact({ [name]: { ...declaration, api_key: 'private-credential' } })).toEqual({ [name]: '[REDACTED]' });
   });
 });

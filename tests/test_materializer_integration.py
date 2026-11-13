@@ -52,15 +52,15 @@ def test_materializer_realizes_declared_state_on_a_real_container():
     runtime = RuntimeConfiguration(
         packages=[RuntimePackage(manager="apt", name="curl", version="*")],
         local_identity=RuntimeLocalIdentityInventory(
-            groups=[RuntimeLocalGroup(name="techvault", gid=1500)],
-            users=[RuntimeLocalUser(username="analyst", supplemental_groups=["techvault"])],
+            groups=[RuntimeLocalGroup(name="rangeops", gid=1500)],
+            users=[RuntimeLocalUser(username="analyst", supplemental_groups=["rangeops"])],
         ),
         filesystem_inventory=[
             RuntimeFilesystemEntry(
-                path="/var/log/techvault",
+                path="/var/log/rangeops",
                 entry_type=RuntimeFilesystemEntryType.DIRECTORY,
                 owner_user="analyst",
-                owner_group="techvault",
+                owner_group="rangeops",
                 mode="0750",
             ),
         ],
@@ -98,10 +98,10 @@ def test_materializer_realizes_declared_state_on_a_real_container():
         # Independently confirm the real container state.
         assert "curl" in run_in(container, ["dpkg-query", "-W", "-f=${Package}\n", "curl"]).stdout
         assert run_in(container, ["id", "-u", "analyst"]).returncode == 0
-        assert run_in(container, ["getent", "group", "techvault"]).returncode == 0
+        assert run_in(container, ["getent", "group", "rangeops"]).returncode == 0
         assert (
-            run_in(container, ["stat", "-c", "%U:%G %a", "/var/log/techvault"]).stdout.strip()
-            == "analyst:techvault 750"
+            run_in(container, ["stat", "-c", "%U:%G %a", "/var/log/rangeops"]).stdout.strip()
+            == "analyst:rangeops 750"
         )
     finally:
         subprocess.run(["docker", "rm", "-f", container], capture_output=True, text=True)

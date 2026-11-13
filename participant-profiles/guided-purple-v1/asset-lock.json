@@ -37,13 +37,13 @@
       "asset_id": "workbench-registry",
       "kind": "project-file",
       "source": "src/aptl/workbench/profiles.py",
-      "sha256": "c8b737b6b9f868c611aeb816da20bc92fb420b0cef1df24da46a277ac5eacdc9"
+      "sha256": "e05919ea0f2604f5aa7e0b2bcc05f752da0f44e5e0c3cd936f3fc974dfc7053c"
     },
     {
       "asset_id": "compose-model",
       "kind": "project-file",
       "source": "docker-compose.yml",
-      "sha256": "bf40ff69bdf0bfa358de4c2ef84ad7f72f8991c9be6a800a160cacf9cad7110c"
+      "sha256": "895503f1742076a49734853c1e7e5ff4b4dfa605784e9a03365bc6d57ba896ed"
     },
     {
       "asset_id": "mcp-red-build",
@@ -55,7 +55,7 @@
       "asset_id": "mcp-red-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-red/package-lock.json",
-      "sha256": "6b73c871d2d7d3ab27fe05a09930765464601b3e4c7f1fdded8f7cd7fb3abd22"
+      "sha256": "da43658c7fc1a8a311a2d5cc0b8fee467025d5f44d3965cfe3a6b36b12195f2a"
     },
     {
       "asset_id": "mcp-red-config",
@@ -67,19 +67,19 @@
       "asset_id": "mcp-indexer-build",
       "kind": "mcp-artifact",
       "source": "mcp/mcp-indexer/build/index.js",
-      "sha256": "11014137cc5f31553cf9a7e104c0e230dbe849b16fcbb52c6c15c15f03820ccb"
+      "sha256": "a336fa7be5e41ca091afb5fc7ae177a3442d5e55fa512d7078581ee9e5080696"
     },
     {
       "asset_id": "mcp-indexer-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/package-lock.json",
-      "sha256": "69a15997264527688d6381830466f1919f2f1218dc71a459af400c390791a5ad"
+      "sha256": "d4079b950c09b698016b5bd43d2925696a2d3ab5ce1df09a9a21cbda3bd1c9d6"
     },
     {
       "asset_id": "mcp-indexer-config",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/docker-lab-config.json",
-      "sha256": "e388fbb0e04446c7db2635bfc7d1bdedb686f5b41497a63dd981ff24d8b61b66"
+      "sha256": "a5bd9121d33ef64f94f1000b6e2d2b4dd80559b977264308f39b2b14670e4230"
     },
     {
       "asset_id": "mcp-wazuh-build",
@@ -91,13 +91,13 @@
       "asset_id": "mcp-wazuh-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/package-lock.json",
-      "sha256": "f5cce4754036d3e3830858bb3593743dadb566cb156441ddf6c2db61f8577c0a"
+      "sha256": "281127265941bb40a57d96b5e29a2e2e4042d06baf2bf2445a8be4c632d1569c"
     },
     {
       "asset_id": "mcp-wazuh-config",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/docker-lab-config.json",
-      "sha256": "f049642d65e0b09cb72f33d805fd39e7221f60416e5e690a5a079c0327bc29b5"
+      "sha256": "93bc2cb0fb289c9f21de9b9895c6647f89fcc7114825c35aae7f128871a7b125"
     },
     {
       "asset_id": "image-kali",
@@ -143,6 +143,18 @@
       "services": [
         "wazuh.dashboard"
       ]
+    },
+    {
+      "asset_id": "workbench-policy",
+      "kind": "project-file",
+      "source": "src/aptl/core/mcp_policy.py",
+      "sha256": "022cf730e9af87375884b77b91853591a413a8a48ec2e9583f6233d2dea93866"
+    },
+    {
+      "asset_id": "workbench-catalog",
+      "kind": "project-file",
+      "source": "src/aptl/core/participant_mcp_policy.json",
+      "sha256": "ad109a685e54ad6cddd6bd6bae06a67ed8b82d995651eb0960d7353c0d08328b"
     }
   ]
 }

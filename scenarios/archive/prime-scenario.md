@@ -1,5 +1,10 @@
 # APTL Prime Scenario: TechVault Enterprise Compromise
 
+> Source record: The last source change was 2026-07-26. Its status review date is 2026-11-06.
+> The original text below keeps historical proposals, decisions, and evidence.
+> It does not establish current runtime behavior or authorize external publication.
+> See the [current scenario reference](../../docs/reference/techvault-scenario-overview.md).
+
 > Historical reference only: this document describes the retired APTL-local
 > scenario YAML era. It is not current authoring guidance, not a startup input,
 > and not a runtime schema authority. Current TechVault scenario authority lives

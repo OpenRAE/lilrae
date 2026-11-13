@@ -12,7 +12,6 @@ import re
 import stat
 import subprocess
 from typing import Protocol
-from uuid import uuid4
 
 from aptl.core.deployment._compose_resource_ownership import (
     OwnershipConflictError,
@@ -34,6 +33,8 @@ _ROOT = Path(".aptl/lifecycle/lilrae-native-evidence-v1")
 _LIMIT = 128 * 1024
 _FILES = 1024
 _CLEANUP_CAUSES = frozenset({"after-remove", "already-absent"})
+# Fields that a later observation of the same absence may change.
+_WITNESS_FREE = frozenset({"cause", "recorded_at"})
 
 
 class _NativeAbsenceBackend(Protocol):
@@ -159,7 +160,52 @@ def record_cleanup(
     data = (
         json.dumps(observation, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode()
-    _publish(ownership.root, directory / "cleanup" / f"{uuid4().hex}.json", data)
+    _publish_witness(ownership.root, directory / "cleanup" / f"{digest}.json", data)
+
+
+def _publish_witness(root: Path, path: Path, data: bytes) -> None:
+    """Write the first absence witness of a receipt and keep it.
+
+    The file name is the receipt digest. A later cleanup of the same receipt
+    adds no file, so the witness count stays bounded by the receipt count.
+    An existing witness must match the receipt identity of the new one.
+    """
+    try:
+        create_exclusive_nofollow(root, path, data)
+    except FileExistsError:
+        if not _same_witness(json.loads(_read(root, path)), json.loads(data)):
+            raise OwnershipConflictError("native cleanup witness conflicts") from None
+
+
+def _same_witness(existing: object, expected: dict[str, object]) -> bool:
+    """Return True when an existing witness records the same receipt absence."""
+    return (
+        isinstance(existing, dict)
+        and existing.keys() == expected.keys()
+        and existing["cause"] in _CLEANUP_CAUSES
+        and all(
+            existing[key] == value
+            for key, value in expected.items()
+            if key not in _WITNESS_FREE
+        )
+    )
+
+
+def retire_after_cleanup(
+    ownership: WorkspaceOwnership, receipt: ResourceReceipt, *, cause: str
+) -> None:
+    """Retain a verified absence, then retire the live receipt.
+
+    The caller must first prove native absence with `confirm_native_absence`.
+    The retained receipt copy and its witness stay in the evidence of the
+    attempt, so evidence export and declared cleanup still see the resource.
+    The live receipt stops costing later resolutions an inspect.
+    """
+    record_cleanup(ownership, receipt, cause=cause)
+    if receipt.kind == "volume":
+        ownership.retire_deleted_volume(receipt)
+    else:
+        ownership.retire_removed_resource(receipt)
 
 
 def _files(root: Path, directory: Path) -> tuple[Path, ...]:

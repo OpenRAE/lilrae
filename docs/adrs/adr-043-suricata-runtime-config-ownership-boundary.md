@@ -8,6 +8,14 @@ accepted
 
 2026-06-20
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [defensive posture](../components/default-defensive-posture.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 Issue #325 closes an ownership regression in the Suricata lab service. The
@@ -81,9 +89,7 @@ socket reload path. Do not merge operator-authored `local.rules` and
 MISP-generated rules.
 
 The implementation must also retire the legacy host bind directory
-`.aptl/suricata/rules/misp/`. Prior lab runs may already have left it owned by
-UID 991, so lab start may need a narrow Docker-root cleanup or repair for that
-legacy path. That cleanup is compatibility debt only: after this ADR, the path
+`.aptl/suricata/rules/misp/`. Earlier runs could leave the generated path owned by UID 991. Startup may need a narrowly scoped Docker-root repair of that legacy path. That cleanup is compatibility debt only: after this ADR, the path
 is not a Suricata runtime source. It must be path-contained, reject symlinked
 chains, and target only the canonical legacy project-relative path.
 
@@ -116,10 +122,7 @@ ownership damage and to make that retired path manageable again.
   service state as separate concepts.
 - Keep Suricata startup under `aptl lab start`; a bare `docker compose up`
   against a fresh checkout is not required to materialize seed volumes.
-- Place any seed orchestration in the existing lab-start sequence before
-  `_step_check_bind_mounts` and `_step_start_containers`; seed failures are
-  fatal `LabResult` failures because Suricata would otherwise start with stale
-  or absent config.
+- Seed work belongs before `_step_check_bind_mounts` and `_step_start_containers`. Failure must produce a fatal `LabResult`, preventing Suricata startup with stale or absent configuration.
 - Reuse or extract the existing containment and no-symlink-chain checks from
   `src/aptl/core/credentials.py`; do not add weaker path checks.
 - Reuse `PathContainmentError`, `CredentialRenderError` where applicable,
@@ -200,9 +203,7 @@ The seam is a typed named-volume seed specification:
 - whether the volume is seed-only or shared read-write at runtime;
 - optional canonical legacy host path to repair or retire.
 
-One future generated-volume service should be addable by registering another
-seed spec and reusing the same backend-owned materialization path, not by
-adding another one-off Docker cleanup or another generated-artifact schema.
+Another generated-volume service should register a seed specification with the shared backend materializer. It should not need another cleanup implementation or generated-artifact schema.
 
 ## Whole-Repo Surface
 

@@ -234,6 +234,7 @@ def _probe(mocker, *outcomes):
         url="https://localhost:55000/",
         username="api-user",
         password="api-password",
+        ca_cert_path="/lab/root-ca.pem",
     )
     return result, request
 
@@ -271,7 +272,8 @@ class TestProbeManagerApi:
         assert request.call_count == 1
         kwargs = request.call_args.kwargs
         assert kwargs.get("auth_header") is None
-        assert kwargs["insecure"] is True
+        assert "insecure" not in kwargs
+        assert kwargs["ca_cert_path"] == "/lab/root-ca.pem"
         assert result.ready is False
         assert (result.phase, result.category) == ("transport", "tls_handshake")
         assert result.curl_exit == 35
@@ -380,6 +382,7 @@ class TestProbeIndexerApi:
             url="https://localhost:9200/",
             username="admin",
             password="indexer-secret",
+            ca_cert_path="/lab/root-ca.pem",
         )
         return result, request
 
@@ -434,10 +437,14 @@ class TestProbeIndexerApi:
             url="https://localhost:9200",
             username="admin",
             password="super-secret-password",
+            ca_cert_path="/lab/root-ca.pem",
         )
 
         assert result.ready is True
         joined = " ".join(" ".join(cmd) for cmd in argv)
+        # SEC-009: each request verifies against the lab Wazuh CA.
+        assert all("-k" not in cmd and "--insecure" not in cmd for cmd in argv)
+        assert all(cmd[cmd.index("--cacert") + 1] == "/lab/root-ca.pem" for cmd in argv)
         assert "admin" not in joined
         assert "super-secret-password" not in joined
 
@@ -468,6 +475,7 @@ class TestManagerApiWarmUpIsQuiet:
                 url="https://localhost:55000",
                 username="api-user",
                 password="api-password",
+                ca_cert_path="/lab/root-ca.pem",
             )
 
         assert probe.ready is False

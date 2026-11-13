@@ -1,5 +1,13 @@
 # Web GUI Design Preflight Guardrails
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/specs/web-gui-design-preflight.md).
+Its last recorded file change before this rewrite was `82c26b34c84d`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 > **Dated preflight record.** Written on 2026-06-27 and kept as written. Since
 > then, UI-008a (684105ec, 2026-06-28) replaced `web/src/hooks.server.ts` with
 > the FastAPI BFF gate in `src/aptl/api/middleware/bff.py`, and UI-008d
@@ -37,7 +45,7 @@ type, route contract, or workflow concept.
 | Svelte wire-type mirror | `web/src/lib/types.ts` |
 | `aptl web serve` bind/runtime contract | `src/aptl/cli/web.py` |
 | Split web Compose profile | `docker-compose.yml` services `aptl-web-api` and `aptl-web-ui` |
-| Web build artifact contract | `web/package.json`, `web/svelte.config.js`, `web/vite.config.ts` |
+| Web build artifact contract | `web/package.json`, `web/vite.config.ts` |
 | Lab lifecycle and startup diagnostics | `src/aptl/core/lab.py`, `src/aptl/core/lab_types.py`, ADR-030 |
 | Endpoint display and terminal target metadata | `src/aptl/core/endpoints.py`, ADR-036, ADR-040 |
 | Docker and Docker Compose access | `src/aptl/core/deployment/`, ADR-023, ADR-037 |
@@ -186,7 +194,7 @@ Tailwind surface, not a parallel design system.
   existing sanctioned raw-HTML path. Generic primitives should render text or
   Svelte children, not add new `{@html}` surfaces.
 - Preserve SvelteKit's static SPA and strict CSP posture from
-  `web/src/routes/+layout.ts` and `web/svelte.config.js`: no remote assets,
+  `web/src/routes/+layout.ts` and `web/vite.config.ts`: no remote assets,
   no inline-script-dependent component behavior, no API token in route data,
   generated bundles, local storage, examples, screenshots, or style tokens.
 - Kit tests belong under `web/tests/components/` and should assert behavior,

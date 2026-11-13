@@ -4,6 +4,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -34,10 +35,12 @@ func TestDecodeEmptyObjectGivesDefaults(t *testing.T) {
 
 func TestDecodeFullConfiguration(t *testing.T) {
 	t.Parallel()
+	executable := absoluteExecutable()
 	data := `{
 		"lab": {"name": "lab-1", "network_subnet": "10.0.0.0/16"},
 		"containers": {"profiles": ["wazuh", "soc"]},
 		"deployment": {
+			"range_egress_allowances": [{"destination": "2001:DB8::10", "protocol": "udp", "port": 53}],
 			"provider": "ssh-compose", "project_name": "lab_1", "ssh_host": "h",
 			"ssh_user": "u", "ssh_key": "k", "ssh_port": 2222, "remote_dir": "/r",
 			"environment_grants": [{"pack": "p", "consumer": "c", "variable": "token",
@@ -49,16 +52,23 @@ func TestDecodeFullConfiguration(t *testing.T) {
 			"teardown_remove_volumes": false,
 			"schedule": [{"at": "08:30", "days": ["MON", "fri"], "scenario": "s"}]},
 		"experiment": {"participant_action_timeout_seconds": 300,
-			"participant_models": {"claude": "claude-sonnet-5", "codex": "gpt-5-nano-2025-08-07"},
+			"participant_models": {"claude": "claude-sonnet-5", "codex": "gpt-5-nano-2025-08-07",
+				"opencode": "openrouter/qwen/qwen3-coder"},
 			"participant_credential_sources": {
-				"claude": {"kind": "process-environment", "variable": "CLAUDE_KEY"}, "codex": null}},
-		"seat": {"image": "img", "public_key": "key"}
+				"claude": {"kind": "process-environment", "variable": "CLAUDE_KEY"}, "codex": null,
+				"opencode": {"kind": "process-environment", "variable": "OPENROUTER_KEY"},
+				"vertex": {"kind": "attached-service-account", "project": "lab-project-1"}},
+			"participant_serving_providers": {"qwen/qwen3-coder": "cerebras"},
+			"opencode_executable": ` + strconv.Quote(executable) + `},
+		"seat": {"image": "img", "public_key": "key"},
+		"mcp": {"allowed_servers": ["aptl-red", "aptl-wazuh"], "required_servers": ["aptl-red"]}
 	}`
 	want := Config{
 		Lab:        Lab{Name: "lab-1", NetworkSubnet: "10.0.0.0/16"},
 		Containers: Containers{Profiles: &[]string{"wazuh", "soc"}},
 		Deployment: Deployment{
-			Provider: "ssh-compose", ProjectName: "lab_1", SSHHost: new("h"),
+			RangeEgressAllowances: []RangeEgressAllowance{{Destination: "2001:db8::10", Protocol: "udp", Port: 53}},
+			Provider:              "ssh-compose", ProjectName: "lab_1", SSHHost: new("h"),
 			SSHUser: new("u"), SSHKey: new("k"), SSHPort: 2222, RemoteDir: new("/r"),
 			EnvironmentGrants: []EnvironmentGrant{{
 				Pack: "p", Consumer: "c", Variable: "token",
@@ -73,12 +83,20 @@ func TestDecodeFullConfiguration(t *testing.T) {
 		},
 		Experiment: Experiment{
 			ParticipantActionTimeoutSeconds: 300,
-			ParticipantModels:               ParticipantModels{Claude: new("claude-sonnet-5"), Codex: new("gpt-5-nano-2025-08-07")},
-			ParticipantCredentialSources: ParticipantCredentialSources{
-				Claude: &CredentialSource{Kind: SourceProcessEnvironment, Variable: "CLAUDE_KEY"},
+			ParticipantModels: ParticipantModels{
+				Claude: new("claude-sonnet-5"), Codex: new("gpt-5-nano-2025-08-07"),
+				Opencode: new("openrouter/qwen/qwen3-coder"),
 			},
+			ParticipantCredentialSources: ParticipantCredentialSources{
+				Claude:   &CredentialSource{Kind: SourceProcessEnvironment, Variable: "CLAUDE_KEY"},
+				Opencode: &CredentialSource{Kind: SourceProcessEnvironment, Variable: "OPENROUTER_KEY"},
+				Vertex:   &VertexSource{Kind: SourceAttachedServiceAccount, Project: new("lab-project-1")},
+			},
+			ParticipantServingProviders: ServingProviders{"qwen/qwen3-coder": "cerebras"},
+			OpencodeExecutable:          new(executable),
 		},
 		Seat: Seat{Image: new("img"), PublicKey: new("key")},
+		MCP:  MCPPolicy{AllowedServers: []string{"aptl-red", "aptl-wazuh"}, RequiredServers: []string{"aptl-red"}},
 	}
 	got, err := Decode([]byte(data))
 	if err != nil {
@@ -153,6 +171,13 @@ func TestDecodeRejections(t *testing.T) {
 		{"grant element", `{"deployment": {"environment_grants": [1]}}`, FieldError{"deployment.environment_grants.0", ruleObject}},
 		{"missing grant source", `{"deployment": {"environment_grants": [{"pack": "p", "consumer": "c", "variable": "v"}]}}`, FieldError{"deployment.environment_grants.0.source", ruleRequired}},
 		{"missing source kind", `{"experiment": {"participant_credential_sources": {"claude": {"variable": "V"}}}}`, FieldError{"experiment.participant_credential_sources.claude.kind", ruleRequired}},
+		{"string egress port", `{"deployment": {"range_egress_allowances": [{"destination": "192.0.2.1", "protocol": "tcp", "port": "443"}]}}`, FieldError{"deployment.range_egress_allowances.0.port", ruleInteger}},
+		{"missing egress port", `{"deployment": {"range_egress_allowances": [{"destination": "192.0.2.1", "protocol": "tcp"}]}}`, FieldError{"deployment.range_egress_allowances.0.port", ruleRequired}},
+		{"missing vertex kind", `{"experiment": {"participant_credential_sources": {"vertex": {"project": "lab-project-1"}}}}`, FieldError{"experiment.participant_credential_sources.vertex.kind", ruleRequired}},
+		{"key member for an attached account", `{"experiment": {"participant_credential_sources": {"vertex": {"kind": "attached-service-account", "project": "lab-project-1", "variable": "V"}}}}`, FieldError{"experiment.participant_credential_sources.vertex.variable", ruleUnknown}},
+		{"numeric serving provider", `{"experiment": {"participant_serving_providers": {"m": 1}}}`, FieldError{"experiment.participant_serving_providers.m", ruleString}},
+		{"server id of wrong type", `{"mcp": {"allowed_servers": [1]}}`, FieldError{"mcp.allowed_servers.0", ruleString}},
+		{"unknown mcp member", `{"mcp": {"servers": []}}`, FieldError{"mcp.servers", ruleUnknown}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -210,7 +235,24 @@ func TestDecodeSemanticChecks(t *testing.T) {
 		{"zero action timeout", `{"experiment": {"participant_action_timeout_seconds": 0}}`, "experiment.participant_action_timeout_seconds"},
 		{"long action timeout", `{"experiment": {"participant_action_timeout_seconds": 3601}}`, "experiment.participant_action_timeout_seconds"},
 		{"mutable claude model", `{"experiment": {"participant_models": {"claude": "claude-latest"}}}`, "experiment.participant_models.claude"},
-		{"undated codex model", `{"experiment": {"participant_models": {"codex": "gpt-5"}}}`, "experiment.participant_models.codex"},
+		{"unknown codex family", `{"experiment": {"participant_models": {"codex": "davinci-3"}}}`, "experiment.participant_models.codex"},
+		{"opencode model of an unknown router", `{"experiment": {"participant_models": {"opencode": "anthropic/claude"}}}`, "experiment.participant_models.opencode"},
+		{"loopback egress destination", `{"deployment": {"range_egress_allowances": [{"destination": "127.0.0.1", "protocol": "tcp", "port": 443}]}}`, "deployment.range_egress_allowances.0.destination"},
+		{"mapped loopback egress destination", `{"deployment": {"range_egress_allowances": [{"destination": "::ffff:127.0.0.1", "protocol": "tcp", "port": 443}]}}`, "deployment.range_egress_allowances.0.destination"},
+		{"multicast egress destination", `{"deployment": {"range_egress_allowances": [{"destination": "ff02::1", "protocol": "udp", "port": 53}]}}`, "deployment.range_egress_allowances.0.destination"},
+		{"unspecified egress destination", `{"deployment": {"range_egress_allowances": [{"destination": "0.0.0.0", "protocol": "tcp", "port": 443}]}}`, "deployment.range_egress_allowances.0.destination"},
+		{"egress destination name", `{"deployment": {"range_egress_allowances": [{"destination": "Zq9SECRET.example", "protocol": "tcp", "port": 443}]}}`, "deployment.range_egress_allowances.0.destination"},
+		{"icmp egress protocol", `{"deployment": {"range_egress_allowances": [{"destination": "192.0.2.1", "protocol": "icmp", "port": 1}]}}`, "deployment.range_egress_allowances.0.protocol"},
+		{"zero egress port", `{"deployment": {"range_egress_allowances": [{"destination": "192.0.2.1", "protocol": "tcp", "port": 0}]}}`, "deployment.range_egress_allowances.0.port"},
+		{"relative opencode executable", `{"experiment": {"opencode_executable": "bin/opencode"}}`, "experiment.opencode_executable"},
+		{"one-character opencode executable", `{"experiment": {"opencode_executable": "/"}}`, "experiment.opencode_executable"},
+		{"lower-case vertex variable", `{"experiment": {"participant_credential_sources": {"vertex": {"kind": "process-environment", "variable": "key"}}}}`, "experiment.participant_credential_sources.vertex.variable"},
+		{"short google project", `{"experiment": {"participant_credential_sources": {"vertex": {"kind": "attached-service-account", "project": "ab"}}}}`, "experiment.participant_credential_sources.vertex.project"},
+		{"upper-case google project", `{"experiment": {"participant_credential_sources": {"vertex": {"kind": "attached-service-account", "project": "Lab-Project-1"}}}}`, "experiment.participant_credential_sources.vertex.project"},
+		{"project file source for vertex", `{"experiment": {"participant_credential_sources": {"vertex": {"kind": "project-env-file", "variable": "KEY"}}}}`, "experiment.participant_credential_sources.vertex.kind"},
+		{"too many serving providers", `{"experiment": {"participant_serving_providers": {` + servingProviders(65) + `}}}`, "experiment.participant_serving_providers"},
+		{"unknown mcp server", `{"mcp": {"allowed_servers": ["aptl-red", "Zq9SECRET"]}}`, "mcp"},
+		{"required server outside the ceiling", `{"mcp": {"allowed_servers": ["aptl-red"], "required_servers": ["aptl-wazuh"]}}`, "mcp"},
 		{"empty seat image", `{"seat": {"image": ""}}`, "seat.image"},
 		{"long seat key", `{"seat": {"public_key": "` + long(4097) + `"}}`, "seat.public_key"},
 	}
@@ -238,6 +280,13 @@ func TestDecodeAcceptsBoundaryValues(t *testing.T) {
 		`{"experiment": {"participant_action_timeout_seconds": 1}}`,
 		`{"experiment": {"participant_action_timeout_seconds": 3600}}`,
 		`{"experiment": {"participant_models": {"claude": "claude-x-20250101", "codex": "o3-2025-01-01"}}}`,
+		`{"experiment": {"participant_models": {"claude": "claude-opus-4.8", "codex": "gpt-5", "opencode": "google-vertex/gemini-3-pro"}}}`,
+		`{"experiment": {"participant_credential_sources": {"vertex": {"kind": "process-environment", "variable": "GOOGLE_KEY"}}}}`,
+		`{"experiment": {"participant_serving_providers": {` + servingProviders(64) + `}}}`,
+		`{"deployment": {"range_egress_allowances": [{"destination": "192.0.2.1", "protocol": "tcp", "port": 65535}]}}`,
+		`{"deployment": {"range_egress_allowances": [{"destination": "192.0.2.1", "protocol": "udp", "port": 1}]}}`,
+		`{"experiment": {"opencode_executable": ` + strconv.Quote(shortestExecutable()) + `}}`,
+		`{"mcp": {"allowed_servers": [], "required_servers": []}}`,
 		`{"lifecycle_policy": {"schedule": [{"at": "23:59", "days": []}]}}`,
 		`{"seat": {"public_key": "` + strings.Repeat("é", 4096) + `"}}`,
 	}
@@ -327,6 +376,32 @@ func profileList(n int) string {
 	items := make([]string, n)
 	for i := range items {
 		items[i] = `"p` + strconv.Itoa(i) + `"`
+	}
+	return strings.Join(items, ",")
+}
+
+// absoluteExecutable returns an absolute executable path of the host, as
+// Python Path.is_absolute decides it.
+func absoluteExecutable() string {
+	if runtime.GOOS == "windows" {
+		return `C:\opencode\opencode.exe`
+	}
+	return "/opt/opencode/bin/opencode"
+}
+
+// shortestExecutable returns the shortest absolute path of the host. On Unix
+// it has the minimum length of two characters.
+func shortestExecutable() string {
+	if runtime.GOOS == "windows" {
+		return `C:\o`
+	}
+	return "/o"
+}
+
+func servingProviders(n int) string {
+	items := make([]string, n)
+	for i := range items {
+		items[i] = `"model-` + strconv.Itoa(i) + `": "provider"`
 	}
 	return strings.Join(items, ",")
 }

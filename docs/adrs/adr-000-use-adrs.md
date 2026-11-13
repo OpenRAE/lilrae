@@ -10,75 +10,51 @@ accepted
 
 ## Context
 
-APTL has evolved through four major versions—from an AWS/Terraform lab (v1.x) to a Docker Compose deployment (v2.0), through a TypeScript MCP server layer with a common library (v3.x), and into a full enterprise lab with Python CLI, SOC stack, and scenario engine (v4.x). Along the way, significant architectural decisions were made and their rationale was captured only in commit messages, CHANGELOG entries, and a synthesis document (`notes/team-review-synthesis.md`).
+APTL developed through four major versions.
+Version 1.x used AWS and Terraform.
+Version 2.0 introduced Docker Compose.
+Version 3.x added TypeScript MCP servers and a common library.
+Version 4.x added enterprise services, the Python CLI, the SOC stack, and the scenario engine.
 
-As the project grows, newcomers (and future-us) need to understand *why* the system is shaped the way it is—not just *what* it does. Without structured decision records, context is lost and the same debates resurface.
-
-## Decision
-
-Adopt Architecture Decision Records (ADRs) using a lightweight MADR (Markdown Any Decision Records) format. All ADRs live in `docs/adrs/` and are versioned with the codebase.
-
-Each ADR follows this template:
-
-```markdown
-# ADR-NNN: [Title]
-
-## Status
-
-[proposed | accepted | deprecated | superseded by ADR-XXX]
-
-## Date
-
-YYYY-MM-DD
-
-## Context
-
-What is the issue that we're seeing that is motivating this decision or change?
+Earlier decisions appeared in commit messages, CHANGELOG entries, and `notes/team-review-synthesis.md`.
+Contributors needed a stable place to find each decision and its reasons.
+Without that record, later work could lose the original context and repeat the same discussion.
 
 ## Decision
 
-What is the change that we're proposing and/or doing?
-
-## Consequences
-
-What becomes easier or more difficult to do because of this change?
-
-### Positive
-
--
-
-### Negative
-
--
-
-### Risks
-
--
-```
+The project uses Architecture Decision Records in its existing MADR format.
+ADRs live in `docs/adrs/` and share version control with the code.
+Each record states its status, date, context, decision, and consequences.
+Consequences include benefits, costs, and risks.
+The [format reference](../reference/architecture-decisions.md) contains the template.
 
 ### Governance
 
-- ADRs are **immutable** once accepted. To reverse a decision, create a new ADR that supersedes it.
-- ADRs are **numbered sequentially** (000, 001, 002, ...) and numbers are never reused.
-- ADRs are **versioned with code**—they live in `docs/adrs/`, not a wiki or external tool.
-- Status transitions: `proposed` → `accepted` or `rejected`. Accepted ADRs can later be `deprecated` or `superseded by ADR-XXX`.
-- The `docs/adrs/README.md` index must be updated when an ADR is added or its status changes.
+An accepted decision is immutable.
+A new decision supersedes it when its meaning changes.
+An editorial rewrite preserves that meaning and keeps amendments and successor links explicit.
+
+ADR numbers are sequential and never reused.
+The records live with the code, not in a separate wiki.
+A proposed ADR can become accepted or rejected.
+An accepted ADR can later become deprecated or superseded by another ADR.
+The index changes when a record is added or its recorded status changes.
 
 ## Consequences
 
 ### Positive
 
-- New contributors can understand *why* the system is built this way without archaeology through git history
-- Decisions are discoverable and searchable within the documentation site
-- The immutability principle prevents silent decision drift
-- Retroactive ADRs capture institutional knowledge before it's lost
+- Contributors can find design reasons without reconstructing every commit.
+- The documentation site makes decisions searchable.
+- Decision immutability prevents silent changes of meaning.
+- Retrospective records preserve earlier design knowledge.
 
 ### Negative
 
-- Overhead of writing and maintaining ADRs for each significant decision
-- Retroactive ADRs may not perfectly capture the original reasoning
+- Significant decisions need a written record and index maintenance.
+- A retrospective record can miss parts of the original reasoning.
 
 ### Risks
 
-- ADRs become stale if the team forgets to update statuses when decisions are reversed
-- Disagreement about what constitutes a "significant" decision worth an ADR
+- An index can become stale when a successor decision changes applicability.
+- Contributors can disagree about which decisions need an ADR.

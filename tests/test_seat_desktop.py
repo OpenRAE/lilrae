@@ -129,7 +129,8 @@ def test_a_lab_without_a_desktop_publishes_no_hostnames(
 def test_the_handoff_holds_no_scenario_hostname_or_address() -> None:
     text = (ROOT / "appliance/guest/desktop-handoff.py").read_text()
 
-    for literal in ("techvault", "wazuh.dashboard", '"docker", "ps"', "172.20."):
+    # The pack boundary check covers pack names in appliance/guest (#1700).
+    for literal in ("wazuh.dashboard", '"docker", "ps"', "172.20."):
         assert literal not in text
 
 

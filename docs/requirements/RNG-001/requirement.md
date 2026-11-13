@@ -11,6 +11,13 @@ updated_at: 2026-06-25T05:16:42.671257Z
 
 # RNG-001: Ephemeral Environments with Clean State Guarantees
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/RNG-001/requirement.md).
+
+
 ## Statement
 
 The platform shall support ephemeral environments that guarantee clean state between runs, tearing down and recreating containers to eliminate state contamination from prior exercises.
@@ -27,6 +34,6 @@ Persistent containers accumulate state (files, processes, credentials, logs) tha
 - IMPLEMENTS → CODE_FILE `src/aptl/validation/_live_gate_probes.py` (live gate consumes clean_boot_lab)
 - TESTS → TEST `tests/test_lab.py` (TestCleanBootLab)
 - TESTS → TEST `tests/test_cli.py` (start --clean CLI tests)
-- TESTS → TEST `tests/test_techvault_live_gate.py` (live-gate boot tests (clean_boot_lab))
+- TESTS → TEST `tests/techvault/test_techvault_live_gate.py` (live-gate boot tests (clean_boot_lab))
 - IMPLEMENTS → GITHUB_ISSUE `424` (RNG-001: Ephemeral Environments with Clean State Guarantees)
 - DOCUMENTS → DOCUMENTATION `docs/reference/experiment-runs.md` (Clean State Between Runs reference)

@@ -1,4 +1,4 @@
-"""Failure reporting for the full TechVault prime seed."""
+"""Failure reporting for the full prime seed (``scripts/seed-prime.sh``)."""
 
 from __future__ import annotations
 

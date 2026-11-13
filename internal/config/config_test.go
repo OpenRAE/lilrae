@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"io/fs"
@@ -126,15 +127,18 @@ func TestResolvedForm(t *testing.T) {
 	t.Parallel()
 	want := `{"lab":{"name":"aptl","network_subnet":"172.20.0.0/16"},` +
 		`"containers":{"profiles":null},` +
-		`"deployment":{"provider":"docker-compose","project_name":"aptl","ssh_host":null,` +
+		`"deployment":{"range_egress_allowances":[],"provider":"docker-compose","project_name":"aptl","ssh_host":null,` +
 		`"ssh_user":null,"ssh_key":null,"ssh_port":22,"remote_dir":null,"environment_grants":[]},` +
 		`"scenario":{"identity":null,"root":null,"pack_directory":null,"source":"env-pack"},` +
 		`"run_storage":{"backend":"local","local_path":"./runs","s3_bucket":null,"s3_prefix":"runs/"},` +
 		`"lifecycle_policy":null,` +
 		`"experiment":{"participant_action_timeout_seconds":120,` +
-		`"participant_models":{"claude":null,"codex":null},` +
-		`"participant_credential_sources":{"claude":null,"codex":null}},` +
-		`"seat":{"image":null,"public_key":null}}`
+		`"participant_models":{"claude":null,"codex":null,"opencode":null},` +
+		`"participant_credential_sources":{"claude":null,"codex":null,"opencode":null,"vertex":null},` +
+		`"participant_serving_providers":{},"opencode_executable":null},` +
+		`"seat":{"image":null,"public_key":null},` +
+		`"mcp":{"allowed_servers":["aptl-red","aptl-indexer","aptl-wazuh","aptl-network","aptl-soar","aptl-threatintel"],` +
+		`"required_servers":[]}}`
 	got, err := json.Marshal(Default())
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +150,9 @@ func TestResolvedForm(t *testing.T) {
 
 func TestResolvedFormOfSetMembers(t *testing.T) {
 	t.Parallel()
-	cfg, err := Decode([]byte(`{"containers": {"profiles": []}, "lifecycle_policy": {"schedule": [{"at": "08:00"}]}}`))
+	cfg, err := Decode([]byte(`{"containers": {"profiles": []}, "lifecycle_policy": {"schedule": [{"at": "08:00"}]},
+		"experiment": {"participant_credential_sources": {"vertex": {"kind": "attached-service-account", "project": "lab-project-1"}},
+			"participant_serving_providers": {"b": "p1", "a": "p2"}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,10 +162,46 @@ func TestResolvedFormOfSetMembers(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"containers":{"profiles":[]}`,
+		`"vertex":{"kind":"attached-service-account","project":"lab-project-1"}`,
+		`"participant_serving_providers":{"a":"p2","b":"p1"}`,
 		`"lifecycle_policy":{"ttl_minutes":null,"idle_timeout_minutes":null,"teardown_remove_volumes":true,"schedule":[{"at":"08:00","days":[],"scenario":null}]}`,
 	} {
 		if !strings.Contains(string(got), want) {
 			t.Errorf("resolved form %s does not hold %s", got, want)
 		}
+	}
+}
+
+// TestMCPServerIDsMatchTheCatalog checks the default operator ceiling against
+// the MCP catalog of the Python release.
+func TestMCPServerIDsMatchTheCatalog(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(filepath.Join("..", "..", "src", "aptl", "core", "participant_mcp_policy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog struct {
+		Servers jsontext.Value `json:"servers"`
+	}
+	if err := json.Unmarshal(data, &catalog, json.RejectUnknownMembers(false)); err != nil {
+		t.Fatal(err)
+	}
+	dec := jsontext.NewDecoder(bytes.NewReader(catalog.Servers))
+	if _, err := dec.ReadToken(); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for dec.PeekKind() != '}' {
+		name, err := dec.ReadToken()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, name.String())
+		if err := dec.SkipValue(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if diff := cmp.Diff(ids, MCPServerIDs()); diff != "" {
+		t.Errorf("MCPServerIDs differ from the catalog order (-catalog +go):\n%s", diff)
 	}
 }

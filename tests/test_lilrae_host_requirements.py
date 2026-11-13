@@ -56,10 +56,11 @@ def test_doctor_derives_no_kernel_demand_for_the_admitted_owned_fixture(monkeypa
     from importlib.metadata import EntryPoint
     from aptl.core._doctor_runtime import _selected_kernel_demand
     from aptl.core.config import AptlConfig
+    from tests.declared_adapters import adapter_packages
     from tests.fixture_pack import FIXTURE_PACK_IDENTITY
     original = EntryPoint.load
     def guarded(entry):
-        if entry.value.startswith('aptl_techvault'):
+        if entry.value.split('.', 1)[0].split(':', 1)[0] in adapter_packages():
             pytest.fail('fixture selected the original pack adapter')
         return original(entry)
     monkeypatch.setattr(EntryPoint, 'load', guarded)
