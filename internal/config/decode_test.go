@@ -4,6 +4,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -34,6 +35,7 @@ func TestDecodeEmptyObjectGivesDefaults(t *testing.T) {
 
 func TestDecodeFullConfiguration(t *testing.T) {
 	t.Parallel()
+	executable := absoluteExecutable()
 	data := `{
 		"lab": {"name": "lab-1", "network_subnet": "10.0.0.0/16"},
 		"containers": {"profiles": ["wazuh", "soc"]},
@@ -57,7 +59,7 @@ func TestDecodeFullConfiguration(t *testing.T) {
 				"opencode": {"kind": "process-environment", "variable": "OPENROUTER_KEY"},
 				"vertex": {"kind": "attached-service-account", "project": "lab-project-1"}},
 			"participant_serving_providers": {"qwen/qwen3-coder": "cerebras"},
-			"opencode_executable": "/opt/opencode/bin/opencode"},
+			"opencode_executable": ` + strconv.Quote(executable) + `},
 		"seat": {"image": "img", "public_key": "key"},
 		"mcp": {"allowed_servers": ["aptl-red", "aptl-wazuh"], "required_servers": ["aptl-red"]}
 	}`
@@ -91,7 +93,7 @@ func TestDecodeFullConfiguration(t *testing.T) {
 				Vertex:   &VertexSource{Kind: SourceAttachedServiceAccount, Project: new("lab-project-1")},
 			},
 			ParticipantServingProviders: ServingProviders{"qwen/qwen3-coder": "cerebras"},
-			OpencodeExecutable:          new("/opt/opencode/bin/opencode"),
+			OpencodeExecutable:          new(executable),
 		},
 		Seat: Seat{Image: new("img"), PublicKey: new("key")},
 		MCP:  MCPPolicy{AllowedServers: []string{"aptl-red", "aptl-wazuh"}, RequiredServers: []string{"aptl-red"}},
@@ -283,7 +285,7 @@ func TestDecodeAcceptsBoundaryValues(t *testing.T) {
 		`{"experiment": {"participant_serving_providers": {` + servingProviders(64) + `}}}`,
 		`{"deployment": {"range_egress_allowances": [{"destination": "192.0.2.1", "protocol": "tcp", "port": 65535}]}}`,
 		`{"deployment": {"range_egress_allowances": [{"destination": "192.0.2.1", "protocol": "udp", "port": 1}]}}`,
-		`{"experiment": {"opencode_executable": "/o"}}`,
+		`{"experiment": {"opencode_executable": ` + strconv.Quote(shortestExecutable()) + `}}`,
 		`{"mcp": {"allowed_servers": [], "required_servers": []}}`,
 		`{"lifecycle_policy": {"schedule": [{"at": "23:59", "days": []}]}}`,
 		`{"seat": {"public_key": "` + strings.Repeat("é", 4096) + `"}}`,
@@ -376,6 +378,24 @@ func profileList(n int) string {
 		items[i] = `"p` + strconv.Itoa(i) + `"`
 	}
 	return strings.Join(items, ",")
+}
+
+// absoluteExecutable returns an absolute executable path of the host, as
+// Python Path.is_absolute decides it.
+func absoluteExecutable() string {
+	if runtime.GOOS == "windows" {
+		return `C:\opencode\opencode.exe`
+	}
+	return "/opt/opencode/bin/opencode"
+}
+
+// shortestExecutable returns the shortest absolute path of the host. On Unix
+// it has the minimum length of two characters.
+func shortestExecutable() string {
+	if runtime.GOOS == "windows" {
+		return `C:\o`
+	}
+	return "/o"
 }
 
 func servingProviders(n int) string {

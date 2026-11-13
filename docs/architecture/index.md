@@ -86,6 +86,7 @@ Current explanations and successor ADRs determine which design remains applicabl
 - [Issue #1705 TechVault Capture Context Design](issue-1705-techvault-capture-context-design.md)
 - [Issue #1689 Native Acquisition Phase](issue-1689-native-acquisition-phase-preflight.md)
 - [Issue #1421 RPT Capture](issue-1421-rpt-capture-preflight.md)
+- [Issue #1758 Merge of dev into go-cutover Design](issue-1758-dev-sync-design.md)
 - [Issue #1747 Configuration Design](issue-1747-go-config-design.md)
 - [Issue #1559 Configuration, State, and Key Material Design](issue-1559-go-config-state-keys-design.md)
 - [Issue #1559 Configuration and Trust Boundaries (CLI-007)](issue-1559-config-trust-preflight.md)
