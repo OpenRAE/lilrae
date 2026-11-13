@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"net/netip"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -23,9 +25,19 @@ var (
 	processVariablePattern    = regexp.MustCompile(`\A[A-Z_][A-Z0-9_]{0,127}\z`)
 	scheduleTimePattern       = regexp.MustCompile(`\A([01]\d|2[0-3]):[0-5]\d\z`)
 	participantModelPattern   = regexp.MustCompile(`\A[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,127}\z`)
-	claudeModelPattern        = regexp.MustCompile(`\Aclaude-(?:[a-z0-9-]+[-@][0-9]{8}|(?:sonnet|opus|haiku)-[1-9][0-9]*)\z`)
-	codexModelPattern         = regexp.MustCompile(`\A(?:codex-[a-z0-9._-]+|gpt-[a-z0-9._-]+|o[0-9][a-z0-9._-]*)-[0-9]{4}-[0-9]{2}-[0-9]{2}\z`)
+	claudeModelPattern        = regexp.MustCompile(`\Aclaude-(?:[a-z0-9-]+[-@][0-9]{8}|(?:sonnet|opus|haiku)-[1-9][a-z0-9.-]*)\z`)
+	codexModelPattern         = regexp.MustCompile(`\A(?:codex-[a-z0-9._-]+|gpt-[a-z0-9._-]+|o[0-9][a-z0-9._-]*)\z`)
+	opencodeModelPattern      = regexp.MustCompile(`\A(?:openrouter|google-vertex)/[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,112}\z`)
+	googleProjectPattern      = regexp.MustCompile(`\A[a-z][a-z0-9-]{4,28}[a-z0-9]\z`)
 )
+
+// maxServingProviders is the largest number of trial models that
+// experiment.participant_serving_providers can map.
+const maxServingProviders = 64
+
+// errUnknownSourceKind reports a credential source kind outside the kinds of
+// a member.
+var errUnknownSourceKind = errors.New("unknown credential source kind")
 
 // CheckComposeProjectName reports whether name is a Compose project name of
 // 1 to 63 lower-case letters, digits, hyphens, or underscores that starts with
@@ -95,7 +107,7 @@ func checkGrantVariable(value string) error {
 
 func checkKind(kind string, kinds []string) error {
 	if !slices.Contains(kinds, kind) {
-		return errors.New("unknown credential source kind")
+		return errUnknownSourceKind
 	}
 	return nil
 }
@@ -227,13 +239,80 @@ func checkParticipantModel(provider, model string) error {
 	return nil
 }
 
-// immutableModelPattern returns the pattern of the immutable model names of
-// an installed provider, which is claude or codex.
+// immutableModelPattern returns the pattern of the model names of an
+// installed provider, which is claude, codex, or opencode.
 func immutableModelPattern(provider string) *regexp.Regexp {
-	if provider == "claude" {
+	switch provider {
+	case "claude":
 		return claudeModelPattern
+	case "codex":
+		return codexModelPattern
 	}
-	return codexModelPattern
+	return opencodeModelPattern
+}
+
+func checkGoogleProject(project string) error {
+	if checkLength(project, 6, 30) != nil || !googleProjectPattern.MatchString(project) {
+		return errors.New("attached service account project is invalid")
+	}
+	return nil
+}
+
+// checkOpencodeExecutable admits an absolute path of 2 to 4096 characters,
+// as the path rules of the host decide.
+func checkOpencodeExecutable(path string) error {
+	if err := checkLength(path, 2, 4096); err != nil {
+		return err
+	}
+	if !filepath.IsAbs(path) {
+		return errors.New("opencode_executable must be an absolute path")
+	}
+	return nil
+}
+
+// normalizeEgressDestination returns the canonical text of an exact unicast
+// address. An IPv4-mapped address is loopback, multicast, or unspecified when
+// its IPv4 address is, as in the Python release.
+func normalizeEgressDestination(destination string) (string, error) {
+	address, err := netip.ParseAddr(destination)
+	if err != nil {
+		return destination, errors.New("egress destination must be an IP address")
+	}
+	ipv4 := address.Unmap()
+	if ipv4.IsLoopback() || ipv4.IsMulticast() || ipv4.IsUnspecified() {
+		return destination, errors.New("egress destination must be an exact unicast IP address")
+	}
+	return address.String(), nil
+}
+
+func checkTransport(protocol string) error {
+	if protocol != "tcp" && protocol != "udp" {
+		return errors.New("protocol must be tcp or udp")
+	}
+	return nil
+}
+
+func checkPort(port int64) error {
+	if port < 1 || port > 65535 {
+		return errors.New("must be from 1 to 65535")
+	}
+	return nil
+}
+
+// checkMCPCeiling admits only catalog servers, and only required servers that
+// are also allowed.
+func checkMCPCeiling(p MCPPolicy) error {
+	catalog := MCPServerIDs()
+	known := func(id string) bool { return slices.Contains(catalog, id) }
+	allowed := func(id string) bool { return slices.Contains(p.AllowedServers, id) }
+	if !all(p.AllowedServers, known) || !all(p.RequiredServers, known) || !all(p.RequiredServers, allowed) {
+		return errors.New("invalid operator MCP policy")
+	}
+	return nil
+}
+
+func all(values []string, keep func(string) bool) bool {
+	return !slices.ContainsFunc(values, func(v string) bool { return !keep(v) })
 }
 
 // checkLength checks the length of value in characters, as Pydantic counts

@@ -39,7 +39,7 @@ give the guardrails.
    for the path rules and the migration writes.
 2. **Bounded strict decoding.** `Load` reads at most 1 MiB. The largest
    bounded members are 128 profiles of 128 characters and a 4096-character
-   seat key, so 1 MiB leaves room for about 1,500 environment grants. An empty
+   seat key. Thus 1 MiB leaves room for about 1,500 environment grants. An empty
    or blank file is an error. `canonical.DecodeStrict` parses the bytes, and
    the root must be an object.
 3. **Explicit presence rules.** A small member reader converts each object.
@@ -48,8 +48,8 @@ give the guardrails.
    type. Each object has one decode function, in the order of the Python model.
 4. **Safe errors.** A syntax error names the file. A validation error lists
    each field path, for example `lab.unknown_field`, with its rule. No error
-   holds a value. An unknown member name that is not 1 to 64 ASCII letters,
-   digits, underscores, dots, or hyphens shows as `<member>`, so an error
+   holds a value. An unknown member name shows as `<member>` unless it has
+   1 to 64 ASCII letters, digits, underscores, dots, or hyphens. Thus an error
    holds no control character.
 5. **Deliberate rejections.** ADR-025 and ADR-065 require strict input, and
    the published schema gives each JSON type. Go rejects these inputs that
@@ -65,11 +65,14 @@ give the guardrails.
    | A final line feed in `lab.name` or `schedule[].at` | Accepted, because `$` matches before it | Rejected |
    | An integer outside the 64-bit range | Accepted | Rejected |
 
-6. **The same semantic checks.** The port keeps each Python check: the name
-   and token patterns, the Compose project name, the provider set, the
-   scenario locators, the grant uniqueness, the schedule, the participant
-   model patterns, the source descriptors, and the character limits.
+6. **The same semantic checks.** The port keeps each Python check:
+
+   - the name and token patterns, the Compose project name, and the provider set;
+   - the scenario locators, the grant uniqueness, and the schedule;
+   - the participant model patterns, the source descriptors, and the character limits.
+
    `securefile.CheckPath` gives the path rules of `pack_directory`.
+
 7. **Discovery.** `Find` checks only `<dir>/aptl.json` and follows a link, as
    Python does. #1748 owns the lifecycle root search.
 8. **Migration.** `Migrate` converts a decoded tree and validates the result.
@@ -83,7 +86,15 @@ give the guardrails.
 9. **Resolved form.** The model types marshal with `encoding/json/v2` in the
    member order of `model_dump`, with null for an unset optional member.
    Go port 10 renders the command output.
-10. **Other owners.** Go port 09 checks the deployment backend members. The
+   `experiment.participant_serving_providers` is the only map. The strict
+   decoder does not keep the member order of an object, so the map marshals
+   with sorted keys. Python keeps the order of the file.
+10. **Members from dev.** The merge of `dev` (#1758) adds `mcp`,
+    `deployment.range_egress_allowances`, the OpenCode and Vertex selections,
+    `participant_serving_providers`, and `opencode_executable`. The port keeps
+    their Python checks. `MCPServerIDs` copies the server order of the MCP
+    catalog, and a test compares the two.
+11. **Other owners.** Go port 09 checks the deployment backend members. The
     scenario admission of Go port 17 checks the profiles against the admitted
     scenario. Go port 11 computes the descriptor digest.
 

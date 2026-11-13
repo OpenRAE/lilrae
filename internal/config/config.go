@@ -10,12 +10,15 @@ package config
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 // FileName is the name of the configuration file in a project directory.
@@ -29,9 +32,18 @@ const MaxFileSize = 1 << 20
 
 // The credential source kinds of a descriptor.
 const (
-	SourceProcessEnvironment = "process-environment"
-	SourceProjectEnvFile     = "project-env-file"
+	SourceProcessEnvironment     = "process-environment"
+	SourceProjectEnvFile         = "project-env-file"
+	SourceAttachedServiceAccount = "attached-service-account"
 )
+
+// MCPServerIDs returns the servers of the operator MCP catalog, in catalog
+// order. They are the default operator ceiling of the mcp member, and the
+// catalog of the Python release (core/participant_mcp_policy.json) is their
+// source.
+func MCPServerIDs() []string {
+	return []string{"aptl-red", "aptl-indexer", "aptl-wazuh", "aptl-network", "aptl-soar", "aptl-threatintel"}
+}
 
 // Config is the resolved project configuration.
 type Config struct {
@@ -43,6 +55,7 @@ type Config struct {
 	LifecyclePolicy *LifecyclePolicy `json:"lifecycle_policy"`
 	Experiment      Experiment       `json:"experiment"`
 	Seat            Seat             `json:"seat"`
+	MCP             MCPPolicy        `json:"mcp"`
 }
 
 // Lab holds the lab-level settings.
@@ -58,17 +71,28 @@ type Containers struct {
 	Profiles *[]string `json:"profiles"`
 }
 
-// Deployment selects the deployment backend. EnvironmentGrants are the
-// operator grants of configured sources to declared scenario variables.
+// Deployment selects the deployment backend. RangeEgressAllowances are the
+// exact external destinations that the operator grants to the native range,
+// and EnvironmentGrants are the operator grants of configured sources to
+// declared scenario variables.
 type Deployment struct {
-	Provider          string             `json:"provider"`
-	ProjectName       string             `json:"project_name"`
-	SSHHost           *string            `json:"ssh_host"`
-	SSHUser           *string            `json:"ssh_user"`
-	SSHKey            *string            `json:"ssh_key"`
-	SSHPort           int64              `json:"ssh_port"`
-	RemoteDir         *string            `json:"remote_dir"`
-	EnvironmentGrants []EnvironmentGrant `json:"environment_grants"`
+	RangeEgressAllowances []RangeEgressAllowance `json:"range_egress_allowances"`
+	Provider              string                 `json:"provider"`
+	ProjectName           string                 `json:"project_name"`
+	SSHHost               *string                `json:"ssh_host"`
+	SSHUser               *string                `json:"ssh_user"`
+	SSHKey                *string                `json:"ssh_key"`
+	SSHPort               int64                  `json:"ssh_port"`
+	RemoteDir             *string                `json:"remote_dir"`
+	EnvironmentGrants     []EnvironmentGrant     `json:"environment_grants"`
+}
+
+// RangeEgressAllowance is one exact unicast destination address and
+// transport port. Protocol is tcp or udp.
+type RangeEgressAllowance struct {
+	Destination string `json:"destination"`
+	Protocol    string `json:"protocol"`
+	Port        int64  `json:"port"`
 }
 
 // EnvironmentGrant grants one configured source to one declared variable of
@@ -120,23 +144,70 @@ type ScheduleEntry struct {
 }
 
 // Experiment holds the non-secret apparatus settings of an experiment.
+// ParticipantServingProviders maps a trial model to its approved OpenRouter
+// serving provider, and OpencodeExecutable is the absolute path of the
+// installed OpenCode executable.
 type Experiment struct {
 	ParticipantActionTimeoutSeconds int64                        `json:"participant_action_timeout_seconds"`
 	ParticipantModels               ParticipantModels            `json:"participant_models"`
 	ParticipantCredentialSources    ParticipantCredentialSources `json:"participant_credential_sources"`
+	ParticipantServingProviders     ServingProviders             `json:"participant_serving_providers"`
+	OpencodeExecutable              *string                      `json:"opencode_executable"`
+}
+
+// ServingProviders maps a trial model to its serving provider. It marshals
+// as one object with the models in sorted order.
+type ServingProviders map[string]string
+
+// MarshalJSONTo writes the object with the models in sorted order, so the
+// resolved form does not depend on map iteration.
+func (p ServingProviders) MarshalJSONTo(enc *jsontext.Encoder) error {
+	tokens := []jsontext.Token{jsontext.BeginObject}
+	for _, model := range slices.Sorted(maps.Keys(p)) {
+		tokens = append(tokens, jsontext.String(model), jsontext.String(p[model]))
+	}
+	tokens = append(tokens, jsontext.EndObject)
+	for _, token := range tokens {
+		if err := enc.WriteToken(token); err != nil {
+			return fmt.Errorf("participant serving providers: %w", err)
+		}
+	}
+	return nil
 }
 
 // ParticipantModels selects the model of each installed provider.
 type ParticipantModels struct {
-	Claude *string `json:"claude"`
-	Codex  *string `json:"codex"`
+	Claude   *string `json:"claude"`
+	Codex    *string `json:"codex"`
+	Opencode *string `json:"opencode"`
 }
 
 // ParticipantCredentialSources selects the credential source of each
-// installed provider. Each source has the kind SourceProcessEnvironment.
+// installed provider. The claude, codex, and opencode sources have the kind
+// SourceProcessEnvironment.
 type ParticipantCredentialSources struct {
-	Claude *CredentialSource `json:"claude"`
-	Codex  *CredentialSource `json:"codex"`
+	Claude   *CredentialSource `json:"claude"`
+	Codex    *CredentialSource `json:"codex"`
+	Opencode *CredentialSource `json:"opencode"`
+	Vertex   *VertexSource     `json:"vertex"`
+}
+
+// VertexSource selects the Google Cloud credential of the Vertex AI models.
+// Kind SourceProcessEnvironment names a Variable that holds a service account
+// key. Kind SourceAttachedServiceAccount names the Project of the attached
+// service account of the host, which has no key material.
+type VertexSource struct {
+	Kind     string  `json:"kind"`
+	Variable *string `json:"variable,omitzero"`
+	Project  *string `json:"project,omitzero"`
+}
+
+// MCPPolicy is the operator ceiling of the participant MCP servers. A
+// required server must also be allowed, and each server must be in
+// MCPServerIDs.
+type MCPPolicy struct {
+	AllowedServers  []string `json:"allowed_servers"`
+	RequiredServers []string `json:"required_servers"`
 }
 
 // Seat selects the seat VM image and its signing trust.
@@ -152,8 +223,13 @@ func Default() Config {
 		Deployment: defaultDeployment(),
 		Scenario:   ScenarioSource{Source: "env-pack"},
 		RunStorage: RunStorage{Backend: "local", LocalPath: "./runs", S3Prefix: "runs/"},
-		Experiment: Experiment{ParticipantActionTimeoutSeconds: 120},
+		Experiment: Experiment{ParticipantActionTimeoutSeconds: 120, ParticipantServingProviders: ServingProviders{}},
+		MCP:        defaultMCPPolicy(),
 	}
+}
+
+func defaultMCPPolicy() MCPPolicy {
+	return MCPPolicy{AllowedServers: MCPServerIDs(), RequiredServers: []string{}}
 }
 
 // defaultLab returns the lab defaults. The subnet is the default of the
