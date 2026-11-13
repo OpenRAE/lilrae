@@ -101,7 +101,7 @@ class _RealisticSnapshot:
                 {
                     "name": c.name,
                     "image": c.image,
-                    "image_id": c.image_id,
+                    "container_id": c.container_id,
                     "image_digest": c.image_digest,
                     "status": c.status,
                     "health": c.health,
@@ -115,7 +115,7 @@ class _Container:
     def __init__(self, *, name="aptl-victim", status="running", health="healthy"):
         self.name = name
         self.image = "img:tag"
-        self.image_id = "volatile-id"
+        self.container_id = "volatile-id"
         self.image_digest = "sha256:" + "f" * 64
         self.status = status
         self.health = health

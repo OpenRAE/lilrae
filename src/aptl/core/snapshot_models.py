@@ -28,9 +28,22 @@ class SoftwareVersions(object):
 
 @dataclass
 class ContainerSnapshot(object):
-    """State of a single Docker container."""
+    """State of a single Docker container.
+
+    Container identity, image identity, and registry digest remain distinct
+    (ADR-059). ``container_id`` is the container instance's full 64-hex ID.
+    ``image_id`` is the daemon's ``sha256:`` ID of its image. Both IDs come
+    from backend inspection and are empty when inspection cannot prove them.
+
+    ``image_digest`` is the image's immutable registry digest. Snapshot capture
+    currently leaves it empty (#1340). Archive checksums are separate.
+
+    Snapshots written before ``container_id`` existed stored the ``docker ps``
+    container ID under ``image_id`` (#1330).
+    """
 
     name: str = ""
+    container_id: str = ""
     image: str = ""
     image_id: str = ""
     status: str = ""

@@ -183,9 +183,9 @@ raw inspect output, evidence, or provider state.
 #868 owns this schema and its
 producer/consumer validation; #1022 owns durable live observation and lifecycle
 publication. Discovery never substitutes for the guest's authorization check.
-Do not copy `ContainerSnapshot.image_id` into a full container identity field:
-the current snapshot populates it from the `docker ps` row ID, which can be
-truncated.
+Do not copy `ContainerSnapshot.image_id` into a full container identity field.
+It holds the image ID. `ContainerSnapshot.container_id` holds the full
+container ID from backend inspection (#1330).
 
 Obtain and verify the full container ID through backend inspection;
 keep container identity, OCI image identity, and archive digest distinct.
