@@ -13,8 +13,6 @@ from aptl.core.opencode import (
 )
 from aptl.core.participant_requests.profiles import RequestProfile
 
-_OPENROUTER_PREFIX = "openrouter/"
-
 
 def opencode_arguments(executable: Path, model: str) -> tuple[str, ...]:
     """Build fixed invocation arguments for the admitted executable and model."""
@@ -40,8 +38,16 @@ def render_opencode_config(
     max_steps: int | None = None,
 ) -> dict[str, object]:
     """Serialize admitted route and tool inputs into the upstream config shape."""
-    if request_profile is not None and not isinstance(route, OpenRouterRoute):
-        raise ValueError("participant request profiles need an OpenRouter route")
+    if request_profile is not None and (
+        request_profile.gateway != route.provider_id or request_profile.model != model
+    ):
+        raise ValueError("participant request profile differs from its route or model")
+    if (
+        request_profile is not None
+        and isinstance(route, VertexRoute)
+        and request_profile.reasoning_mode != "unsupported"
+    ):
+        raise ValueError("Vertex request reasoning controls are unsupported")
     config = {
         "model": model,
         "small_model": model,
@@ -58,10 +64,10 @@ def render_opencode_config(
     }
     if request_profile is not None:
         profile = request_profile
-        model_config = config["provider"]["openrouter"]["models"][
-            model.removeprefix(_OPENROUTER_PREFIX)
+        model_config = config["provider"][route.provider_id]["models"][
+            model.removeprefix(route.provider_id + "/")
         ]
-        native = model_config["options"]
+        native = model_config.setdefault("options", {})
         if profile.reasoning_mode == "effort":
             native["reasoning"] = {"effort": profile.reasoning_effort.value}
         elif profile.reasoning_mode == "budget":
@@ -106,14 +112,20 @@ def opencode_environment(
     }
 
 
-PROVIDER_CREDENTIAL_NAMES = OpenRouterRoute.environment_names | VertexRoute.environment_names
+PROVIDER_CREDENTIAL_NAMES = (
+    OpenRouterRoute.environment_names | VertexRoute.environment_names
+)
 
 
 def validate_provider_environment(
     environment: Mapping[str, str], route: ParticipantRoute | None = None
 ) -> None:
     """Permit only the route's explicit provider inputs without ambient configuration."""
-    admitted = route.environment_names if route is not None else OpenRouterRoute.environment_names
+    admitted = (
+        route.environment_names
+        if route is not None
+        else OpenRouterRoute.environment_names
+    )
     if set(environment) - admitted:
         raise ValueError("participant provider environment is not admitted")
     if any(

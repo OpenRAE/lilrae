@@ -140,7 +140,7 @@ def test_routes_admit_only_their_own_models_and_environment():
         "options": {"project": "synthetic-project", "location": "global"},
         "models": {"zai-org/glm": {}},
     }
-    profile = SimpleNamespace()
+    profile = SimpleNamespace(gateway="openrouter", model="openrouter/a/b")
     with pytest.raises(ValueError):
         render_opencode_config("google-vertex/a", vertex, {}, {}, request_profile=profile)
     validate_provider_environment({"GOOGLE_CLOUD_PROJECT": "p"}, vertex)
