@@ -14,10 +14,11 @@ boundaries, so the contract is the capability.
 ## Scope
 
 - The inventory describes `src/` after the merge of `dev` into `go-cutover`
-  (#1758), with RAES 11.0.0 and raes-env-packs 7.2.4 from `uv.lock`.
-- At that revision, `src/` has 632 import statements of RAES and env-packs
-  modules in 208 files. 543 statements are at module level, 61 are under
-  `TYPE_CHECKING`, and 28 are inside functions. They import 387 names from 127
+  (#1758) and the merge of #1740, with RAES 11.0.0 and raes-env-packs 7.2.4
+  from `uv.lock`.
+- At that revision, `src/` has 650 import statements of RAES and env-packs
+  modules in 212 files. 551 statements are at module level, 64 are under
+  `TYPE_CHECKING`, and 35 are inside functions. They import 390 names from 129
   modules.
 - The Python `ast` module finds each import statement. The scan does not
   import the product code.
@@ -205,7 +206,7 @@ Owner: [rae#1787](https://github.com/OpenRAE/rae/issues/1787).
 | `raes_contracts.realization_structure` | `evaluate_realization_constraint`, `validate_realization_value` | `backends` |
 | `raes_contracts.run_scope` | `PlanScope` | `backends` |
 | `raes_processor.capabilities` | `ProcessorManifest` | `core/experiment` |
-| `raes_processor.capture_admission` | `CaptureDemand`, `capture_admission_diagnostics`, `compile_scenario_capture_demands` | `backends`, `core/experiment` |
+| `raes_processor.capture_admission` | `CaptureDemand`, `capture_admission_diagnostics`, `compile_capture_spec_demands`, `compile_scenario_capture_demands` | `backends`, `core/experiment` |
 | `raes_processor.compiler` | `compile_runtime_model`, `compile_scenario_runtime_model`, `materialization_differences` | `backends`, `validation` |
 | `raes_processor.manifest` | `create_reference_processor_manifest`, `reference_processor_manifest_payload` | `core/experiment`, `core/provenance` |
 | `raes_processor.models` | `ExecutionPlan`, `ParticipantAutonomousExecutionRuntime`, `ParticipantBehaviorHistoryEvent`, `ParticipantBehaviorSpecificationRuntime`, `RuntimeModel`, `resolve_participant_action_arguments` | `backends` |
@@ -225,6 +226,7 @@ Owner: [rae#1788](https://github.com/OpenRAE/rae/issues/1788).
 | --- | --- | --- |
 | `raes_contracts.assigned_trial` | `TrialAssignmentControlModel`, `TrialAssignmentModel`, `TrialOutcomeModel` | `backends` |
 | `raes_contracts.contracts` | `AdmittedTrialPlanModel`, `BindingOwnerModel`, `BindingScalarType`, `ConfigurationTargetDeclarationModel`, `ConfigurationTargetRegistryModel`, `ExperimentApparatusCompatibilityReferenceModel`, `ExperimentApparatusComponentModel`, `ExperimentApparatusConstraintModel`, `ExperimentApparatusContextModel`, `ExperimentArtifactRefModel`, `ExperimentAugmentationDisclosureModel`, `ExperimentBackendReferenceModel`, `ExperimentBindingDescriptorModel`, `ExperimentBindingDescriptorSetModel`, `ExperimentCaptureRequirementModel`, `ExperimentCaptureSpecModel`, `ExperimentCaptureSpecReferenceModel`, `ExperimentChecksumModel`, `ExperimentClockContextModel`, `ExperimentEvidenceRecordModel`, `ExperimentEvidenceRecordReferenceModel`, `ExperimentInvalidationModel`, `ExperimentManifestReferenceModel`, `ExperimentMeasurementChannelReferenceModel`, `ExperimentParameterModel`, `ExperimentProcessorReferenceModel`, `ExperimentRealizedFormDisclosureModel`, `ExperimentReferenceModel`, `ExperimentResultSummaryModel`, `ExperimentRunModel`, `ExperimentRunTraceabilityModel`, `ExperimentScenarioSnapshotReferenceModel`, `ExperimentSpecModel`, `ExperimentStochasticControlModel`, `ExperimentTaskModel`, `ExperimentTaskReferenceModel`, `ExperimentValidityNoteModel`, `LiteralBindingValueModel`, `ParticipantConfigurationModel`, `ParticipantConfigurationResultModel`, `ParticipantImplementationBindingTargetModel`, `RealizedBindingProvenanceModel`, `RealizedConfigurationValueModel`, `ScenarioBindingTargetModel`, `validate_admitted_trial_run`, `validate_experiment_run_archival_datetimes`, `validate_experiment_run_structure_against_task`, `validate_experiment_run_time_model` | `aptl_techvault`, `backends`, `core`, `core/archival`, `core/evidence`, `core/evidence_bundle`, `core/execution`, `core/experiment`, `core/participant_requests`, `workbench` |
+| `raes_contracts.contracts.admitted_trial_plan_ingress` | `parse_admitted_trial_plan_json` | `core` |
 | `raes_contracts.contracts.capabilities` | `ApparatusIdentityModel` | `core/execution` |
 | `raes_contracts.contracts.experiment_capture` | `ExperimentRawEvidenceContentModel` | `core/evidence`, `core/execution` |
 | `raes_contracts.contracts.experiment_manifest_references` | `ExperimentEvidenceSatisfactionReferenceModel`, `ExperimentManifestReferenceModel`, `ExperimentRunEvidenceArtifactReferenceModel` | `core/execution` |
@@ -321,6 +323,7 @@ Owner: [rae#1795](https://github.com/OpenRAE/rae/issues/1795).
 | `raes_contracts.contracts.participant_action_admission` | `ParticipantActionAdmissionRequest` | `backends`, `validation` |
 | `raes_contracts.contracts.participant_configuration` | `ConfigurationOverrideModel`, `ParticipantConfigurationValidator`, `realize_participant_configuration`, `validate_participant_configuration_selection` | `core`, `core/experiment` |
 | `raes_contracts.contracts.participant_invocation_tools` | `ParticipantInvocationToolActionCapabilitiesModel` | `backends` |
+| `raes_contracts.contracts.participant_temporal` | `ParticipantTemporalEvidenceModel` | `backends` |
 | `raes_contracts.contracts.participant_tool_support` | `ParticipantToolProfilesModel` | `backends` |
 | `raes_contracts.participant_autonomous_state` | `require_participant_autonomous_runtime_snapshot` | `backends` |
 | `raes_contracts.participant_behavior` | `ParticipantBehaviorHistoryEventType`, `ParticipantLifecycleOperationState`, `ParticipantObservationStatus`, `ParticipantPhaseRealization`, `ParticipantRuntimeLifecyclePhase`, `iter_participant_behavior_snapshot_violations` | `backends`, `validation` |
