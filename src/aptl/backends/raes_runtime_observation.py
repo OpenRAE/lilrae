@@ -24,6 +24,7 @@ from aptl.backends._raes_runtime_local_control_observation import (
     observe_local_control_interfaces as _observe_local_control_interfaces,
     recorded_socket_source as _recorded_socket_source,
 )
+from aptl.backends._raes_declared_order import in_declared_order
 from aptl.backends._raes_runtime_environment_observation import (
     observe_environment as _observe_environment,
 )
@@ -123,7 +124,21 @@ def observe_runtime_concerns(
         )
         _record_daemon_inventory(concerns, backend, container_name, info, runtime)
         _record_guest_inventory(concerns, backend, container_name, runtime)
+        declared = runtime.model_dump(mode="json", by_alias=True)
+        concerns = {
+            path: in_declared_order(value, _declared_at(declared, path))
+            for path, value in concerns.items()
+        }
     return concerns
+
+
+def _declared_at(declared: Mapping[str, Any], path: tuple[str, ...]) -> object:
+    """Return the declared runtime value at one concern payload path."""
+
+    value: object = declared
+    for token in path[3:]:
+        value = value.get(token) if isinstance(value, Mapping) else None
+    return value
 
 
 def _record_container_policy(

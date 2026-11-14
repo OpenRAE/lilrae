@@ -17,13 +17,17 @@ from raes_contracts.trial_unit import TrialUnitRequest
 from raes_runtime.runtime_trial_decisions import TrialAttemptDecision
 from raes_contracts.timestamps import utc_now
 
-from aptl.core.config import ProcessEnvironmentCredentialSource
+from aptl.core.config import (
+    AttachedServiceAccountSource,
+    ProcessEnvironmentCredentialSource,
+)
 from aptl.core.trial_participants import TrialParticipantBounds
-from aptl.core.opencode import OpenCodeTrialScope, OpenRouterRoute
+from aptl.core.opencode import OpenCodeTrialScope, OpenRouterRoute, ParticipantRoute, VertexRoute
 from aptl.core.participant_requests import (
     ParticipantRequest,
     ParticipantRequestBinding,
     ParticipantRequestOwner,
+    RequestProfile,
 )
 from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor, OpenCodeOptions
 from aptl.workbench.opencode_bootstrap import (
@@ -202,10 +206,28 @@ def _clock_steps(scenario: InstantiatedScenario) -> tuple[tuple[str, str, int], 
     )
 
 
+ParticipantCredentialSource = ProcessEnvironmentCredentialSource | AttachedServiceAccountSource
+
+
+def participant_route(
+    profile: RequestProfile, source: ParticipantCredentialSource
+) -> ParticipantRoute:
+    """Select the request profile's route; Vertex AI needs the attached identity."""
+    if profile.gateway == VertexRoute.provider_id:
+        if not isinstance(source, AttachedServiceAccountSource):
+            raise ValueError("a Vertex AI participant requires the attached service account")
+        return VertexRoute(source.project)
+    if not isinstance(source, ProcessEnvironmentCredentialSource):
+        raise ValueError("an OpenRouter participant requires a process environment credential")
+    return OpenRouterRoute(
+        endpoint=profile.gateway_endpoint, serving_provider=profile.serving_provider
+    )
+
+
 def _validate_installed_inputs(
     prepared: PreparedParticipantTrial,
     options: Mapping[str, OpenCodeOptions],
-    credential_sources: Mapping[str, ProcessEnvironmentCredentialSource],
+    credential_sources: Mapping[str, ParticipantCredentialSource],
     invocation_timeouts: Mapping[str, float],
 ) -> None:
     """Validate every role before placement, credentials or provider requests."""
@@ -235,7 +257,7 @@ def managed_trial_participants(
     *,
     invocation_timeouts: Mapping[str, float],
     options: Mapping[str, OpenCodeOptions],
-    credential_sources: Mapping[str, ProcessEnvironmentCredentialSource],
+    credential_sources: Mapping[str, ParticipantCredentialSource],
     source_environment: Mapping[str, str],
     stop_and_drain: Callable[[], None],
     clock: Callable[[], datetime] = utc_now,
@@ -254,10 +276,7 @@ def managed_trial_participants(
                     options[address],
                     request=request,
                     request_binding=prepared.bindings[address],
-                    route=OpenRouterRoute(
-                        endpoint=request.profile.gateway_endpoint,
-                        serving_provider=request.profile.serving_provider,
-                    ),
+                    route=participant_route(request.profile, credential_sources[address]),
                     max_output_tokens=request.profile.output_limit.value,
                     max_steps=request.profile.assistant_turn_limit.value,
                     deadline=prepared.deadline,

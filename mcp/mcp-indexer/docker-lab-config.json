@@ -57,6 +57,7 @@
     "create_rule": {
       "url": "https://localhost:${APTL_HP_WAZUH_MANAGER_55000}/rules/files/{filename}",
       "method": "PUT",
+      "content_type": "application/octet-stream",
       "auth": {
         "type": "wazuh-jwt",
         "username": "${API_USERNAME}",

@@ -124,7 +124,7 @@ def autonomous_manifest_options(
         supported_authority_kinds=frozenset({"runtime"}),
         supported_advancement_modes=frozenset({"stepped"}),
         supported_synchronization_modes=frozenset({"barrier"}),
-        supported_constraint_kinds=frozenset({"cadence", "window"}),
+        supported_constraint_kinds=frozenset({"cadence", "window", "deadline"}),
         supported_reset_behaviors=frozenset({"unsupported"}),
         supported_replay_behaviors=frozenset({"unsupported"}),
         supports_pause=True,

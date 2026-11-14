@@ -12,7 +12,7 @@ Other response commands can affect Kali access.
 3. Examine the project's manager template and its generated private runtime copy.
 4. Configure the selected response block through the existing project configuration owner.
 
-5. Remove `<disabled>yes</disabled>` only for the intended block.
+5. Uncomment only the intended block.
 6. Keep a bounded timeout and the intended location.
 
 For example, this block selects one SQL-injection rule:

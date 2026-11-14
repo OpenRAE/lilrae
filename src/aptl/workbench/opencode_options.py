@@ -67,6 +67,10 @@ class OpenCodeOptions:
     native_history_required: bool = False
     request_observation_required: bool = False
     capture: ParticipantCaptureArchive | None = field(default=None, repr=False)
+    #: Receives the participant's redacted native session after each invocation.
+    transcript_sink: Callable[[Mapping[str, object]], None] | None = field(
+        default=None, repr=False
+    )
     #: ``session`` requires a RAES tool session for tools. ``allowlist`` runs
     #: the verified profile tools under deny-by-default permissions (#1670).
     tool_governance: Literal["session", "allowlist"] = "session"

@@ -110,7 +110,6 @@ def test_route_is_exclusive_and_credential_free(tmp_path):
             {"type": "text", "part": {"text": "partial"}},
             {"type": "error", "error": {"message": "private-test-credential"}},
         ],
-        [{"type": "step_finish", "part": {"reason": "length"}}],
     ],
 )
 def test_partial_response_is_retained_without_claiming_success(tmp_path, events):
@@ -125,6 +124,19 @@ def test_partial_response_is_retained_without_claiming_success(tmp_path, events)
     if events[0]["type"] == "text":
         assert records[0].partial_text_sha256 == hashlib.sha256(b"partial").hexdigest()
     assert "private-test-credential" not in repr(records)
+
+
+def test_a_model_output_limit_ends_the_participant_with_its_finish_reason(tmp_path):
+    records = []
+    events = [
+        {
+            "type": "step_finish",
+            "part": {"reason": "length", "tokens": {"input": 12, "output": 3}},
+        }
+    ]
+    active = executor(options(tmp_path, Runner(events), evidence_sink=records.append))
+    assert active("action-1", Event()) == ""
+    assert (records[0].status, records[0].finish_reason) == ("succeeded", "length")
 
 
 def test_duplicate_json_event_cannot_become_completion():
