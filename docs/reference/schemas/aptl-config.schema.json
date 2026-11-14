@@ -116,6 +116,10 @@
             "$ref": "#/$defs/EnvironmentGrant"
           },
           "type": "array"
+        },
+        "dedicated_vm": {
+          "default": false,
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -194,6 +198,19 @@
               "maxLength": 4096,
               "minLength": 2,
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "trial_episode_seconds": {
+          "anyOf": [
+            {
+              "maximum": 86400,
+              "minimum": 1,
+              "type": "integer"
             },
             {
               "type": "null"

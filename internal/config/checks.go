@@ -230,6 +230,13 @@ func checkActionTimeout(seconds int64) error {
 	return nil
 }
 
+func checkTrialEpisode(seconds int64) error {
+	if seconds < 1 || seconds > 86400 {
+		return errors.New("must be from 1 to 86400")
+	}
+	return nil
+}
+
 func checkParticipantModel(provider, model string) error {
 	if checkLength(model, 0, 128) != nil ||
 		!participantModelPattern.MatchString(model) ||

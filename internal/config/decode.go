@@ -112,6 +112,7 @@ func decodeDeployment(o *object) Deployment {
 	d.SSHPort, _ = o.integer("ssh_port", d.SSHPort)
 	d.RemoteDir, _ = o.optStr("remote_dir")
 	d.EnvironmentGrants = decodeGrants(o)
+	d.DedicatedVM = o.boolean("dedicated_vm", d.DedicatedVM)
 	o.finish()
 	return d
 }
@@ -279,6 +280,10 @@ func decodeExperiment(o *object) Experiment {
 	if path, ok := o.optStr("opencode_executable"); ok {
 		e.OpencodeExecutable = path
 		o.check("opencode_executable", checkOpencodeExecutable(*path))
+	}
+	if seconds, ok := o.optInteger("trial_episode_seconds"); ok {
+		e.TrialEpisodeSeconds = seconds
+		o.check("trial_episode_seconds", checkTrialEpisode(*seconds))
 	}
 	o.finish()
 	return e

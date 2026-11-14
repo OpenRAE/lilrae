@@ -128,14 +128,14 @@ func TestResolvedForm(t *testing.T) {
 	want := `{"lab":{"name":"aptl","network_subnet":"172.20.0.0/16"},` +
 		`"containers":{"profiles":null},` +
 		`"deployment":{"range_egress_allowances":[],"provider":"docker-compose","project_name":"aptl","ssh_host":null,` +
-		`"ssh_user":null,"ssh_key":null,"ssh_port":22,"remote_dir":null,"environment_grants":[]},` +
+		`"ssh_user":null,"ssh_key":null,"ssh_port":22,"remote_dir":null,"environment_grants":[],"dedicated_vm":false},` +
 		`"scenario":{"identity":null,"root":null,"pack_directory":null,"source":"env-pack"},` +
 		`"run_storage":{"backend":"local","local_path":"./runs","s3_bucket":null,"s3_prefix":"runs/"},` +
 		`"lifecycle_policy":null,` +
 		`"experiment":{"participant_action_timeout_seconds":120,` +
 		`"participant_models":{"claude":null,"codex":null,"opencode":null},` +
 		`"participant_credential_sources":{"claude":null,"codex":null,"opencode":null,"vertex":null},` +
-		`"participant_serving_providers":{},"opencode_executable":null},` +
+		`"participant_serving_providers":{},"opencode_executable":null,"trial_episode_seconds":null},` +
 		`"seat":{"image":null,"public_key":null},` +
 		`"mcp":{"allowed_servers":["aptl-red","aptl-indexer","aptl-wazuh","aptl-network","aptl-soar","aptl-threatintel"],` +
 		`"required_servers":[]}}`
