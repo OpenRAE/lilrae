@@ -109,24 +109,29 @@ class LilraeToolSession:
         self._clock = clock or SystemClockProvider()
         self._observation_ordinal = 0
 
-    def _observe(self, phase: str, *, call: LilraeToolCall | None = None,
-                 **fields: object) -> None:
+    def _observe(
+        self, phase: str, *, call: LilraeToolCall | None = None, **fields: object
+    ) -> None:
         """Observe native authority; a sink never grants dispatch or completion."""
         if self._evidence_sink is None:
             return
         ordinal = self._observation_ordinal
         self._observation_ordinal += 1
-        self._evidence_sink({
-            "phase": phase, "sequence": ordinal,
-            "invocation_id": self._port.invocation_action_instance_id,
-            "participant_address": self._port.participant_address,
-            "episode_id": self._port.episode_id,
-            "execution_scope_ref": self._port.execution_scope_ref,
-            "execution_generation": self._port.execution_generation,
-            "action_instance_id": call.action_id if call is not None else None,
-            "observed_at": self._clock.now(), "monotonic_ns": monotonic_ns(),
-            **fields,
-        })
+        self._evidence_sink(
+            {
+                "phase": phase,
+                "sequence": ordinal,
+                "invocation_id": self._port.invocation_action_instance_id,
+                "participant_address": self._port.participant_address,
+                "episode_id": self._port.episode_id,
+                "execution_scope_ref": self._port.execution_scope_ref,
+                "execution_generation": self._port.execution_generation,
+                "action_instance_id": call.action_id if call is not None else None,
+                "observed_at": self._clock.now(),
+                "monotonic_ns": monotonic_ns(),
+                **fields,
+            }
+        )
 
     def transport(self) -> LilraeToolTransport:
         """Build the carrier owned by this adapter for the injected session port."""
@@ -164,15 +169,20 @@ class LilraeToolSession:
             if not isinstance(detached, dict) or not _IDENTIFIER.fullmatch(call_id):
                 raise ValueError("invalid call")
             with self._lock:
-                self._observe("proposed", server_id=server, tool_name=tool,
-                              call_id=call_id, arguments=detached)
+                self._observe(
+                    "proposed",
+                    server_id=server,
+                    tool_name=tool,
+                    call_id=call_id,
+                    arguments=detached,
+                )
                 self._require_available(server, call_id)
                 matches = [
                     item
                     for item in self.bindings
                     if item.server_id == server
                     and item.tool_name == tool
-                    and item.configuration_digest == configuration_digest
+                    and self._configuration_matches(item, configuration_digest)
                     and item.accepts_arguments(deepcopy(detached)) is True
                 ]
                 if len(matches) != 1:
@@ -185,6 +195,17 @@ class LilraeToolSession:
             except Exception:
                 pass
             raise AgentExecutionError(_REFUSED) from None
+
+    @staticmethod
+    def _configuration_matches(binding: LilraeToolBinding, actual: str) -> bool:
+        """Resolve trusted installed configuration after service realization."""
+        source = binding.configuration_digest
+        expected = source() if callable(source) else source
+        return (
+            isinstance(expected, str)
+            and re.fullmatch(r"sha256:[a-f0-9]{64}", expected) is not None
+            and expected == actual
+        )
 
     def _require_available(self, server: str, call_id: str) -> None:
         """Reject replay, closed authority and exceeded budgets while locked."""
@@ -275,7 +296,9 @@ class LilraeToolSession:
                     raise ValueError("outcome refused")
                 call.state = advance(call.state, Event.COMPLETE)
                 call.state = advance(call.state, Event.DELIVER)
-                self._observe("failed" if failed else "succeeded", call=call, result=safe)
+                self._observe(
+                    "failed" if failed else "succeeded", call=call, result=safe
+                )
                 return safe
             except Exception:
                 self.unknown(call)

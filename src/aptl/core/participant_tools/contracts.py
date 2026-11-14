@@ -29,7 +29,7 @@ class LilraeToolBinding:
     tool_affordance_address: str
     observation_boundary_address: str
     action_contract_digest: str
-    configuration_digest: str
+    configuration_digest: str | Callable[[], str]
     execution_binding: ParticipantExecutionBinding
     accepts_arguments: Callable[[dict[str, object]], bool] = field(
         repr=False, compare=False
@@ -46,7 +46,14 @@ class LilraeToolBinding:
                 "participant.observation-boundary."
             )
             or re.fullmatch(r"sha256:[a-f0-9]{64}", self.action_contract_digest) is None
-            or re.fullmatch(r"sha256:[a-f0-9]{64}", self.configuration_digest) is None
+            or not (
+                callable(self.configuration_digest)
+                or (
+                    isinstance(self.configuration_digest, str)
+                    and re.fullmatch(r"sha256:[a-f0-9]{64}", self.configuration_digest)
+                    is not None
+                )
+            )
             or self.execution_binding.max_retries != 0
             or not callable(self.accepts_arguments)
         ):

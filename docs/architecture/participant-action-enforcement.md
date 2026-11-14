@@ -84,6 +84,11 @@ An installed tool binding names one server and tool, an affordance, an action, a
 It binds the complete compiled action specification and effective server configuration by canonical digest.
 The server detaches that configuration once and uses it for both admission and native execution.
 
+The installed binding can supply a fixed configuration digest or a trusted, read-only digest supplier.
+The supplier resolves runtime-assigned endpoints after service realization and before call admission.
+Its result must be a valid SHA256 digest and match the full effective configuration exactly.
+The trial recorder forwards the executor's tool evidence sink without changing admission or completion authority.
+
 A trusted argument matcher selects the binding for the complete validated call.
 Zero matches and multiple matches are refusals.
 The matcher cannot dispatch work or choose authority outside its declared relation.
