@@ -30,7 +30,7 @@ from aptl.core.correlation.clock import ClockProvider, SystemClockProvider
 from aptl.core.participant_tools.contracts import (
     LilraeToolBinding,
     LilraeToolCall,
-    MAX_TOOL_ACTIONS,
+    MAX_INVOCATION_TOOL_ACTIONS,
     MAX_CONCURRENT_TOOLS,
     MAX_TOOL_FRAME,
 )
@@ -212,7 +212,7 @@ class LilraeToolSession:
         if (
             not self._live()
             or (server, call_id) in self._calls
-            or len(self._calls) >= MAX_TOOL_ACTIONS
+            or len(self._calls) >= MAX_INVOCATION_TOOL_ACTIONS
             or sum(
                 call.state.phase == Phase.DISPATCHED for _, call in self._calls.values()
             )

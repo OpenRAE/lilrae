@@ -98,6 +98,8 @@ A broad shell contract may declare broad effects; the adapter must not invent na
 
 Each invocation receives its own RAES port and cancellation signal.
 The native executor receives a tool session only for that invocation.
+An autonomous invocation permits up to 4,096 tool calls, with four concurrent calls.
+This invocation can include multiple model turns within its declared duration.
 Existing executors without tools retain their current call interface.
 Executors with tools must implement the explicit tool-session interface.
 The same interface accepts automated harnesses and management-owned interactive controllers.
