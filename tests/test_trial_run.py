@@ -69,7 +69,13 @@ def _store(tmp_path, run_id):
 
 
 def _run(
-    tmp_path, attempt, invocations, *, stop_requested=lambda: False, evidence=None
+    tmp_path,
+    attempt,
+    invocations,
+    *,
+    stop_requested=lambda: False,
+    evidence=None,
+    clock=lambda: datetime.now(UTC),
 ):
     store = _store(tmp_path, attempt.run_id)
     record = run_declared_trial(
@@ -77,9 +83,7 @@ def _run(
         invocations=invocations,
         evidence=evidence if evidence is not None else {},
         store=store,
-        supervision=TrialSupervision(
-            stop_requested, lambda: datetime.now(UTC), poll_seconds=0.05
-        ),
+        supervision=TrialSupervision(stop_requested, clock, poll_seconds=0.05),
     )
     seal_trial_record(store, record)
     return store, record
@@ -148,6 +152,15 @@ def _check_stop(tmp_path, cause):
     stop_results = []
     control.claim(attempt)
     control.begin(attempt)
+
+    def clock():
+        if cause != "deadline":
+            return datetime.now(UTC)
+        # The runtime setup can take more than one second on a loaded host.
+        # The clock reaches the deadline only after each participant starts.
+        started = all(item.started.is_set() for item in invocations.values())
+        return deadline if started else now
+
     if cause == "stopped":
 
         def stop_through_lab():
@@ -164,6 +177,7 @@ def _check_stop(tmp_path, cause):
         invocations,
         stop_requested=control.stop_requested,
         evidence=evidence,
+        clock=clock,
     )
     control.release(attempt)
     if cause == "stopped":
