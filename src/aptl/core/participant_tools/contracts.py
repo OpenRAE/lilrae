@@ -10,8 +10,6 @@ from raes_backend_protocols.capabilities import ParticipantExecutionBinding
 from aptl.core.participant_tools.model import ActionState
 
 MAX_TOOL_ACTIONS = 16
-# One autonomous invocation can span many model turns.
-MAX_INVOCATION_TOOL_ACTIONS = 4096
 MAX_CONCURRENT_TOOLS = 4
 MAX_TOOL_FRAME = 1024 * 1024
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")

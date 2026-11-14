@@ -24,7 +24,6 @@ from aptl.backends.lilrae_participant_execution import (
     MAX_CONCURRENT_PARTICIPANTS,
 )
 from aptl.backends.participant_tools.session import (
-    MAX_INVOCATION_TOOL_ACTIONS,
     MAX_CONCURRENT_TOOLS,
 )
 
@@ -110,7 +109,7 @@ def autonomous_manifest_options(
             ),
             invocation_tool_actions=ParticipantInvocationToolActionCapabilitiesModel(
                 semantic_versions=["participant-invocation-tool-actions/v1"],
-                max_tool_actions_per_invocation=MAX_INVOCATION_TOOL_ACTIONS,
+                max_tool_actions_per_invocation=None,
                 max_concurrent_tool_actions_per_invocation=MAX_CONCURRENT_TOOLS,
             ),
         )

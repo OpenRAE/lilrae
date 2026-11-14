@@ -17,9 +17,7 @@ from aptl.core.participant_tools.model import Phase
 from aptl.workbench.process import AgentExecutionError
 
 
-def binding(
-    *, server="aptl-red", tool="kali_run_command", matcher=None, max_actions=16
-):
+def binding(*, server="aptl-red", tool="kali_run_command", matcher=None):
     return LilraeToolBinding(
         server_id=server,
         tool_name=tool,
@@ -34,7 +32,7 @@ def binding(
             participant_implementation_ref="participant-implementation-manifests.fixture.v1",
             constraint_refs=("constraint:native",),
             evidence_refs=("evidence:native",),
-            max_action_attempts=max_actions,
+            max_action_attempts=16,
             max_in_flight=4,
             timeout_seconds=30,
             max_retries=0,
@@ -99,17 +97,6 @@ def test_effect_requires_admission_and_single_dispatch_and_accepted_outcome():
         with pytest.raises(AgentExecutionError):
             session.invoke("aptl-red", "kali_run_command", args, "first", native)
     assert len(effects) == 1
-
-
-def test_autonomous_invocation_can_continue_beyond_one_delivery_turn():
-    authority = port()
-    session = LilraeToolSession(authority, (binding(max_actions=32),), Event())
-    native = Mock(return_value=result())
-    for index in range(17):
-        session.invoke(
-            "aptl-red", "kali_run_command", {"command": "id"}, str(index), native
-        )
-    assert native.call_count == authority.complete.call_count == 17
 
 
 @pytest.mark.parametrize(
