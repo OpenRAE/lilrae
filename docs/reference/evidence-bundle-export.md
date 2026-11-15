@@ -5,9 +5,9 @@ A third party can validate this archive without APTL imports.
 The exporter is the EXP-008 counterpart to `lilrae runs export`. It packages a verified artifact closure, a machine-readable inventory, exact published RAES schemas, and optional projections with loss disclosures. It does not scan arbitrary run-directory content.
 
 Export is packaging and projection only. It performs no statistical analysis, no
-claim selection, and no publishability certification, and it is never the first
-redaction boundary. Redaction happens upstream at the persistence boundary
-(ADR-029).
+claim selection, and no publishability certification. It packages the run-store
+bytes without change. Evidence capture applies redaction only when a capture
+binding requests a redaction policy (ADR-029).
 
 ## Build a bundle
 
@@ -77,7 +77,7 @@ An unknown projection format fails closed.
 The exporter reads every source file through descriptor-relative, no-follow, one-open containment.
 It rejects symlinked components and path-traversal components. Code-owned bundle paths derive from validated identifiers and content digests. Raw filenames, URIs, media types, and Unicode spellings do not become archive paths.
 
-Resource bounds apply before allocation. They cover entry count, member size, total size, path length and depth, and decompression ratio. The verifier never extracts to disk. The shared ADR-029 redactor masks secret-shaped values in generated bundle metadata.
+Build and verification apply no entry-count, member-size, or total-size limit. Path length and depth stay bounded. The verifier never extracts to disk. The shared ADR-029 redactor masks secret-shaped values in generated bundle metadata.
 It never rewrites canonical bytes.
 
 ## Run store permissions
@@ -126,7 +126,8 @@ Permission restrictions do not replace redaction before persistence.
 
 ## Verification contract
 
-The verifier streams bounded archive members. It does not extract them.
+The verifier streams archive members and hashes them in constant memory. It does not extract them.
+It limits only path length, path depth, and the size of the `bundle.json` envelope.
 It recomputes member digests, sizes, inventory membership, and the reproducible root identity.
 It uses the standard library and JSON canonicalization library.
 It does not authenticate an external attestation.
