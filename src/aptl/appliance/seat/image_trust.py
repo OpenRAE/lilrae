@@ -13,7 +13,6 @@ import hashlib
 import json
 import os
 import secrets
-import stat
 import subprocess
 import tempfile
 from pathlib import Path
