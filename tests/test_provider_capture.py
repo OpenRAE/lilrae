@@ -148,7 +148,7 @@ def test_large_journal_is_reduced_completely_without_a_byte_limit():
         ).splitlines()
     ]
     body = json.loads(rows[1]["body"])
-    body["messages"].append({"role": "user", "content": "context " * 1_000_000})
+    body["messages"].append({"role": "user", "content": "context " * 1_200_000})
     rows[1]["body"] = json.dumps(body)
     data = b"\n".join(json.dumps(row).encode() for row in rows)
     assert len(data) > 8 * 1024 * 1024

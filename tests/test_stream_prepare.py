@@ -12,7 +12,8 @@ from aptl.utils.redaction import redact
 
 def _split(data: bytes, *points: int) -> list[bytes]:
     """Cut ``data`` at the given offsets."""
-    edges = [0, *points, len(data)]
+    inner = sorted({point for point in points if 0 < point < len(data)})
+    edges = [0, *inner, len(data)]
     return [data[start:end] for start, end in zip(edges, edges[1:], strict=False)]
 
 

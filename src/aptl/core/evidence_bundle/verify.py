@@ -132,11 +132,11 @@ def _member_chunks(tar: tarfile.TarFile, member: tarfile.TarInfo):
 
 
 def _hash_member(tar: tarfile.TarFile, member: tarfile.TarInfo) -> str:
-    """Return the SHA-256 hex digest of one member in constant memory."""
+    """Return the ``sha256:<hex>`` digest of one member in constant memory."""
     digest = hashlib.sha256()
     for chunk in _member_chunks(tar, member):
         digest.update(chunk)
-    return digest.hexdigest()
+    return f"sha256:{digest.hexdigest()}"
 
 
 def _read_member(

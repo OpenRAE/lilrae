@@ -23,14 +23,16 @@ def _large_jsonl() -> list[bytes]:
     return [line * per_chunk for _ in range(9)]
 
 
-def _outcome(chunks, media_type="application/x-ndjson") -> CollectorOutcome:
+def _outcome(
+    chunks, media_type="application/x-ndjson", *, event_count=None
+) -> CollectorOutcome:
     return CollectorOutcome(
         status=CollectorStatus.OK,
         started_at="2026-07-20T00:00:00Z",
         finished_at="2026-07-20T00:00:05Z",
         chunks=chunks,
         media_type=media_type,
-        event_count=len(chunks),
+        event_count=len(chunks) if event_count is None else event_count,
     )
 
 
@@ -42,7 +44,7 @@ def test_a_large_multi_chunk_capture_is_stored_complete(tmp_path):
 
     retained = persist_success_outcome(
         binding=_binding(expected_media_types=("application/x-ndjson",)),
-        outcome=_outcome(iter(chunks)),
+        outcome=_outcome(iter(chunks), event_count=len(chunks)),
         run_store=store,
         run_id="run-1",
         planned_trial_id="trial-1",
@@ -91,7 +93,10 @@ class _Collector:
 def test_a_reached_free_space_reserve_fails_the_capture_visibly(tmp_path):
     store = LocalRunStore(tmp_path / "runs", free_space_reserve=0.999999)
     store.create_run("run-1")
-    binding = _binding(registration_id="aptl.collector.a")
+    binding = _binding(
+        registration_id="aptl.collector.a",
+        expected_media_types=("application/x-ndjson",),
+    )
 
     result = acquire_evidence(
         bindings=[binding],
@@ -119,7 +124,12 @@ def test_the_store_progress_timeout_reaches_collectors(tmp_path):
             return context
 
     acquire_evidence(
-        bindings=[_binding(registration_id="aptl.collector.a")],
+        bindings=[
+            _binding(
+                registration_id="aptl.collector.a",
+                expected_media_types=("application/x-ndjson",),
+            )
+        ],
         collectors={"aptl.collector.a": Recording(_outcome([b'{"a":1}\n']))},
         run_store=store,
         scope=RunScope("run-1", "trial-1", "attempt-1"),

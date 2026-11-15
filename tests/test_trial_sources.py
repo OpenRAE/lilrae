@@ -102,9 +102,10 @@ def test_audit_source_keeps_only_the_episode_and_detects_missing_logs(tmp_path):
     )
     result = source.fetch("2026-11-12T00:00:00Z", "2026-11-12T00:00:01Z")
     assert result.status == CollectorStatus.OK
-    assert "current" in result.records[0]["audit_log"]
-    assert "old" not in result.records[0]["audit_log"]
-    assert "later" not in result.records[0]["audit_log"]
+    [record] = json.loads(b"".join(result.chunks))
+    assert "current" in record["audit_log"]
+    assert "old" not in record["audit_log"]
+    assert "later" not in record["audit_log"]
 
 
 def test_measurement_sources_are_not_authorized_for_startup_preparation(tmp_path):

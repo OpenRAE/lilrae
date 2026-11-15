@@ -166,7 +166,7 @@ def test_manifest_admitted_trial_source_returns_artifacts_and_honest_status(
         request.run_store.get_run_path("run-1"), result.refs[0].content_uri
     )
     assert json.loads(content) == [
-        {"message": "actual source log", "api_key": "[REDACTED]"}
+        {"message": "actual source log", "api_key": "private-canary"}
     ]
     assert (
         "mid-run" in (result.records[0].raw_content.loss_disclosure or "")

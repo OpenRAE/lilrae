@@ -204,7 +204,7 @@ def test_acquire_native_evidence_persists_only_immediate_native_bindings(
     start = datetime(2026, 9, 14, tzinfo=UTC)
     times = tuple(
         (start + timedelta(seconds=offset)).isoformat().replace("+00:00", "Z")
-        for offset in range(10)
+        for offset in range(20)
     )
 
     result = acquisition.acquire_native_evidence(
@@ -271,6 +271,7 @@ def test_acquire_native_evidence_fails_when_a_required_source_is_unavailable(
             clock=_SequenceClock(
                 "2026-09-14T00:00:00Z",
                 "2026-09-14T00:00:01Z",
+                "2026-09-14T00:00:02Z",
             ),
         )
     )
@@ -863,15 +864,13 @@ def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complet
         export_capture_apparatus=export_capture_apparatus,
     )
     if collapse_retained:
-        from aptl.core.evidence import _persist
+        from aptl.core.evidence import _stream_prepare
 
-        monkeypatch.setitem(
-            _persist._REDACTION_HANDLERS,
-            "redact_secrets",
-            lambda _payload: {
-                "schema_version": "aptl-techvault-transcript/v2",
-                "transcript_entries": [],
-            },
+        collapsed = json.dumps(
+            {"schema_version": "aptl-techvault-transcript/v2", "transcript_entries": []}
+        ).encode()
+        monkeypatch.setattr(
+            _stream_prepare, "_redacted_json", lambda _chunks: iter([collapsed])
         )
 
     result = finalize_active_transcript_authority(

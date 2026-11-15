@@ -45,12 +45,17 @@ def _validated_json(chunks: Iterable[bytes]) -> Iterator[bytes]:
     events = ijson.sendable_list()
     parser = ijson.basic_parse_coro(events)
     seen = False
-    for chunk in chunks:
-        parser.send(chunk)
-        del events[:]
-        seen = seen or bool(chunk.strip())
-        yield chunk
-    parser.close()
+    try:
+        for chunk in chunks:
+            # ijson reads an empty chunk as the end of the input.
+            if chunk:
+                parser.send(chunk)
+                del events[:]
+                seen = seen or bool(chunk.strip())
+            yield chunk
+        parser.close()
+    except StopIteration:
+        raise ValueError("capture JSON content has trailing data") from None
     if not seen:
         raise ValueError("capture JSON content is empty")
 
@@ -122,10 +127,15 @@ def _parsed(
     """Feed ``chunks`` to an ijson push parser and yield each finished value."""
     events = ijson.sendable_list()
     parser = make_parser(events)
-    for chunk in chunks:
-        parser.send(chunk)  # type: ignore[attr-defined]
-        yield from _drain(events)
-    parser.close()  # type: ignore[attr-defined]
+    try:
+        for chunk in chunks:
+            # ijson reads an empty chunk as the end of the input.
+            if chunk:
+                parser.send(chunk)  # type: ignore[attr-defined]
+                yield from _drain(events)
+        parser.close()  # type: ignore[attr-defined]
+    except StopIteration:
+        raise ValueError("capture JSON content has trailing data") from None
     yield from _drain(events)
 
 

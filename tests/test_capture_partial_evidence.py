@@ -111,29 +111,28 @@ def test_trial_interruption_persists_accepted_artifact_references(
 def test_native_timeout_prefix_and_peer_survive_artifact_persistence(
     tmp_path, operation, failure
 ):
-    from subprocess import TimeoutExpired
     from types import SimpleNamespace
     from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+    from aptl.core.deployment._compose_log_capture import StreamExit
     from aptl.core.evidence.adapters.builtins import (
         ContainerFileSource,
         ContainerLogSource,
     )
     from tests.test_evidence_coordinator import _ok_outcome
 
-    def interrupted(*args, **kwargs):
-        if failure == "timeout":
-            raise TimeoutExpired(
-                ["private-command"],
-                30,
-                output=b"accepted stdout\n",
-                stderr=b"accepted stderr\n",
-            )
-        error = InterruptedError("private-command")
-        error.stdout, error.stderr = b"accepted stdout\n", b"accepted stderr\n"
-        raise error
+    def interrupted(*_args, stdout, stderr, **_kwargs):
+        stdout.write(b"accepted stdout\n")
+        stderr.write(b"accepted stderr\n")
+        return StreamExit(
+            returncode=-9,
+            timed_out=failure == "timeout",
+            failed_pipe=failure == "interrupted",
+        )
 
     operations = AdmittedRuntimeOperations(
-        SimpleNamespace(container_logs_capture=interrupted, container_exec=interrupted),
+        SimpleNamespace(
+            container_logs_stream=interrupted, container_exec_stream=interrupted
+        ),
         [SimpleNamespace(name="soc")],
     )
     source = (

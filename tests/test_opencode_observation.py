@@ -162,13 +162,13 @@ def test_a_large_journal_is_observed_completely(tmp_path):
     """No journal size, line count, or call count cap drops observed calls."""
     ready, request, response, end = events()
     journal = [ready]
-    for call_id in range(1, 15_001):
+    for call_id in range(1, 25_001):
         for event in (request, response, end):
             journal.append({**event, "call_id": call_id})
     observed = read(tmp_path, journal)
     assert (tmp_path / "provider-observations.jsonl").stat().st_size > 16 * 1024 * 1024
     assert observed.status == "observed"
-    assert len(observed.calls) == 15_000
+    assert len(observed.calls) == 25_000
 
 
 def test_truncated_tail_preserves_prior_call_membership(tmp_path):
