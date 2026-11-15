@@ -151,14 +151,24 @@ def test_interrupted_calls_keep_safe_membership_and_missing_values(tmp_path):
     assert observed.calls[0].response is None
 
 
-def test_missing_symlink_and_oversized_observations_are_closed(tmp_path):
+def test_missing_and_symlinked_observations_are_closed(tmp_path):
     assert read(tmp_path).status == "missing"
     target = tmp_path / "provider-observations.jsonl"
     target.symlink_to("/dev/null")
     assert read(tmp_path).status == "invalid"
-    target.unlink()
-    read(tmp_path, events())
-    assert read(tmp_path, max_bytes=1).status == "oversized"
+
+
+def test_a_large_journal_is_observed_completely(tmp_path):
+    """No journal size, line count, or call count cap drops observed calls."""
+    ready, request, response, end = events()
+    journal = [ready]
+    for call_id in range(1, 15_001):
+        for event in (request, response, end):
+            journal.append({**event, "call_id": call_id})
+    observed = read(tmp_path, journal)
+    assert (tmp_path / "provider-observations.jsonl").stat().st_size > 16 * 1024 * 1024
+    assert observed.status == "observed"
+    assert len(observed.calls) == 15_000
 
 
 def test_truncated_tail_preserves_prior_call_membership(tmp_path):

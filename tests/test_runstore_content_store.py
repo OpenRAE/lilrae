@@ -2,8 +2,8 @@
 persistence functions (EXP-010 / issue #752 evidence acquisition).
 
 ``create_content_addressed`` streams raw evidence into a digest-named object
-under the run dir with byte quotas enforced during streaming, no-follow /
-create-exclusive publication, and post-write digest verification.
+under the run dir without a byte cap, no-follow / create-exclusive
+publication, a free-space reserve, and post-write digest verification.
 ``create_run_json_once`` is the run-scoped create-once JSON writer (travels in
 the exporter's per-run tar). Both extend the ``LocalRunStore`` boundary
 narrowly rather than adding a second repository.
@@ -18,6 +18,7 @@ import pytest
 
 from aptl.core.evidence.content_store import create_content_addressed, create_run_json_once
 from aptl.core.runstore import LocalRunStore, RunStoreConflictError
+from aptl.utils.pathsafe_stream import FreeSpaceReserveError
 
 
 def _store(tmp_path) -> LocalRunStore:
@@ -36,12 +37,11 @@ class TestContentAddressed:
         payload = b"raw evidence bytes"
         digest_hex = hashlib.sha256(payload).hexdigest()
 
-        result = create_content_addressed(store, "run-1", [payload], subdir="evidence", max_bytes=1024)
+        result = create_content_addressed(store, "run-1", [payload], subdir="evidence")
 
         assert result.relative_path == f"evidence/{digest_hex}"
         assert result.digest == f"sha256:{digest_hex}"
         assert result.size == len(payload)
-        assert result.truncated is False
         stored = (store.get_run_path("run-1") / result.relative_path).read_bytes()
         assert stored == payload
 
@@ -50,44 +50,44 @@ class TestContentAddressed:
         chunks = [b"aaa", b"bbb", b"ccc"]
         joined = b"".join(chunks)
 
-        result = create_content_addressed(store, "run-1", chunks, subdir="evidence", max_bytes=1024)
+        result = create_content_addressed(store, "run-1", chunks, subdir="evidence")
 
         assert result.size == len(joined)
         assert result.digest == f"sha256:{hashlib.sha256(joined).hexdigest()}"
 
-    def test_over_quota_source_is_truncated_not_buffered(self, tmp_path):
+    def test_large_streamed_source_is_retained_completely(self, tmp_path):
         store = _store(tmp_path)
-        result = create_content_addressed(store, "run-1", [b"x" * 10, b"y" * 10], subdir="evidence", max_bytes=15)
-        assert result.size == 15
-        assert result.truncated is True
+        chunks = [bytes([index]) * 1_048_576 for index in range(9)]
+        joined = b"".join(chunks)
 
-    def test_exact_fill_with_no_more_data_is_not_truncated(self, tmp_path):
-        store = _store(tmp_path)
-        result = create_content_addressed(store, "run-1", [b"x" * 8], subdir="evidence", max_bytes=8)
-        assert result.size == 8
-        assert result.truncated is False
+        result = create_content_addressed(store, "run-1", iter(chunks), subdir="evidence")
 
-    def test_exact_fill_with_more_data_is_truncated(self, tmp_path):
-        store = _store(tmp_path)
-        result = create_content_addressed(store, "run-1", [b"x" * 8, b"y"], subdir="evidence", max_bytes=8)
-        assert result.size == 8
-        assert result.truncated is True
+        assert result.size == len(joined)
+        stored = (store.get_run_path("run-1") / result.relative_path).read_bytes()
+        assert stored == joined
+
+    def test_free_space_reserve_fails_and_leaves_no_file(self, tmp_path):
+        store = LocalRunStore(tmp_path / "runs", free_space_reserve=0.999999)
+        store.create_run("run-1")
+
+        with pytest.raises(FreeSpaceReserveError):
+            create_content_addressed(store, "run-1", [b"x"], subdir="evidence")
+
+        directory = store.get_run_path("run-1") / "evidence"
+        assert not directory.exists() or list(directory.iterdir()) == []
 
     def test_identical_bytes_are_idempotent(self, tmp_path):
         store = _store(tmp_path)
-        first = create_content_addressed(store, "run-1", [b"same"], subdir="evidence", max_bytes=64)
-        second = create_content_addressed(store, "run-1", [b"same"], subdir="evidence", max_bytes=64)
+        first = create_content_addressed(store, "run-1", [b"same"], subdir="evidence")
+        second = create_content_addressed(store, "run-1", [b"same"], subdir="evidence")
         assert first == second
-
-    def test_zero_max_bytes_is_rejected(self, tmp_path):
-        store = _store(tmp_path)
-        with pytest.raises(ValueError, match="max_bytes must be positive"):
-            create_content_addressed(store, "run-1", [b"x"], subdir="evidence", max_bytes=0)
+        directory = store.get_run_path("run-1") / "evidence"
+        assert [path.name for path in directory.iterdir()] == [first.digest[7:]]
 
     def test_traversal_subdir_is_rejected(self, tmp_path):
         store = _store(tmp_path)
         with pytest.raises(ValueError):
-            create_content_addressed(store, "run-1", [b"x"], subdir="../escape", max_bytes=64)
+            create_content_addressed(store, "run-1", [b"x"], subdir="../escape")
 
 
 # ---------------------------------------------------------------------------

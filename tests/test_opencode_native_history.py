@@ -260,9 +260,37 @@ def test_native_history_missing_or_corrupt_is_explicit(tmp_path):
     assert "secret-capability" not in repr(history)
 
 
-def test_native_history_refuses_symlink_and_byte_limit(tmp_path):
+def test_native_history_reads_large_sessions_without_row_or_value_limits(tmp_path):
+    """Many parts and a long value are read and exported completely."""
+    from aptl.workbench.opencode_history import export_native_session
+
     path = native_database(tmp_path)
-    assert observe(tmp_path, max_bytes=1).status == "oversized"
+    long_text = "reasoning " * 200_000
+    with sqlite3.connect(path) as db:
+        db.executemany(
+            "INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    f"prt_extra{index}",
+                    "msg_assistant",
+                    "ses_fixture",
+                    json.dumps({"type": "reasoning", "text": long_text if index == 0 else "x"}),
+                    20,
+                    30,
+                )
+                for index in range(5000)
+            ],
+        )
+    history = observe(tmp_path)
+    assert history.status == "observed"
+    exported = export_native_session(tmp_path)
+    assert exported is not None
+    assert len(exported["parts"]) == 5000 + 5
+    assert any(row["data"].get("text") == long_text for row in exported["parts"])
+
+
+def test_native_history_refuses_a_symlinked_database(tmp_path):
+    path = native_database(tmp_path)
     outside = tmp_path / "unapproved.db"
     path.rename(outside)
     path.symlink_to(outside)

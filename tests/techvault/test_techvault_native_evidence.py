@@ -20,6 +20,7 @@ from aptl_techvault.evidence.techvault_native import (
     TechVaultNativeDependencies,
     TechVaultNativeEvidenceOwner,
 )
+from aptl.core.deployment._compose_log_capture import StreamExit
 from aptl.core.evidence.outcomes import CollectorStatus
 
 _START = "2026-09-14T10:00:00Z"
@@ -109,8 +110,14 @@ class _Backend:
         assert "-f" not in cmd[1]
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
-    def container_exec(self, name, cmd, *, timeout):
-        self.exec_calls.append((name, cmd, timeout))
+    def container_exec_stream(self, name, cmd, *, stdout, stderr):
+        self.exec_calls.append((name, cmd))
+        stdout.write(self.container_exec(name, cmd, timeout=30, record=False).stdout.encode())
+        return StreamExit(0, False, False)
+
+    def container_exec(self, name, cmd, *, timeout, record=True):
+        if record:
+            self.exec_calls.append((name, cmd, timeout))
         event = (
             {
                 "timestamp": _FINISH,
@@ -245,29 +252,20 @@ def test_sqli_owner_reads_wazuh_half_from_declared_manager_log_not_indexer(tmp_p
         call for call in backend.exec_calls if call[0] == "aptl-wazuh-manager"
     ]
     assert manager_reads == [
-        (
-            "aptl-wazuh-manager",
-            [
-                "tail",
-                "-c",
-                str(techvault_native.MAX_SOURCE_BYTES),
-                "/var/ossec/logs/alerts/alerts.json",
-            ],
-            30,
-        )
+        ("aptl-wazuh-manager", ["cat", "--", "/var/ossec/logs/alerts/alerts.json"])
     ]
 
 
 def test_wazuh_manager_log_discloses_loss_when_correlated_record_is_absent(tmp_path):
     backend = _Backend()
-    backend.container_exec = lambda name, cmd, *, timeout: subprocess.CompletedProcess(
-        cmd,
-        0,
-        "{partial\n"
-        if name == "aptl-wazuh-manager"
-        else _Backend().container_exec(name, cmd, timeout=timeout).stdout,
-        "",
-    )
+    original = backend.container_exec
+
+    def container_exec(name, cmd, *, timeout, record=True):
+        if name == "aptl-wazuh-manager":
+            return subprocess.CompletedProcess(cmd, 0, "{partial\n", "")
+        return original(name, cmd, timeout=timeout, record=record)
+
+    backend.container_exec = container_exec
 
     result = (
         _owner(tmp_path, backend)
@@ -278,28 +276,51 @@ def test_wazuh_manager_log_discloses_loss_when_correlated_record_is_absent(tmp_p
     assert result.status is CollectorStatus.MID_RUN_LOSS
 
 
-def test_suricata_query_reads_recent_events_from_a_large_native_log(tmp_path):
-    log = tmp_path / "eve.json"
-    event = {
+def _event(flow_id):
+    return {
         "timestamp": _FINISH,
         "src_ip": "172.20.1.40",
         "dest_ip": "172.20.1.20",
-        "flow_id": 42,
+        "flow_id": flow_id,
         "alert": {"signature_id": 1000010},
     }
-    # Exercise the real tail command, including a cut through an older line.
+
+
+def test_suricata_query_reads_every_event_of_a_large_native_log(tmp_path):
+    log = tmp_path / "eve.json"
+    first, last = _event(1), _event(2)
+    # The matching events sit at both ends of a log larger than the old
+    # 2 MiB transfer bound, so a tail or a prefix read loses one of them.
     log.write_text(
-        "x" * (techvault_native.MAX_SOURCE_BYTES + 100)
+        json.dumps(first)
         + "\n"
-        + json.dumps(event)
+        + ("x" * 3 * 1024 * 1024)
+        + "\n"
+        + "".join(json.dumps(_event(i)) + "\n" for i in range(3, 303))
+        + json.dumps(last)
         + "\n"
     )
     backend = _Backend()
-    backend.container_exec = lambda _name, argv, *, timeout: subprocess.run(
-        [*argv[:-1], str(log)], capture_output=True, text=True, timeout=timeout
-    )
 
-    assert _owner(tmp_path, backend).query_suricata(_START, _END) == [event]
+    def container_exec_stream(_name, argv, *, stdout, stderr):
+        assert argv[:2] == ["cat", "--"]
+        result = subprocess.run(["cat", "--", str(log)], capture_output=True)
+        stdout.write(result.stdout)
+        return StreamExit(result.returncode, False, False)
+
+    backend.container_exec_stream = container_exec_stream
+
+    events = _owner(tmp_path, backend).query_suricata(_START, _END)
+
+    assert events[0] == first and events[-1] == last
+    assert len(events) == 302
+
+
+def test_suricata_query_reports_a_failed_stream_as_unavailable(tmp_path):
+    backend = _Backend()
+    backend.container_exec_stream = lambda *_a, **_k: StreamExit(None, True, False)
+
+    assert _owner(tmp_path, backend).query_suricata(_START, _END) is None
 
 
 def test_measurement_owner_sends_no_sqli_probe_or_misp_write(tmp_path):

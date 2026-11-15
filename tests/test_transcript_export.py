@@ -13,7 +13,7 @@ from aptl.backends._raes_transcript_export import (
 )
 from aptl.core.deployment.errors import CaptureReconciliationError
 
-_BINDING = SimpleNamespace(limits=SimpleNamespace(max_artifact_count=8))
+_BINDING = SimpleNamespace()
 
 
 def _census(tmp_path, *names):

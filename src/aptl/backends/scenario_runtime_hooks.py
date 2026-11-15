@@ -270,6 +270,8 @@ class AdmittedRuntimeOperations:
             return self.__backend.container_logs_stream(
                 name, since=since, until=until, stdout=stdout, stderr=stderr
             )
+        except (BackendTimeoutError, TimeoutExpired):
+            raise TimeoutExpired("runtime-operation", 30) from None
         except Exception:
             raise ValueError("runtime-operation-failed") from None
 
@@ -282,6 +284,8 @@ class AdmittedRuntimeOperations:
             return self.__backend.container_exec_stream(
                 name, list(cmd), stdout=stdout, stderr=stderr
             )
+        except (BackendTimeoutError, TimeoutExpired):
+            raise TimeoutExpired("runtime-operation", 30) from None
         except Exception:
             raise ValueError("runtime-operation-failed") from None
 

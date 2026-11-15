@@ -69,7 +69,6 @@ def test_per_call_usage_preserves_controls_claims_and_optional_billing():
         _frames(usage={"prompt_tokens": 12, "completion_tokens": 3}),
         invocation_id="outer-red",
         secrets=("private-credential",),
-        max_bytes=65536,
     )
     assert capture.complete
     assert capture.required_usage_complete
@@ -94,7 +93,7 @@ def test_completed_calls_require_real_prompt_and_completion_counts(usage):
     from aptl.workbench.provider_capture import reduce_provider_capture
 
     capture = reduce_provider_capture(
-        _frames(usage=usage), invocation_id="outer-red", secrets=(), max_bytes=65536
+        _frames(usage=usage), invocation_id="outer-red", secrets=()
     )
     assert capture.complete
     assert not capture.required_usage_complete
@@ -104,7 +103,7 @@ def test_timeout_keeps_accepted_records_without_inventing_terminal_usage():
     from aptl.workbench.provider_capture import reduce_provider_capture
 
     capture = reduce_provider_capture(
-        _frames(terminal=False), invocation_id="outer-red", secrets=(), max_bytes=65536
+        _frames(terminal=False), invocation_id="outer-red", secrets=()
     )
     assert not capture.complete
     assert capture.records
@@ -127,7 +126,6 @@ def test_unavailable_provider_claims_keep_explicit_reasons():
         b"\n".join(json.dumps(row).encode() for row in rows),
         invocation_id="outer-red",
         secrets=(),
-        max_bytes=65536,
     )
     call = capture.calls[0]
     assert call["provider_claims"] == {
@@ -139,15 +137,32 @@ def test_unavailable_provider_claims_keep_explicit_reasons():
     assert all(reasons[key] for key in call["provider_claims"])
 
 
-def test_oversized_raw_capture_keeps_complete_accepted_frames():
+def test_large_journal_is_reduced_completely_without_a_byte_limit():
+    """A long prompt is kept whole; no budget turns the call incomplete."""
+    from aptl.workbench.provider_capture import reduce_provider_capture
+
+    rows = [
+        json.loads(line)
+        for line in _frames(
+            usage={"prompt_tokens": 12, "completion_tokens": 3}
+        ).splitlines()
+    ]
+    body = json.loads(rows[1]["body"])
+    body["messages"].append({"role": "user", "content": "context " * 1_000_000})
+    rows[1]["body"] = json.dumps(body)
+    data = b"\n".join(json.dumps(row).encode() for row in rows)
+    assert len(data) > 8 * 1024 * 1024
+    result = reduce_provider_capture(data, invocation_id="outer-red", secrets=())
+    assert result.complete
+    assert result.calls[0]["input_tokens"] == 12
+
+
+def test_trailing_malformed_bytes_keep_accepted_frames_but_disclose_a_gap():
     from aptl.workbench.provider_capture import reduce_provider_capture
 
     accepted = _frames(usage={"prompt_tokens": 12, "completion_tokens": 3})
     result = reduce_provider_capture(
-        accepted + b"x" * 1000,
-        invocation_id="outer-red",
-        secrets=(),
-        max_bytes=len(accepted) + 1,
+        accepted + b"\n" + b"x" * 1000, invocation_id="outer-red", secrets=()
     )
     assert not result.complete
     assert result.records

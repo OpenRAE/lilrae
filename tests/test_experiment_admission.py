@@ -54,7 +54,6 @@ from aptl.core.experiment.admission import (
     build_associated_artifact_source,
 )
 from aptl.core.experiment.capture_registry import (
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
     CollectorRegistry,
@@ -1801,9 +1800,6 @@ def _covering_registration() -> CollectorRegistration:
         ),
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
-        limits=CaptureLimits(
-            max_bytes=1_048_576, max_artifact_count=100, max_duration_s=300
-        ),
     )
 
 

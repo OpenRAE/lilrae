@@ -3,7 +3,7 @@
 The emitted record is a public ``ExperimentEvidenceRecordModel`` (validated at
 construction and round-trippable through the RAES model), its identity is
 derived from stable inputs only (never ``captured_at`` / ingestion order), and
-a truncated/redacted/withheld record always carries the mandatory loss
+a lossy/redacted/withheld record always carries the mandatory loss
 disclosure the RAES model requires.
 """
 
@@ -22,7 +22,6 @@ from aptl.core.evidence.records import (
 from aptl.core.evidence.content_store import ContentInsertion
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 
@@ -49,9 +48,6 @@ def _binding(**overrides) -> CaptureBinding:
         "retention_policy": "retain",
         "loss_disclosure_required": True,
         "visibility_class": CaptureVisibility.EVALUATOR_ONLY,
-        "limits": CaptureLimits(
-            max_bytes=1024, max_artifact_count=10, max_duration_s=60
-        ),
     }
     fields.update(overrides)
     return CaptureBinding(**fields)
@@ -62,7 +58,6 @@ def _content(digest_hex="ab" * 32, size=42) -> ContentInsertion:
         relative_path=f"evidence/{digest_hex}",
         digest=f"sha256:{digest_hex}",
         size=size,
-        truncated=False,
     )
 
 

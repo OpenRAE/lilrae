@@ -265,21 +265,18 @@ def test_retries_and_duplicate_generations_keep_honest_totals():
 
 
 @pytest.mark.parametrize("termination", [None, "timeout", "cancelled"])
-def test_archive_quota_retains_redacted_prefix_and_reports_truncation(
-    tmp_path, termination
-):
+def test_large_archive_record_is_retained_completely(tmp_path, termination):
     from aptl.core.evidence.participant_capture import ParticipantCaptureArchive
 
     archive = ParticipantCaptureArchive(LocalRunStore(tmp_path), _grant())
     payload = _payload()
-    payload["records"] = [
-        {"output": "accepted response " * 1000, "api_key": "private-canary"}
-    ]
+    # Larger than the former 8 MiB participant capture budget.
+    output = "accepted response " * 500_000
+    payload["records"] = [{"output": output, "api_key": "scenario-canary"}]
     payload["harness_failure_reason"] = termination
     archive.record(payload)
     result = archive.fetch("s", "e")
-    assert result.status is CollectorStatus.TRUNCATION
-    assert result.records[0]["invocations"][0]["partial_payload"]
-    assert result.records[0]["invocations"][0]["harness_failure_reason"] == termination
-    assert "private-canary" not in json.dumps(result.records)
-    assert result.records[0]["totals"]["input_tokens"] is None
+    assert result.status is not CollectorStatus.TRUNCATION
+    invocation = result.records[0]["invocations"][0]
+    assert invocation["records"] == [{"output": output, "api_key": "scenario-canary"}]
+    assert invocation["harness_failure_reason"] == termination

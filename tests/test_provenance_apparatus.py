@@ -29,7 +29,7 @@ from aptl.core.provenance.registry import (
 )
 
 
-def _context(provider_id, *, max_entries=64, timeout_s=30, clock=None):
+def _context(provider_id, *, timeout_s=30, clock=None):
     registration = ProvenanceProviderRegistration(
         provider_id=provider_id,
         implementation_version="1.0.0",
@@ -37,9 +37,7 @@ def _context(provider_id, *, max_entries=64, timeout_s=30, clock=None):
         owner_adapter="tests",
         seal_point=SealPoint.RUN_READY_TO_SEAL,
         requiredness_policy_key=f"{provider_id}-required",
-        limits=ProvenanceLimits(
-            max_bytes=1_000_000, max_entries=max_entries, timeout_s=timeout_s
-        ),
+        limits=ProvenanceLimits(timeout_s=timeout_s),
     )
     return ProvenanceContext(
         registration=registration, clock=clock or (lambda: 0.0), started_at=0.0
@@ -139,12 +137,11 @@ class TestExperimentProvider:
         assert result.status is ProvenanceStatus.UNAVAILABLE
         assert result.leaves == ()
 
-    def test_more_trials_than_the_entry_budget_is_truncated(self):
-        plan = _StubPlan(trials=[_StubTrial(f"trial-{index}") for index in range(10)])
-        result = AdmittedExperimentProvider(plan).collect(
-            _context(EXPERIMENT_PROVIDER_ID, max_entries=4)
-        )
-        assert result.status is ProvenanceStatus.TRUNCATED
+    def test_every_trial_is_collected_without_an_entry_limit(self):
+        plan = _StubPlan(trials=[_StubTrial(f"trial-{index}") for index in range(2000)])
+        result = AdmittedExperimentProvider(plan).collect(_context(EXPERIMENT_PROVIDER_ID))
+        assert result.status is ProvenanceStatus.COLLECTED
+        assert len(result.leaves) >= 2000
 
     def test_parameter_bindings_are_not_recorded(self):
         """Scenario parameter VALUES are not persisted (ADR-044 / REP-001)."""

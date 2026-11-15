@@ -13,6 +13,7 @@ from pathlib import Path
 from pathlib import PurePosixPath
 from dataclasses import dataclass, field
 from datetime import datetime
+from subprocess import TimeoutExpired
 from typing import IO
 
 from aptl.core.evidence.adapters.sources import (
@@ -198,6 +199,10 @@ class ContainerFileSource:
                 exit = self._operations.container_exec_stream(
                     name, ["cat", "--", path], stdout=raw, stderr=stderr
                 )
+            except TimeoutExpired:
+                writer.add({**base, "status": "timeout", "window_coverage": "partial"})
+                flags.timed_out = flags.interrupted = True
+                return 0
             except Exception:
                 writer.add({**base, "status": "source-unavailable"})
                 flags.failed.append(base)
@@ -206,9 +211,8 @@ class ContainerFileSource:
             flags.timed_out |= status == "timeout"
             flags.interrupted |= status is not None
             if status is None and exit.returncode:
-                writer.add({**base, "status": "source-unavailable"})
+                status = "source-unavailable"
                 flags.failed.append(base)
-                return 0
             dropped = _select_lines(raw, selected, self._timestamp_of, *window)
             fields: dict[str, object] = {
                 **base,
@@ -220,7 +224,7 @@ class ContainerFileSource:
             if status:
                 fields["status"] = status
             streams = {"output": selected}
-            if status and spool_size(stderr):
+            if status in {"timeout", "interrupted-read"} and spool_size(stderr):
                 streams["stderr"] = stderr
             writer.add(fields, streams)
             return dropped
@@ -276,6 +280,10 @@ class ContainerLogSource:
                     stdout=output,
                     stderr=stderr,
                 )
+            except TimeoutExpired:
+                writer.add({"container": container, "status": "timeout"})
+                flags.timed_out = True
+                return
             except Exception:
                 writer.add({"container": container, "status": "source-unavailable"})
                 flags.failed.append(container)
@@ -283,17 +291,19 @@ class ContainerLogSource:
             status = _exit_status(exit)
             flags.timed_out |= status == "timeout"
             flags.interrupted |= status == "interrupted-read"
-            if status is None and exit.returncode != 0:
+            failed = status is None and exit.returncode != 0
+            if failed:
                 writer.add({"container": container, "status": "source-unavailable"})
                 flags.failed.append(container)
-                return
-            if not (spool_size(output) or spool_size(stderr) or status):
+            # A failed command's stderr is its error text, not container data.
+            keep_stderr = not failed and spool_size(stderr)
+            if not (spool_size(output) or keep_stderr or status):
                 return
             fields: dict[str, object] = {"container": container}
             if status:
                 fields["status"] = status
             streams = {"output": output}
-            if spool_size(stderr):
+            if keep_stderr:
                 streams["stderr"] = stderr
             writer.add(fields, streams)
 

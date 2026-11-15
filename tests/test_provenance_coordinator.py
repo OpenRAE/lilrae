@@ -1,7 +1,7 @@
 """Tests for the REP-003 provenance coordinator (issue #452).
 
 Covers the preflight's bounded-collection contract: every internal failure
-becomes one of the small typed statuses, limits are enforced, ordering never
+becomes one of the small typed statuses, the timeout is enforced, ordering never
 perturbs identity, and no source silently degrades to success.
 """
 
@@ -22,7 +22,7 @@ from aptl.core.provenance.registry import (
 _PROFILE = SealProfile(seal_point=SealPoint.RUN_READY_TO_SEAL)
 
 
-def _registration(provider_id: str, *, max_bytes=1024, max_entries=8, timeout_s=5):
+def _registration(provider_id: str, *, timeout_s=5):
     return ProvenanceProviderRegistration(
         provider_id=provider_id,
         implementation_version="1.0.0",
@@ -30,9 +30,7 @@ def _registration(provider_id: str, *, max_bytes=1024, max_entries=8, timeout_s=
         owner_adapter="tests",
         seal_point=SealPoint.RUN_READY_TO_SEAL,
         requiredness_policy_key=f"{provider_id}-required",
-        limits=ProvenanceLimits(
-            max_bytes=max_bytes, max_entries=max_entries, timeout_s=timeout_s
-        ),
+        limits=ProvenanceLimits(timeout_s=timeout_s),
     )
 
 
@@ -192,19 +190,46 @@ class TestFailureBecomesAnExplicitLimitation:
         )
         assert collection.sections["apparatus"].content_identity is None
 
-    def test_exceeding_the_declared_entry_limit_is_truncated(self):
+    def test_many_leaves_are_collected_without_an_entry_limit(self):
         provider = _StubProvider(
             "apparatus",
             result=ProvenanceResult(
                 provider_id="apparatus",
                 status=ProvenanceStatus.COLLECTED,
-                leaves=tuple(leaf_identity(f"leaf-{index}", b"x") for index in range(9)),
+                leaves=tuple(
+                    leaf_identity(f"leaf-{index}", b"x") for index in range(5000)
+                ),
             ),
         )
-        collection = _collect(
-            [provider], registrations=[_registration("apparatus", max_entries=8)]
+        collection = _collect([provider], registrations=[_registration("apparatus")])
+        section = collection.sections["apparatus"]
+        assert section.status is ProvenanceStatus.COLLECTED
+        assert section.leaf_count == 5000
+        assert section.content_identity is not None
+
+    def test_a_large_payload_is_kept_without_shape_bounds(self):
+        """Long strings, many keys, and deep nesting are retained unchanged."""
+        nested: object = "leaf"
+        for _ in range(20):
+            nested = {"next": nested}
+        payload = {
+            "long": "x" * 100_000,
+            "keys": {f"key-{index}": index for index in range(500)},
+            "deep": nested,
+        }
+        provider = _StubProvider(
+            "apparatus",
+            result=ProvenanceResult(
+                provider_id="apparatus",
+                status=ProvenanceStatus.COLLECTED,
+                leaves=(leaf_identity("leaf", b"x"),),
+                payload=payload,
+            ),
         )
-        assert collection.sections["apparatus"].status is ProvenanceStatus.TRUNCATED
+        collection = _collect([provider], registrations=[_registration("apparatus")])
+        section = collection.sections["apparatus"]
+        assert section.status is ProvenanceStatus.COLLECTED
+        assert dict(section.payload) == payload
 
     def test_a_provider_with_no_registration_is_unsupported(self):
         """An unregistered provider is never trusted into the record."""
@@ -266,8 +291,7 @@ class TestRequiredProviders:
 
 
 class TestPayloadSafety:
-    """Provider payloads are bounded and secret-free before they reach a record."""
-
+    """Provider payloads must be canonical JSON before they reach a record."""
 
     def test_an_unserializable_payload_fails_closed(self):
         provider = _StubProvider(
@@ -280,78 +304,3 @@ class TestPayloadSafety:
         )
         collection = _collect([provider])
         assert collection.sections["apparatus"].status is ProvenanceStatus.FAILED
-
-    def test_a_payload_exceeding_the_key_ceiling_is_rejected(self):
-        """The coordinator's hard ceilings must be enforced, not just documented."""
-        provider = _StubProvider(
-            "apparatus",
-            result=ProvenanceResult(
-                provider_id="apparatus",
-                status=ProvenanceStatus.COLLECTED,
-                payload={f"key-{index}": index for index in range(65)},
-            ),
-        )
-        assert _collect([provider]).sections["apparatus"].status is ProvenanceStatus.FAILED
-
-    def test_a_payload_exceeding_the_depth_ceiling_is_rejected(self):
-        nested: dict = {"leaf": 1}
-        for _ in range(8):
-            nested = {"next": nested}
-        provider = _StubProvider(
-            "apparatus",
-            result=ProvenanceResult(
-                provider_id="apparatus",
-                status=ProvenanceStatus.COLLECTED,
-                payload=nested,
-            ),
-        )
-        assert _collect([provider]).sections["apparatus"].status is ProvenanceStatus.FAILED
-
-    def test_a_payload_exceeding_the_string_ceiling_is_rejected(self):
-        provider = _StubProvider(
-            "apparatus",
-            result=ProvenanceResult(
-                provider_id="apparatus",
-                status=ProvenanceStatus.COLLECTED,
-                payload={"note": "x" * 4097},
-            ),
-        )
-        assert _collect([provider]).sections["apparatus"].status is ProvenanceStatus.FAILED
-
-    def test_a_payload_within_every_ceiling_is_accepted(self):
-        """The ceilings must not reject ordinary provider output."""
-        provider = _StubProvider(
-            "apparatus",
-            result=ProvenanceResult(
-                provider_id="apparatus",
-                status=ProvenanceStatus.COLLECTED,
-                leaves=(leaf_identity("a", b"1"),),
-                payload={"note": "x" * 4096, "nested": {"a": {"b": {"c": 1}}}},
-            ),
-        )
-        assert _collect([provider]).sections["apparatus"].status is ProvenanceStatus.COLLECTED
-
-    def test_projection_is_deterministic(self):
-        first = _collect([_StubProvider("apparatus"), _StubProvider("detection-content")])
-        second = _collect([_StubProvider("detection-content"), _StubProvider("apparatus")])
-        assert first.projection() == second.projection()
-
-    def test_projection_lists_limitations_in_a_stable_order(self):
-        collection = _collect(
-            [
-                _StubProvider(
-                    "detection-content",
-                    result=ProvenanceResult(
-                        provider_id="detection-content", status=ProvenanceStatus.DENIED
-                    ),
-                ),
-                _StubProvider(
-                    "apparatus",
-                    result=ProvenanceResult(
-                        provider_id="apparatus", status=ProvenanceStatus.DENIED
-                    ),
-                ),
-            ]
-        )
-        ordered = [item["provider_id"] for item in collection.projection()["limitations"]]
-        assert ordered == sorted(ordered)

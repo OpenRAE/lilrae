@@ -721,8 +721,8 @@ def test_capture_source_context_hides_store_and_ungranted_credentials():
         context.environment["OTHER_KEY"] = "value"
 
 
-@pytest.mark.parametrize("failure", [None, "symlink", "oversized", "missing"])
-def test_capture_generated_output_is_granted_contained_and_bounded(tmp_path, failure):
+@pytest.mark.parametrize("failure", [None, "large", "symlink", "missing"])
+def test_capture_generated_output_is_granted_contained_and_complete(tmp_path, failure):
     from aptl.backends.scenario_capture import (
         GeneratedOutputReference,
         capture_source_context,
@@ -742,8 +742,9 @@ def test_capture_generated_output_is_granted_contained_and_bounded(tmp_path, fai
         outside = tmp_path / "private-canary"
         outside.write_bytes(b"credential-canary")
         output.symlink_to(outside)
-    elif failure != "missing":
-        output.write_bytes(b"x" * (2 * 1024 * 1024 + 1) if failure else b"admitted")
+    expected = b"x" * (2 * 1024 * 1024 + 1) if failure == "large" else b"admitted"
+    if failure not in {"symlink", "missing"}:
+        output.write_bytes(expected)
     request = SimpleNamespace(
         backend=object(), project_dir=tmp_path, environment={},
         realization=SimpleNamespace(nodes=(), generated_artifacts=(artifact,)),
@@ -756,11 +757,12 @@ def test_capture_generated_output_is_granted_contained_and_bounded(tmp_path, fai
         ),
     )
     context = capture_source_context(request)
-    if failure:
+    if failure in {"symlink", "missing"}:
         with pytest.raises(ValueError, match="^capture-output-unavailable$"):
             context.read_generated_output("keys", "private")
     else:
-        assert context.read_generated_output("keys", "private") == b"admitted"
+        # Output larger than the removed 2 MiB bound is returned complete.
+        assert context.read_generated_output("keys", "private") == expected
     with pytest.raises(ValueError, match="^capture-output-not-granted$"):
         context.read_generated_output("keys", "other")
     request.realization.generated_artifacts = ()

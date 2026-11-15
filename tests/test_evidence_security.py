@@ -21,7 +21,6 @@ from aptl.core.evidence.protocol import CollectorOutcome, RunScope
 from aptl.core.evidence.visibility import project_for_participant
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 from aptl.core.runstore import LocalRunStore
@@ -57,9 +56,6 @@ def _binding(
         "retention_policy": "retain",
         "loss_disclosure_required": True,
         "visibility_class": visibility,
-        "limits": CaptureLimits(
-            max_bytes=8192, max_artifact_count=10, max_duration_s=60
-        ),
     }
     fields.update(overrides)
     return CaptureBinding(**fields)
@@ -223,31 +219,32 @@ class TestSecretRedaction:
     @pytest.mark.parametrize(
         "media_type", ["application/json", "application/x-ndjson", "text/plain"]
     )
-    def test_oversized_json_stops_consuming_before_join_or_decode(
-        self, tmp_path, media_type
-    ):
-        def chunks():
-            yield b" " * 33
-            pytest.fail("capture consumed beyond its admitted byte budget")
-
+    def test_large_redacted_stream_is_retained_completely(self, tmp_path, media_type):
+        rows = 2000
+        if media_type == "application/json":
+            body = "[" + ",".join(
+                json.dumps({"row": n, "api_key": _SECRET}) for n in range(rows)
+            ) + "]"
+        elif media_type == "application/x-ndjson":
+            body = "".join(
+                json.dumps({"row": n, "api_key": _SECRET}) + "\n" for n in range(rows)
+            )
+        else:
+            body = "".join(f"row {n} password={_SECRET}\n" for n in range(rows))
+        raw = body.encode()
+        # Odd chunk boundaries split records, keys, and the secret itself.
+        chunks = (raw[i : i + 7] for i in range(0, len(raw), 7))
         store = LocalRunStore(tmp_path / "runs")
         outcome = CollectorOutcome(
             status=CollectorStatus.OK,
             started_at=_CLOCK.now(),
             finished_at=_CLOCK.now(),
-            chunks=chunks(),
+            chunks=chunks,
             media_type=media_type,
-            event_count=1,
+            event_count=rows,
         )
         result = acquire_evidence(
-            bindings=[
-                _binding(
-                    expected_media_types=(media_type,),
-                    limits=CaptureLimits(
-                        max_bytes=32, max_artifact_count=10, max_duration_s=60
-                    ),
-                )
-            ],
+            bindings=[_binding(expected_media_types=(media_type,))],
             collectors={
                 "aptl.collector.a": _FakeCollector("aptl.collector.a", outcome)
             },
@@ -255,10 +252,35 @@ class TestSecretRedaction:
             scope=_SCOPE,
             clock=_CLOCK,
         )
-        assert result.disposition is AcquisitionDisposition.INVALIDATED
-        assert result.reports[0].status is CollectorStatus.TRUNCATION
-        assert not result.records
-        assert not result.refs
+        assert result.disposition is AcquisitionDisposition.SEALED_READY
+        assert result.records[0].redaction_state == "redacted"
+        stored = (store.get_run_path("run-1") / result.refs[0].content_uri).read_bytes()
+        assert _SECRET.encode() not in stored
+        if media_type == "application/json":
+            assert [row["row"] for row in json.loads(stored)] == list(range(rows))
+        elif media_type == "application/x-ndjson":
+            parsed = [json.loads(line) for line in stored.splitlines()]
+            assert [row["row"] for row in parsed] == list(range(rows))
+        else:
+            assert stored.count(b"\n") == rows
+            assert stored.startswith(b"row 0 ") and b"row 1999 " in stored
+
+    def test_scenario_content_without_a_policy_is_kept(self, tmp_path):
+        store = LocalRunStore(tmp_path / "runs")
+        binding = _binding(redaction_required=False, redaction_policy=None)
+        outcome = _json_outcome([{"user": "admin", "api_key": _SECRET}])
+        result = acquire_evidence(
+            bindings=[binding],
+            collectors={
+                "aptl.collector.a": _FakeCollector("aptl.collector.a", outcome)
+            },
+            run_store=store,
+            scope=_SCOPE,
+            clock=_CLOCK,
+        )
+        stored = (store.get_run_path("run-1") / result.refs[0].content_uri).read_bytes()
+        assert _SECRET.encode() in stored
+        assert result.records[0].redaction_state == "none"
 
     def test_control_plane_secret_is_redacted_from_stored_bytes(self, tmp_path):
         store = LocalRunStore(tmp_path / "runs")
@@ -346,5 +368,5 @@ class TestHostilePersistence:
 
         with pytest.raises(PathContainmentError):
             create_content_addressed(
-                store, "run-1", [b"x"], subdir="evidence/blobs", max_bytes=64
+                store, "run-1", [b"x"], subdir="evidence/blobs"
             )

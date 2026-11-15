@@ -24,7 +24,6 @@ from raes_contracts.corpus import FIXTURES, corpus_family_root
 from aptl.core.collectors import collect_traces
 from aptl.core.experiment.capture_mapping import bind_capture_requirements
 from aptl.core.experiment.capture_registry import (
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
     CollectorRegistry,
@@ -38,7 +37,6 @@ from aptl.core.experiment.policy import (
 
 CORPUS_ROOT = corpus_family_root(FIXTURES)
 
-_LIMITS = CaptureLimits(max_bytes=1_048_576, max_artifact_count=100, max_duration_s=300)
 
 
 def _read(*parts: str) -> bytes:
@@ -82,7 +80,6 @@ def _covering_registration(**overrides: object) -> CollectorRegistration:
         ),
         "supports_loss_disclosure": True,
         "visibility_class": CaptureVisibility.EVALUATOR_ONLY,
-        "limits": _LIMITS,
     }
     fields.update(overrides)
     return CollectorRegistration(**fields)
