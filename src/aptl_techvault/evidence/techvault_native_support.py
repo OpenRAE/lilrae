@@ -45,13 +45,13 @@ def stream_container_file(
 
 def _stream_loss(ended: object | None) -> str | None:
     """Return the loss code of a streamed read, or ``None`` when it succeeded."""
-    if ended is None:
-        return "source-exec-failed"
-    if ended.timed_out:  # type: ignore[attr-defined]
-        return "source-read-timed-out"
-    if ended.failed_pipe:  # type: ignore[attr-defined]
-        return "source-read-interrupted"
-    return "source-command-failed" if ended.returncode != 0 else None  # type: ignore[attr-defined]
+    checks = (
+        (ended is None, "source-exec-failed"),
+        (getattr(ended, "timed_out", False), "source-read-timed-out"),
+        (getattr(ended, "failed_pipe", False), "source-read-interrupted"),
+        (getattr(ended, "returncode", 0) != 0, "source-command-failed"),
+    )
+    return next((loss for failed, loss in checks if failed), None)
 
 
 def spool_lines(spool: IO[bytes]) -> Iterator[tuple[bytes, bool]]:

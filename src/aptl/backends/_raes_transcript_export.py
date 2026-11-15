@@ -11,7 +11,6 @@ from raes_contracts.diagnostics import Diagnostic
 
 from aptl.core.deployment.errors import BackendTimeoutError, CaptureReconciliationError
 from aptl.core.evidence.outcomes import capture_diagnostic
-from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.utils.pathsafe import (
     REASON_NOT_FOUND,
     PathContainmentError,
@@ -88,7 +87,6 @@ def export_transcript_payload(
     backend: object,
     store_base: Path,
     run_id: str,
-    binding: CaptureBinding,
 ) -> tuple[object | None, TranscriptExportFailure | None]:
     """Quiesce the broker and export against the stable session census.
 

@@ -13,7 +13,6 @@ from aptl.backends._raes_transcript_export import (
 )
 from aptl.core.deployment.errors import CaptureReconciliationError
 
-_BINDING = SimpleNamespace()
 
 
 def _census(tmp_path, *names):
@@ -46,7 +45,7 @@ def test_a_matching_export_returns_its_payload_and_no_failure(tmp_path):
     backend, calls = _backend(export=payload)
 
     exported, failure = export_transcript_payload(
-        backend, _census(tmp_path, "session-1.jsonl"), "run-1", _BINDING
+        backend, _census(tmp_path, "session-1.jsonl"), "run-1"
     )
 
     assert (exported, failure) == (payload, None)
@@ -56,7 +55,7 @@ def test_a_matching_export_returns_its_payload_and_no_failure(tmp_path):
 def test_a_backend_without_capture_apparatus_fails_at_apparatus(tmp_path):
     """A backend that cannot quiesce or export is named, not swallowed."""
     exported, failure = export_transcript_payload(
-        SimpleNamespace(), tmp_path, "run-1", _BINDING
+        SimpleNamespace(), tmp_path, "run-1"
     )
 
     assert (exported, failure) == (None, TranscriptExportFailure("apparatus"))
@@ -67,7 +66,7 @@ def test_an_unquiesced_broker_fails_at_quiesce_before_any_export(tmp_path):
     backend, calls = _backend(quiesced=False, export={})
 
     exported, failure = export_transcript_payload(
-        backend, _census(tmp_path, "session-1.jsonl"), "run-1", _BINDING
+        backend, _census(tmp_path, "session-1.jsonl"), "run-1"
     )
 
     assert (exported, failure) == (None, TranscriptExportFailure("quiesce"))
@@ -79,7 +78,7 @@ def test_an_invalid_census_fails_at_census_before_any_export(tmp_path):
     backend, calls = _backend(export={})
 
     exported, failure = export_transcript_payload(
-        backend, _census(tmp_path, "notes.txt"), "run-1", _BINDING
+        backend, _census(tmp_path, "notes.txt"), "run-1"
     )
 
     assert (exported, failure) == (None, TranscriptExportFailure("census"))
@@ -101,7 +100,7 @@ def test_an_unreadable_broker_export_fails_at_export(tmp_path, export):
     backend, _calls = _backend(export=export)
 
     exported, failure = export_transcript_payload(
-        backend, _census(tmp_path, "session-1.jsonl"), "run-1", _BINDING
+        backend, _census(tmp_path, "session-1.jsonl"), "run-1"
     )
 
     assert (exported, failure) == (None, TranscriptExportFailure("export"))
@@ -121,7 +120,6 @@ def test_a_reconciliation_mismatch_reports_set_sizes_only(tmp_path):
         backend,
         _census(tmp_path, "session-1.jsonl", "session-2.jsonl"),
         "run-1",
-        _BINDING,
     )
 
     assert exported is None
