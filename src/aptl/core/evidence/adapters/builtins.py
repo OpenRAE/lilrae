@@ -141,11 +141,11 @@ class _ReadFlags:
         return next((status for applies, status in priorities if applies), default)
 
 
-def _exit_status(exit: object) -> str | None:
+def _exit_status(ended: object) -> str | None:
     """Return the record status for a streamed read that did not end cleanly."""
-    if getattr(exit, "timed_out", False):
+    if getattr(ended, "timed_out", False):
         return "timeout"
-    if getattr(exit, "failed_pipe", False):
+    if getattr(ended, "failed_pipe", False):
         return "interrupted-read"
     return None
 
@@ -196,7 +196,7 @@ class ContainerFileSource:
         base = {"container": name, "path": path}
         with new_spool() as raw, new_spool() as stderr, new_spool() as selected:
             try:
-                exit = self._operations.container_exec_stream(
+                ended = self._operations.container_exec_stream(
                     name, ["cat", "--", path], stdout=raw, stderr=stderr
                 )
             except TimeoutExpired:
@@ -207,10 +207,10 @@ class ContainerFileSource:
                 writer.add({**base, "status": "source-unavailable"})
                 flags.failed.append(base)
                 return 0
-            status = _exit_status(exit)
+            status = _exit_status(ended)
             flags.timed_out |= status == "timeout"
             flags.interrupted |= status is not None
-            if status is None and exit.returncode:
+            if status is None and ended.returncode:
                 status = "source-unavailable"
                 flags.failed.append(base)
             dropped = _select_lines(raw, selected, self._timestamp_of, *window)
@@ -273,7 +273,7 @@ class ContainerLogSource:
         """Keep each container's read outcome independent of its peers."""
         with new_spool() as output, new_spool() as stderr:
             try:
-                exit = self._backend.container_logs_stream(
+                ended = self._backend.container_logs_stream(
                     container,
                     since=window[0],
                     until=window[1],
@@ -288,10 +288,10 @@ class ContainerLogSource:
                 writer.add({"container": container, "status": "source-unavailable"})
                 flags.failed.append(container)
                 return
-            status = _exit_status(exit)
+            status = _exit_status(ended)
             flags.timed_out |= status == "timeout"
             flags.interrupted |= status == "interrupted-read"
-            failed = status is None and exit.returncode != 0
+            failed = status is None and ended.returncode != 0
             if failed:
                 writer.add({"container": container, "status": "source-unavailable"})
                 flags.failed.append(container)

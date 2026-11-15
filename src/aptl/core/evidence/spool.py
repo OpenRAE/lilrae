@@ -13,6 +13,7 @@ records into a spool, streaming large string fields from other spools.
 from __future__ import annotations
 
 import codecs
+import itertools
 import json
 import tempfile
 from collections.abc import Iterable, Iterator, Mapping
@@ -78,15 +79,13 @@ def json_string_chunks(chunks: Iterable[bytes]) -> Iterator[bytes]:
     Invalid UTF-8 becomes U+FFFD, as the in-memory decoders did before.
     """
     decoder = codecs.getincrementaldecoder("utf-8")("replace")
-    yield b'"'
-    for chunk in chunks:
-        text = decoder.decode(chunk)
-        if text:
-            yield json.dumps(text)[1:-1].encode("ascii")
-    tail = decoder.decode(b"", final=True)
-    if tail:
-        yield json.dumps(tail)[1:-1].encode("ascii")
-    yield b'"'
+    # Both generators run lazily, so the final decode follows every chunk.
+    texts = itertools.chain(
+        (decoder.decode(chunk) for chunk in chunks),
+        (decoder.decode(b"", final=True) for _ in (None,)),
+    )
+    escaped = (json.dumps(text)[1:-1].encode("ascii") for text in texts if text)
+    return itertools.chain((b'"',), escaped, (b'"',))
 
 
 class JsonArrayWriter:

@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tarfile
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO
@@ -122,7 +123,7 @@ def _member_problem(member: tarfile.TarInfo) -> str | None:
     return f"member {problem}" if problem else None
 
 
-def _member_chunks(tar: tarfile.TarFile, member: tarfile.TarInfo):
+def _member_chunks(tar: tarfile.TarFile, member: tarfile.TarInfo) -> Iterator[bytes]:
     """Yield one member's bytes in chunks."""
     handle = tar.extractfile(member)
     if handle is None:

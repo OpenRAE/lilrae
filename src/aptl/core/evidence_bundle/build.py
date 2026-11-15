@@ -81,7 +81,7 @@ class BundleBuildResult:
 
 
 def _load_records(
-    run_dir: Path, closure: VerifiedClosure, limits: BundleLimits
+    run_dir: Path, closure: VerifiedClosure
 ) -> tuple[list[dict[str, object]], dict[str, int | None]]:
     """Re-read the evidence records as canonical SOURCE dicts + retained sizes.
 
@@ -133,9 +133,8 @@ def build_evidence_bundle(
         run_id,
         seal_verifier=options.seal_verifier,
         source=options.source,
-        limits=limits,
     )
-    records, retained = _load_records(run_dir, closure, limits)
+    records, retained = _load_records(run_dir, closure)
 
     proj_ctx = ProjectionContext(
         run_dir=run_dir, records=tuple(records), retained_sizes=retained, limits=limits

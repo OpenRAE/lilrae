@@ -84,6 +84,7 @@ def test_backend_streams_use_owned_identity_and_existing_transport(
         expected = ["docker", "exec", "owned-soc", "cat", "--", "/f"]
     command, kwargs = seen[0]
     assert command == expected
-    assert kwargs["stdout"] is out and kwargs["stderr"] is err
+    assert kwargs["stdout"] is out
+    assert kwargs["stderr"] is err
     assert kwargs["progress_timeout"] > 0
     assert kwargs["env"] == {"DOCKER_HOST": "ssh://fixture"}

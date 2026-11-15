@@ -313,7 +313,8 @@ class LilraeRuntimeEvidence:
             },
         )
 
-    def _verify_artifact(self, artifact: dict[str, object]) -> None:
+    @staticmethod
+    def _verify_artifact(artifact: dict[str, object]) -> None:
         """Check one cut artifact's identity before its bytes are copied."""
         digest = artifact["sha256"]
         if not _HASH.fullmatch(digest) or artifact["path"] != f"objects/{digest}.bin":

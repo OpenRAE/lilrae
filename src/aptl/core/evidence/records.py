@@ -128,6 +128,12 @@ def _raw_content(
     )
 
 
+def _typed_description(binding: CaptureBinding, outcome: CollectorOutcome) -> object:
+    """Return the typed description, redacted only when the binding asks."""
+    description = outcome.source_pipeline.get("typed_description")
+    return redact(description) if binding.redaction_required else description
+
+
 def build_evidence_record(
     *,
     binding: CaptureBinding,
@@ -234,5 +240,5 @@ def build_evidence_record(
         sensitivity=disclosure.sensitivity,
         redaction_state=disclosure.redaction_state,
         redaction_policy=redaction_policy,
-        typed_description=(redact(outcome.source_pipeline.get("typed_description")) if binding.redaction_required else outcome.source_pipeline.get("typed_description")),
+        typed_description=_typed_description(binding, outcome),
     )

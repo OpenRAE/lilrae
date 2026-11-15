@@ -25,28 +25,33 @@ def stream_container_file(
     The caller closes the returned spool.
     """
     stream = getattr(operations, "container_exec_stream", None)
-    if not callable(stream):
-        return None, "source-exec-failed"
-    spool, stderr = new_spool(), new_spool()
-    try:
-        exit = stream(container, ["cat", "--", path], stdout=spool, stderr=stderr)
-    # broad-except: backend transports expose implementation-specific failures.
-    except Exception:
-        spool.close()
-        return None, "source-exec-failed"
-    finally:
-        stderr.close()
-    loss = None
-    if exit.timed_out:
-        loss = "source-read-timed-out"
-    elif exit.failed_pipe:
-        loss = "source-read-interrupted"
-    elif exit.returncode != 0:
-        loss = "source-command-failed"
+    spool = new_spool()
+    loss = "source-exec-failed" if not callable(stream) else None
+    if loss is None:
+        with new_spool() as stderr:
+            try:
+                ended = stream(
+                    container, ["cat", "--", path], stdout=spool, stderr=stderr
+                )
+            # broad-except: backend transports expose implementation-specific failures.
+            except Exception:
+                ended = None
+        loss = _stream_loss(ended)
     if loss is not None:
         spool.close()
         return None, loss
     return spool, None
+
+
+def _stream_loss(ended: object | None) -> str | None:
+    """Return the loss code of a streamed read, or ``None`` when it succeeded."""
+    if ended is None:
+        return "source-exec-failed"
+    if ended.timed_out:  # type: ignore[attr-defined]
+        return "source-read-timed-out"
+    if ended.failed_pipe:  # type: ignore[attr-defined]
+        return "source-read-interrupted"
+    return "source-command-failed" if ended.returncode != 0 else None  # type: ignore[attr-defined]
 
 
 def spool_lines(spool: IO[bytes]) -> Iterator[tuple[bytes, bool]]:

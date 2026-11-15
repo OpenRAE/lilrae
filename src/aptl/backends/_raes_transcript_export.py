@@ -103,7 +103,7 @@ def export_transcript_payload(
     progress = _ExportProgress()
     try:
         payload = _quiesce_and_export(
-            quiesce, export, store_base, run_id, binding, progress
+            quiesce, export, store_base, run_id, progress
         )
     except CaptureReconciliationError as exc:
         return None, TranscriptExportFailure(
@@ -122,7 +122,6 @@ def _quiesce_and_export(
     export: Callable[..., object],
     store_base: Path,
     run_id: str,
-    binding: CaptureBinding,
     progress: _ExportProgress,
 ) -> object | None:
     """Run the export steps in order, recording each step as it starts."""

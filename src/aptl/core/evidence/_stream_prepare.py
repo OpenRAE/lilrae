@@ -30,6 +30,7 @@ _PEM_END = b"-----END "
 
 
 def _encode(value: object) -> bytes:
+    """Encode one value as compact UTF-8 JSON."""
     return json.dumps(value, separators=(",", ":")).encode("utf-8")
 
 
@@ -82,12 +83,14 @@ def _lines(chunks: Iterable[bytes]) -> Iterator[bytes]:
 
 
 def _redacted_json_lines(chunks: Iterable[bytes]) -> Iterator[bytes]:
+    """Redact each JSON-lines record with the canonical redactor."""
     for line in _lines(chunks):
         if line.strip():
             yield _encode(redact(json.loads(line))) + b"\n"
 
 
 def _validated_json_lines(chunks: Iterable[bytes]) -> Iterator[bytes]:
+    """Pass JSON-lines bytes through unchanged after each record parses."""
     pending = b""
     for chunk in chunks:
         pending += chunk
@@ -101,6 +104,7 @@ def _validated_json_lines(chunks: Iterable[bytes]) -> Iterator[bytes]:
 
 
 def _redact_text(data: bytes) -> bytes:
+    """Redact one UTF-8 text group with the canonical redactor."""
     safe = redact(data.decode("utf-8"))
     if not isinstance(safe, str):
         raise TypeError("text redaction returned non-text")
@@ -140,24 +144,30 @@ def _parsed(
 
 
 def _redacted_object(chunks: Iterable[bytes]) -> Iterator[bytes]:
-    yield b"{"
+    """Redact a top-level JSON object one member at a time."""
     members = _parsed(
         chunks, lambda events: ijson.kvitems_coro(events, "", use_float=True)
     )
-    for index, (key, value) in enumerate(members):  # type: ignore[misc]
-        prefix = b"," if index else b""
-        yield prefix + _encode(key) + b":" + _encode(redact_mapping_item(key, value))
-    yield b"}"
+    encoded = (
+        (b"," if index else b"")
+        + _encode(key)
+        + b":"
+        + _encode(redact_mapping_item(key, value))
+        for index, (key, value) in enumerate(members)  # type: ignore[misc]
+    )
+    return itertools.chain((b"{",), encoded, (b"}",))
 
 
 def _redacted_array(chunks: Iterable[bytes]) -> Iterator[bytes]:
-    yield b"["
+    """Redact a top-level JSON array one item at a time."""
     items = _parsed(
         chunks, lambda events: ijson.items_coro(events, "item", use_float=True)
     )
-    for index, item in enumerate(iter_redact_list(items)):
-        yield (b"," if index else b"") + _encode(item)
-    yield b"]"
+    encoded = (
+        (b"," if index else b"") + _encode(item)
+        for index, item in enumerate(iter_redact_list(items))
+    )
+    return itertools.chain((b"[",), encoded, (b"]",))
 
 
 def _redacted_json(chunks: Iterable[bytes]) -> Iterator[bytes]:
@@ -201,19 +211,22 @@ def prepare_stream(
     ``UnicodeDecodeError`` while the stream is consumed when the content is
     not the declared media type.
     """
-    if media_type == JSON_MEDIA_TYPE:
-        stream = (
-            _redacted_json(chunks)
-            if redacted
-            else _validated_json(chunks)
-        )
-        return _as_value_errors(stream)
-    if media_type in JSON_LINES_MEDIA_TYPES:
-        return (
-            _redacted_json_lines(chunks) if redacted else _validated_json_lines(chunks)
-        )
-    if media_type == TEXT_MEDIA_TYPE:
-        return _redacted_text(chunks) if redacted else _validated_text(chunks)
-    if redacted:
-        raise ValueError("capture media type has no trusted redaction adapter")
-    return iter(chunks)
+    handlers = _HANDLERS.get(media_type)
+    if handlers is None:
+        if redacted:
+            raise ValueError("capture media type has no trusted redaction adapter")
+        return iter(chunks)
+    return handlers[redacted](chunks)
+
+
+_HANDLERS: dict[str, dict[bool, Callable[[Iterable[bytes]], Iterator[bytes]]]] = {
+    JSON_MEDIA_TYPE: {
+        True: lambda chunks: _as_value_errors(_redacted_json(chunks)),
+        False: lambda chunks: _as_value_errors(_validated_json(chunks)),
+    },
+    TEXT_MEDIA_TYPE: {True: _redacted_text, False: _validated_text},
+    **{
+        media_type: {True: _redacted_json_lines, False: _validated_json_lines}
+        for media_type in JSON_LINES_MEDIA_TYPES
+    },
+}

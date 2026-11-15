@@ -427,13 +427,11 @@ def acquire_evidence(
     clock: ClockProvider,
     trial_body: Callable[[], None] = lambda: None,
     phase: AcquisitionPhase | None = None,
-    progress_timeout_seconds: float | None = None,
 ) -> AcquisitionResult:
     """Acquire evidence for one trial's admitted capture bindings.
 
-    ``progress_timeout_seconds`` is how long one evidence read may go without
-    new data before it fails as a timeout. It defaults to the run store's
-    configured value.
+    Each evidence read uses the run store's progress timeout: the time one
+    read may go without new data before it fails as a timeout.
 
     ``trial_body`` is the work that runs while collectors are live (participant
     actions / orchestrator workflows). It runs BETWEEN start and the reverse-
@@ -448,10 +446,6 @@ def acquire_evidence(
         if base_dir is not None
         else nullcontext()
     )
-    if progress_timeout_seconds is None:
-        progress_timeout_seconds = getattr(
-            run_store, "progress_timeout_seconds", DEFAULT_PROGRESS_TIMEOUT_SECONDS
-        )
     with spool:
         return _acquire(
             bindings=bindings,
@@ -461,7 +455,6 @@ def acquire_evidence(
             clock=clock,
             trial_body=trial_body,
             phase=phase,
-            progress_timeout_seconds=progress_timeout_seconds,
         )
 
 
@@ -474,9 +467,11 @@ def _acquire(
     clock: ClockProvider,
     trial_body: Callable[[], None],
     phase: AcquisitionPhase | None,
-    progress_timeout_seconds: float,
 ) -> AcquisitionResult:
     """Run one acquisition with spool files on the run-store disk."""
+    progress_timeout_seconds = getattr(
+        run_store, "progress_timeout_seconds", DEFAULT_PROGRESS_TIMEOUT_SECONDS
+    )
     plan, diagnostics, unavailable = _resolve_plan(bindings, collectors)
     interrupted: BaseException | None = None
     if unavailable:

@@ -23,7 +23,6 @@ from aptl.core.evidence_bundle._io import (
     hash_source,
     read_source,
 )
-from aptl.core.evidence_bundle.limits import BundleLimits
 from aptl.core.evidence_bundle.models import (
     ClosureEntry,
     ClosureLimitation,
@@ -78,7 +77,6 @@ def collect_backend_evidence(
     run_id: str,
     entries: list[ClosureEntry],
     limitations: list[ClosureLimitation],
-    limits: BundleLimits,
 ) -> None:
     """Add each known backend-evidence root that belongs to this run, disclosing gaps."""
     for relpath, bundle_path, role, contract_id, expected in _BACKEND_ROOTS:
@@ -127,7 +125,6 @@ def collect_evidence(
     run_id: str,
     entries: list[ClosureEntry],
     limitations: list[ClosureLimitation],
-    limits: BundleLimits,
 ) -> None:
     """Enumerate the evidence ledger and collect each record (and its blob)."""
     try:
@@ -152,11 +149,11 @@ def collect_evidence(
         )
         return
     for name in record_names:
-        _collect_one_record(run_dir, run_id, name, entries, limitations, limits)
+        _collect_one_record(run_dir, run_id, name, entries, limitations)
 
 
 def _read_and_validate_record(
-    run_dir: Path, relpath: str, limits: BundleLimits
+    run_dir: Path, relpath: str
 ) -> tuple[
     tuple[str, int, ExperimentEvidenceRecordModel] | None, ClosureLimitation | None
 ]:
@@ -186,11 +183,10 @@ def _collect_one_record(
     name: str,
     entries: list[ClosureEntry],
     limitations: list[ClosureLimitation],
-    limits: BundleLimits,
 ) -> None:
     """Read, run-join, and append one ledger record plus its referenced blob."""
     relpath = f"{_EVIDENCE_LEDGER_DIR}/{name}"
-    parsed, limitation = _read_and_validate_record(run_dir, relpath, limits)
+    parsed, limitation = _read_and_validate_record(run_dir, relpath)
     if limitation is not None:
         limitations.append(limitation)
         return
@@ -228,7 +224,7 @@ def _collect_one_record(
             ),
         )
     )
-    _collect_blob(run_dir, record, disclosures, entries, limitations, limits)
+    _collect_blob(run_dir, record, disclosures, entries, limitations)
 
 
 def _collect_blob(
@@ -237,11 +233,10 @@ def _collect_blob(
     disclosures: Disclosures,
     entries: list[ClosureEntry],
     limitations: list[ClosureLimitation],
-    limits: BundleLimits,
 ) -> None:
     """Verify and append the record's referenced blob, or disclose its absence."""
     blob_uri = record.raw_content.content_uri
-    hashed = _hash_referenced_blob(run_dir, blob_uri, limits, limitations)
+    hashed = _hash_referenced_blob(run_dir, blob_uri, limitations)
     if hashed is None:
         return
     digest, size = hashed
@@ -257,7 +252,7 @@ def _collect_blob(
         )
         return
 
-    registration_id = _pinned_registration(run_dir, record, limits)
+    registration_id = _pinned_registration(run_dir, record)
     if not registration_id:
         limitations.append(
             ClosureLimitation(
@@ -273,7 +268,7 @@ def _collect_blob(
             if entry.name == registration_id
         ]
         if validators:
-            if not _validate_adapter_blob(validators, run_dir, blob_uri, limits):
+            if not _validate_adapter_blob(validators, run_dir, blob_uri):
                 limitations.append(
                     ClosureLimitation(
                         codes.INVALID_TRANSCRIPT,
@@ -302,7 +297,6 @@ def _collect_blob(
 def _hash_referenced_blob(
     run_dir: Path,
     blob_uri: str,
-    limits: BundleLimits,
     limitations: list[ClosureLimitation],
 ) -> tuple[str, int] | None:
     """Hash a referenced blob and disclose bounded-read failures."""
@@ -321,7 +315,7 @@ def _hash_referenced_blob(
 
 
 def _archive_validators(
-    validators: list[metadata.EntryPoint], run_dir: Path, limits: BundleLimits
+    validators: list[metadata.EntryPoint], run_dir: Path
 ) -> list[metadata.EntryPoint]:
     """Select validators from the capture installation retained in the manifest."""
 
@@ -356,11 +350,10 @@ def _validate_adapter_blob(
     validators: list[metadata.EntryPoint],
     run_dir: Path,
     blob_uri: str,
-    limits: BundleLimits,
 ) -> bool:
     """Call one installed adapter's semantic validator on bounded retained bytes."""
     try:
-        validators = _archive_validators(validators, run_dir, limits)
+        validators = _archive_validators(validators, run_dir)
         if len(validators) != 1:
             raise ValueError("archive validator is not unique")
         validator = validators[0].load()
@@ -375,7 +368,7 @@ def _validate_adapter_blob(
 
 
 def _pinned_registration(
-    run_dir: Path, record: ExperimentEvidenceRecordModel, limits: BundleLimits
+    run_dir: Path, record: ExperimentEvidenceRecordModel
 ) -> str | None:
     """Resolve the record's registration from its admitted capture plan."""
     plan_id = record.capture_spec_ref.ref_id

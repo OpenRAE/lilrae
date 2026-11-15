@@ -408,25 +408,37 @@ def iter_redact_list(items: Iterable[Any], depth: int = 0) -> Iterator[Any]:
         if idx == 0:
             modes = _argv_leading_modes([item])
             context = item if isinstance(item, str) else ""
-        is_text = isinstance(item, str)
-        flag_value = pending_flag and is_text
-        short_flag = (
-            idx > 0
-            and is_text
-            and isinstance(previous, str)
-            and _is_argv_short_flag_target(previous, item, modes)
+        masked = isinstance(item, str) and (
+            pending_flag or _short_flag_value(previous, item, idx, modes)
         )
-        previous, pending_flag = item, False
-        if flag_value or short_flag:
-            yield REDACTED
-            continue
-        if idx > 0 and is_text and depth + 1 < _MAX_DEPTH:
-            yield _redact_string(item, depth + 1, context)
-        else:
-            yield _redact(item, depth + 1)
+        previous = item
         # Pair-form CLI args: ["--password", "hunter2"]. A sensitive long
         # flag masks the next element when that element is a plain string.
-        pending_flag = is_text and bool(_CLI_FLAG_TOKEN_RE.match(item))
+        pending_flag = not masked and _is_sensitive_long_flag(item)
+        yield REDACTED if masked else _redact_list_item(item, idx, depth, context)
+
+
+def _short_flag_value(
+    previous: object, item: str, idx: int, modes: dict[str, bool]
+) -> bool:
+    """Return whether ``item`` is the credential value of a short flag."""
+    return (
+        idx > 0
+        and isinstance(previous, str)
+        and _is_argv_short_flag_target(previous, item, modes)
+    )
+
+
+def _is_sensitive_long_flag(item: object) -> bool:
+    """Return whether ``item`` is a sensitive long flag such as ``--password``."""
+    return isinstance(item, str) and bool(_CLI_FLAG_TOKEN_RE.match(item))
+
+
+def _redact_list_item(item: object, idx: int, depth: int, context: str) -> object:
+    """Redact one list element in the shell context of the leading token."""
+    if idx > 0 and isinstance(item, str) and depth + 1 < _MAX_DEPTH:
+        return _redact_string(item, depth + 1, context)
+    return _redact(item, depth + 1)
 
 
 def _redact_list(items: list[Any] | tuple[Any, ...], depth: int = 0) -> list[Any]:

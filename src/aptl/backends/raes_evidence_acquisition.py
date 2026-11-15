@@ -338,7 +338,7 @@ def finalize_active_transcript_authority(
     )
     if result.records:
         result = qualify_retained_transcript(
-            result, runtime_adapter, payload, binding, store_base, run_id
+            result, runtime_adapter, payload, store_base, run_id
         )
     if result.records and isinstance(payload, Mapping):
         expected = set(payload.get("expected_session_ids", ()))

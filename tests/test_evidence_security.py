@@ -263,7 +263,8 @@ class TestSecretRedaction:
             assert [row["row"] for row in parsed] == list(range(rows))
         else:
             assert stored.count(b"\n") == rows
-            assert stored.startswith(b"row 0 ") and b"row 1999 " in stored
+            assert stored.startswith(b"row 0 ")
+            assert b"row 1999 " in stored
 
     def test_scenario_content_without_a_policy_is_kept(self, tmp_path):
         store = LocalRunStore(tmp_path / "runs")

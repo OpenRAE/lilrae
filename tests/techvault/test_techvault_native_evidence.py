@@ -312,7 +312,8 @@ def test_suricata_query_reads_every_event_of_a_large_native_log(tmp_path):
 
     events = _owner(tmp_path, backend).query_suricata(_START, _END)
 
-    assert events[0] == first and events[-1] == last
+    assert events[0] == first
+    assert events[-1] == last
     assert len(events) == 302
 
 

@@ -48,9 +48,10 @@ def test_different_bytes_at_the_digest_name_are_refused(tmp_path):
     (tmp_path / "blobs").mkdir()
     (tmp_path / "blobs" / _DIGEST).write_bytes(b"other content")
 
+    chunks = iter(_CHUNKS)
     with pytest.raises(FileExistsError):
         create_content_addressed_nofollow(
-            tmp_path, "blobs", iter(_CHUNKS), reserve_fraction=0.0
+            tmp_path, "blobs", chunks, reserve_fraction=0.0
         )
     assert _names(tmp_path / "blobs") == [_DIGEST]
 
@@ -61,17 +62,17 @@ def test_a_symlinked_directory_component_is_refused(tmp_path):
     (tmp_path / "base").mkdir()
     (tmp_path / "base" / "blobs").symlink_to(outside, target_is_directory=True)
 
+    base, chunks = tmp_path / "base", iter(_CHUNKS)
     with pytest.raises(PathContainmentError):
-        create_content_addressed_nofollow(
-            tmp_path / "base", "blobs", iter(_CHUNKS), reserve_fraction=0.0
-        )
+        create_content_addressed_nofollow(base, "blobs", chunks, reserve_fraction=0.0)
     assert _names(outside) == []
 
 
 def test_an_unreachable_reserve_fails_and_leaves_no_file(tmp_path):
+    chunks = iter(_CHUNKS)
     with pytest.raises(FreeSpaceReserveError) as caught:
         create_content_addressed_nofollow(
-            tmp_path, "blobs", iter(_CHUNKS), reserve_fraction=0.999999
+            tmp_path, "blobs", chunks, reserve_fraction=0.999999
         )
 
     assert caught.value.errno is not None
@@ -111,8 +112,9 @@ def test_a_failing_source_leaves_no_temporary_file(tmp_path):
         yield b"partial"
         raise RuntimeError("source failed")
 
+    source = chunks()
     with pytest.raises(RuntimeError):
         create_exclusive_stream_nofollow(
-            tmp_path, "run/file.bin", chunks(), reserve_fraction=0.0
+            tmp_path, "run/file.bin", source, reserve_fraction=0.0
         )
     assert _names(tmp_path / "run") == []

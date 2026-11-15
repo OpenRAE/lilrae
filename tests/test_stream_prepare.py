@@ -51,8 +51,9 @@ def test_unredacted_jsonl_keeps_its_original_bytes():
     ],
 )
 def test_invalid_json_raises_value_error(media_type, data):
+    chunks = _split(data, 2)
     with pytest.raises(ValueError):
-        _run(_split(data, 2), media_type, redacted=False)
+        _run(chunks, media_type, redacted=False)
 
 
 @pytest.mark.parametrize("redacted", [False, True])
