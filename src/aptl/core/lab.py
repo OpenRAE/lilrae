@@ -28,7 +28,13 @@ from aptl.core.certs import ensure_ssl_certs
 from aptl.core.helper_images import PINNED_HELPER_IMAGES, SURICATA_SEEDER_IMAGE
 from aptl.core.soc_ca import ensure_soc_certs
 from aptl.core.deployment._misp_server_tls import stage_misp_server_tls
-from aptl.core.config import AptlConfig, DeploymentConfig, find_config, load_config
+from aptl.core.config import (
+    AptlConfig,
+    DeploymentConfig,
+    RunStorageConfig,
+    find_config,
+    load_config,
+)
 from aptl.core.contracts import (
     backend_is_initialized,
     config_is_loaded,
@@ -3297,16 +3303,19 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
         return ctx.run_store, ctx.run_id
 
     state_dir = ctx.project_dir / _STATE_DIR_NAME
+    storage = getattr(ctx.config, "run_storage", None) or RunStorageConfig()
+    settings = {
+        "free_space_reserve": storage.free_space_reserve,
+        "progress_timeout_seconds": storage.capture_progress_timeout_seconds,
+    }
     active_run_dir = None if ctx.trial is not None else resolve_active_run_dir(state_dir)
     if active_run_dir is not None:
         ctx.run_store, ctx.run_id = (
-            LocalRunStore(active_run_dir.parent),
+            LocalRunStore(active_run_dir.parent, **settings),
             active_run_dir.name,
         )
         return ctx.run_store, ctx.run_id
-    configured_path = Path(
-        getattr(getattr(ctx.config, "run_storage", None), "local_path", "./runs")
-    )
+    configured_path = Path(storage.local_path)
     if not configured_path.is_absolute():
         configured_path = ctx.project_dir / configured_path
     run_id = (
@@ -3314,7 +3323,10 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
         if ctx.trial is not None
         else datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ_") + uuid4().hex[:12]
     )
-    ctx.run_store, ctx.run_id = LocalRunStore(configured_path), run_id
+    ctx.run_store, ctx.run_id = (
+        LocalRunStore(configured_path, **settings),
+        run_id,
+    )
     return ctx.run_store, ctx.run_id
 
 

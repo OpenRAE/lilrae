@@ -1,38 +1,37 @@
-"""Bounded no-follow snapshots of a run's retained artifact bytes."""
+"""No-follow snapshots of a run's retained artifact bytes."""
 
 import hashlib
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import Iterator
 from pathlib import Path
+from typing import IO
 
 from aptl.core.archival.seal import SealedArtifactSpec
+from aptl.core.evidence.spool import SPOOL_SUBDIR, iter_spool, new_spool, spool_directory
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.pathsafe import open_contained_nofollow, open_dir_contained_nofollow
 
-
-@dataclass(frozen=True)
-class SnapshotLimits:
-    """Installed archive limits refuse excess rather than truncate evidence."""
-
-    max_file_bytes: int = 64 * 1024 * 1024
-    max_total_bytes: int = 256 * 1024 * 1024
-    max_files: int = 4096
-    max_directories: int = 1024
-    max_depth: int = 16
-
-    def __post_init__(self) -> None:
-        if any(type(value) is not int or value < 1 for value in vars(self).values()):
-            raise ValueError("trial-archive-limits-invalid")
+_COPY_CHUNK = 1024 * 1024
 
 
 @dataclass(frozen=True)
 class SnapshotArtifact:
-    """One immutable byte snapshot, with its original run-relative path."""
+    """One immutable copy of a run file, with its original run-relative path.
+
+    The copy lives in an anonymous spool file, so a run of any size is
+    archived in constant memory.
+    """
 
     path: str
-    data: bytes
+    sha256: str
+    size: int
+    spool: IO[bytes] = field(repr=False, compare=False)
+
+    def chunks(self) -> Iterator[bytes]:
+        """Yield the copied bytes from the start."""
+        return iter_spool(self.spool)
 
     def specification(self) -> SealedArtifactSpec:
         media_type = {
@@ -43,8 +42,8 @@ class SnapshotArtifact:
             self.path,
             media_type,
             "retained-artifact",
-            expected_sha256=hashlib.sha256(self.data).hexdigest(),
-            expected_size_bytes=len(self.data),
+            expected_sha256=self.sha256,
+            expected_size_bytes=self.size,
         )
 
 
@@ -53,19 +52,31 @@ def _file_identity(info: os.stat_result) -> tuple[int, int, int, int]:
     return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
 
 
-def _read_artifact(
-    store: LocalRunStore, relative: Path, expected: os.stat_result, limit: int
-) -> bytes:
-    """Read the bounded original descriptor and reject identity drift."""
+def _copy_artifact(
+    store: LocalRunStore, relative: Path, expected: os.stat_result
+) -> SnapshotArtifact:
+    """Copy the original descriptor into a spool and reject identity drift."""
+    spool = new_spool()
+    hasher = hashlib.sha256()
+    size = 0
     with open_contained_nofollow(store.base_dir, relative) as source:
         before = os.fstat(source.fileno())
         if _file_identity(before) != _file_identity(expected):
             raise ValueError("trial-archive-source-changed")
-        data = source.read(limit + 1)
+        while chunk := source.read(_COPY_CHUNK):
+            hasher.update(chunk)
+            spool.write(chunk)
+            size += len(chunk)
         after = os.fstat(source.fileno())
-    if len(data) > limit or _file_identity(before) != _file_identity(after):
+    if size != before.st_size or _file_identity(before) != _file_identity(after):
         raise ValueError("trial-archive-source-changed")
-    return data
+    spool.flush()
+    return SnapshotArtifact(
+        relative.relative_to(relative.parts[0]).as_posix(),
+        hasher.hexdigest(),
+        size,
+        spool,
+    )
 
 
 def _directory_entries(
@@ -93,40 +104,28 @@ def _directory_entries(
 def _run_files(
     store: LocalRunStore,
     run_id: str,
-    limits: SnapshotLimits,
 ) -> Iterator[tuple[Path, os.stat_result]]:
-    """Walk one run while enforcing directory count and depth limits."""
-    pending = [(Path(run_id), 0)]
-    directories = 1
+    """Walk every directory of one run."""
+    pending = [Path(run_id)]
     while pending:
-        directory, depth = pending.pop()
+        directory = pending.pop()
         for relative, info in _directory_entries(store, directory):
             if stat.S_ISDIR(info.st_mode):
-                directories += 1
-                if directories > limits.max_directories or depth >= limits.max_depth:
-                    raise ValueError("trial-archive-directory-limit")
-                pending.append((relative, depth + 1))
+                pending.append(relative)
             else:
                 yield relative, info
 
 
 def snapshot_run_files(
-    store: LocalRunStore, run_id: str, *, limits: SnapshotLimits = SnapshotLimits()
+    store: LocalRunStore, run_id: str
 ) -> tuple[SnapshotArtifact, ...]:
-    """Read only this run, refusing unsafe entries, changing files and excess."""
+    """Copy every file of this run, refusing unsafe entries and changing files."""
     store.get_run_path(run_id)
     artifacts: list[SnapshotArtifact] = []
-    total = 0
-    with store.finalization_lock(run_id):
-        for relative, info in _run_files(store, run_id, limits):
-            if len(artifacts) >= limits.max_files:
-                raise ValueError("trial-archive-file-limit")
-            available = min(limits.max_file_bytes, limits.max_total_bytes - total)
-            if info.st_size > available:
-                raise ValueError("trial-archive-byte-limit")
-            data = _read_artifact(store, relative, info, available)
-            total += len(data)
-            artifacts.append(
-                SnapshotArtifact(relative.relative_to(run_id).as_posix(), data)
-            )
+    with (
+        spool_directory(store.base_dir / SPOOL_SUBDIR),
+        store.finalization_lock(run_id),
+    ):
+        for relative, info in _run_files(store, run_id):
+            artifacts.append(_copy_artifact(store, relative, info))
     return tuple(sorted(artifacts, key=lambda artifact: artifact.path))

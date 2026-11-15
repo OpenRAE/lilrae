@@ -14,6 +14,16 @@ The per-asset inventory implementation mentioned in the historical text below
 was removed from APTL by issue #690/#757. RAES now owns inventory methodology and semantic capture evidence. LilRAE keeps this ADR's classification and serialization rules for native observations and run evidence. New work must not recreate an APTL inventory
 tree, bundle ledger, or capture runner merely to carry out redaction.
 
+## Status update—2026-11-15
+
+Pull request #1773 removes redaction from the run store and removes default
+redaction from evidence persistence. `write_json`, `write_jsonl`, `append_jsonl`,
+and the create-once writes keep the supplied content without change. Evidence
+capture applies a redaction policy only when a capture binding requests one. The
+exporter archives the run-store bytes without change, and the evidence bundle
+builder copies its metadata without redaction. The rows for these paths in
+the artifact boundary audit below are superseded. The other rows stay in force.
+
 ## Reader boundary
 
 This Explanation records design reasons and constraints.

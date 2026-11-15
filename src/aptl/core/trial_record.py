@@ -184,12 +184,9 @@ def required_data_gaps(run_dir: Path, record: TrialRecord) -> list[str]:
 
 
 def _capture_json(run_dir: Path, path: str) -> dict[str, Any]:
-    """Read one bounded capture carrier without following links."""
+    """Read one complete capture carrier without following links."""
     with open_contained_nofollow(run_dir, path) as source:
-        data = source.read(4 * 1024 * 1024 + 1)
-    if len(data) > 4 * 1024 * 1024:
-        raise ValueError("capture carrier exceeds the bound")
-    return json.loads(data)
+        return json.loads(source.read())
 
 
 def _capture_record_present(

@@ -1882,10 +1882,10 @@ Edit maintained text at its existing owner. Do not hand-edit generated releases.
 | `src/aptl/core/env.py` | Repository source | Source interfaces |
 | `src/aptl/core/ephemeral_containers.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence/__init__.py` | Repository source | Source interfaces |
-| `src/aptl/core/evidence/_bounded_json.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence/_participant_calls.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence/_participant_tools.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence/_persist.py` | Repository source | Source interfaces |
+| `src/aptl/core/evidence/_stream_prepare.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence/adapters/__init__.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence/adapters/builtins.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence/adapters/sources.py` | Repository source | Source interfaces |
@@ -1897,6 +1897,7 @@ Edit maintained text at its existing owner. Do not hand-edit generated releases.
 | `src/aptl/core/evidence/participant_capture.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence/protocol.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence/records.py` | Repository source | Source interfaces |
+| `src/aptl/core/evidence/spool.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence/visibility.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence_bundle/__init__.py` | Repository source | Source interfaces |
 | `src/aptl/core/evidence_bundle/_collect.py` | Repository source | Source interfaces |
@@ -2047,6 +2048,7 @@ Edit maintained text at its existing owner. Do not hand-edit generated releases.
 | `src/aptl/utils/logging.py` | Repository source | Source interfaces |
 | `src/aptl/utils/mcp_packaging.py` | Repository source | Source interfaces |
 | `src/aptl/utils/pathsafe.py` | Repository source | Source interfaces |
+| `src/aptl/utils/pathsafe_stream.py` | Repository source | Source interfaces |
 | `src/aptl/utils/placeholders.py` | Repository source | Source interfaces |
 | `src/aptl/utils/probe_execution.py` | Repository source | Source interfaces |
 | `src/aptl/utils/redaction.py` | Repository source | Source interfaces |

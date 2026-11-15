@@ -22,13 +22,11 @@ import aptl.backends.raes_manifest as raes_manifest
 from aptl.backends.raes_manifest import create_aptl_manifest
 from aptl.core.experiment.capture_registry import (
     OBSERVATION_EVIDENCE_CONTRACTS,
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
     CollectorRegistry,
 )
 
-_LIMITS = CaptureLimits(max_bytes=1_048_576, max_artifact_count=100, max_duration_s=300)
 
 
 def _registration() -> CollectorRegistration:
@@ -50,7 +48,6 @@ def _registration() -> CollectorRegistration:
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
-        limits=_LIMITS,
     )
 
 

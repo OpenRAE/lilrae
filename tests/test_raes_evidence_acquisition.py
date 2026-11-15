@@ -73,11 +73,10 @@ def test_expected_transcript_sessions_come_from_sorted_mcp_census(tmp_path):
     (census / "session-b.jsonl").write_text("")
     (census / "session-a.jsonl").write_text("")
 
-    assert expected_transcript_session_ids(
-        tmp_path,
-        "run-1",
-        max_sessions=10,
-    ) == ("session-a", "session-b")
+    assert expected_transcript_session_ids(tmp_path, "run-1") == (
+        "session-a",
+        "session-b",
+    )
 
 
 def test_expected_transcript_sessions_reject_symlinked_census_entry(tmp_path):
@@ -92,11 +91,7 @@ def test_expected_transcript_sessions_reject_symlinked_census_entry(tmp_path):
     (census / "session-a.jsonl").symlink_to(outside)
 
     with pytest.raises(PathContainmentError):
-        expected_transcript_session_ids(
-            tmp_path,
-            "run-1",
-            max_sessions=10,
-        )
+        expected_transcript_session_ids(tmp_path, "run-1")
 
 
 def _exported_session(*, session_id="session-1", frames=()):

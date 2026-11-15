@@ -16,7 +16,7 @@ trial body:
 5. Compute the overall :class:`~aptl.core.evidence.outcomes.
    AcquisitionDisposition`; only ``SEALED_READY`` is ready for the #444 seal.
 
-The coordinator owns deadlines, quotas, clock, path allocation, hashing,
+The coordinator owns the read progress timeout, clock, path allocation, hashing,
 redaction, media checks, persistence, diagnostics, and record construction; a
 collector only reports typed bytes/counters/failures. Collector failures are
 typed outcome DATA projected into safe RAES diagnostics — no second exception
@@ -26,7 +26,9 @@ hierarchy, and no overloading of ``LabResult`` startup readiness.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 from raes_contracts.contracts import ExperimentEvidenceRecordModel
 from raes_contracts.diagnostics import Diagnostic
@@ -47,6 +49,8 @@ from aptl.core.evidence.outcomes import (
     CollectorStatus,
     capture_diagnostic,
 )
+from aptl.core.evidence.deadline import DEFAULT_PROGRESS_TIMEOUT_SECONDS
+from aptl.core.evidence.spool import SPOOL_SUBDIR, spool_directory
 from aptl.core.evidence.protocol import (
     Collector,
     CollectorContext,
@@ -125,7 +129,11 @@ def _binding_key(binding: CaptureBinding) -> tuple[str, str]:
 
 
 def _context(
-    binding: CaptureBinding, *, scope: RunScope, clock: ClockProvider
+    binding: CaptureBinding,
+    *,
+    scope: RunScope,
+    clock: ClockProvider,
+    progress_timeout_seconds: float,
 ) -> CollectorContext:
     """Build the narrow immutable context handed to a collector at start."""
     return CollectorContext(
@@ -133,7 +141,7 @@ def _context(
         run_id=scope.run_id,
         attempt_id=scope.attempt_id,
         binding=binding,
-        deadline_seconds=float(binding.limits.max_duration_s),
+        progress_timeout_seconds=progress_timeout_seconds,
         clock=clock,
     )
 
@@ -153,6 +161,7 @@ def _start_all(
     *,
     scope: RunScope,
     clock: ClockProvider,
+    progress_timeout_seconds: float,
 ) -> tuple[
     list[_Started], dict[tuple[str, str], CollectorOutcome], BaseException | None
 ]:
@@ -174,7 +183,12 @@ def _start_all(
                 "not started (an earlier collector failed to start)",
             )
             continue
-        context = _context(binding, scope=scope, clock=clock)
+        context = _context(
+            binding,
+            scope=scope,
+            clock=clock,
+            progress_timeout_seconds=progress_timeout_seconds,
+        )
         try:
             handle = collector.start(context)
         except Exception:
@@ -300,18 +314,14 @@ def _process_outcome(
             attempt_id=scope.attempt_id,
             phase=phase,
         )
-    except (BufferError, ValueError, RecursionError, OSError) as exc:
+    except (ValueError, RecursionError, OSError) as exc:
         # Persistence is part of capture, not an exception-shaped escape from
         # terminal accounting. Never project the exception or source bytes.
-        status = (
-            CollectorStatus.TRUNCATION
-            if isinstance(exc, BufferError)
-            else CollectorStatus.FINALIZATION_FAILURE
-        )
+        del exc
         return _process_outcome(
             binding,
             CollectorOutcome(
-                status=status,
+                status=CollectorStatus.FINALIZATION_FAILURE,
                 started_at=outcome.started_at,
                 finished_at=outcome.finished_at,
             ),
@@ -420,6 +430,9 @@ def acquire_evidence(
 ) -> AcquisitionResult:
     """Acquire evidence for one trial's admitted capture bindings.
 
+    Each evidence read uses the run store's progress timeout: the time one
+    read may go without new data before it fails as a timeout.
+
     ``trial_body`` is the work that runs while collectors are live (participant
     actions / orchestrator workflows). It runs BETWEEN start and the reverse-
     order stop; if it raises, collectors are still stopped (the raise is
@@ -427,6 +440,38 @@ def acquire_evidence(
     is ours). Returns a one-shot :class:`AcquisitionResult`; nothing partial in
     between.
     """
+    base_dir = getattr(run_store, "base_dir", None)
+    spool = (
+        spool_directory(Path(base_dir) / SPOOL_SUBDIR)
+        if base_dir is not None
+        else nullcontext()
+    )
+    with spool:
+        return _acquire(
+            bindings=bindings,
+            collectors=collectors,
+            run_store=run_store,
+            scope=scope,
+            clock=clock,
+            trial_body=trial_body,
+            phase=phase,
+        )
+
+
+def _acquire(
+    *,
+    bindings: Sequence[CaptureBinding],
+    collectors: Mapping[str, Collector],
+    run_store: object,
+    scope: RunScope,
+    clock: ClockProvider,
+    trial_body: Callable[[], None],
+    phase: AcquisitionPhase | None,
+) -> AcquisitionResult:
+    """Run one acquisition with spool files on the run-store disk."""
+    progress_timeout_seconds = getattr(
+        run_store, "progress_timeout_seconds", DEFAULT_PROGRESS_TIMEOUT_SECONDS
+    )
     plan, diagnostics, unavailable = _resolve_plan(bindings, collectors)
     interrupted: BaseException | None = None
     if unavailable:
@@ -440,7 +485,12 @@ def acquire_evidence(
             for binding, _ in plan
         }
     else:
-        started, not_started, interrupted = _start_all(plan, scope=scope, clock=clock)
+        started, not_started, interrupted = _start_all(
+            plan,
+            scope=scope,
+            clock=clock,
+            progress_timeout_seconds=progress_timeout_seconds,
+        )
     try:
         if not unavailable and not not_started:
             trial_body()

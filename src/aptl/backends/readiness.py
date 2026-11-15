@@ -28,7 +28,6 @@ from aptl.core.experiment.capture_registry import (
 from aptl.core.experiment.errors import AdmissionRejection
 from aptl.core.readiness_observer import ReadinessObserver
 from aptl.core.readiness_record import (
-    MAX_READINESS_RECORD_BYTES,
     readiness_request_digest,
     retain_readiness_observation,
 )
@@ -42,6 +41,7 @@ from aptl.core.trial_readiness import (
     observe_participant_readiness,
 )
 from aptl.utils.pathsafe import open_private_dir_contained_nofollow
+from aptl.utils.pathsafe_stream import FreeSpaceReserveError, require_free_space
 from aptl.utils.probe_execution import ProbeProcessRunner
 
 
@@ -284,15 +284,7 @@ class TrialReadiness:
             )
         except AdmissionRejection:
             return False
-        return all(
-            type(value) is int and value > 0
-            for item in self._capture.bindings
-            for value in (
-                item.limits.max_bytes,
-                item.limits.max_artifact_count,
-                item.limits.max_duration_s,
-            )
-        )
+        return True
 
     def _native_contract(self) -> bool:
         return self._apparatus.native_contract(self._realization)
@@ -310,20 +302,18 @@ class TrialReadiness:
 
     def _storage(self) -> bool:
         request = self._require_request()
-        capture = self._capture
-        if capture is None:
+        if self._capture is None:
             return False
-        required = MAX_READINESS_RECORD_BYTES + sum(
-            item.limits.max_bytes for item in capture.bindings
-        )
         fd = open_private_dir_contained_nofollow(
             self.store.base_dir, Path(request.run_id)
         )
         try:
-            info = os.fstatvfs(fd)
-            return info.f_bavail * info.f_frsize >= required
+            require_free_space(fd, self.store.free_space_reserve)
+        except FreeSpaceReserveError:
+            return False
         finally:
             os.close(fd)
+        return True
 
     def require_live(self) -> None:
         """Refuse effects until required live observations have been retained."""

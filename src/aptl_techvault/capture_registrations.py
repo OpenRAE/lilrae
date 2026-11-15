@@ -23,17 +23,10 @@ from dataclasses import dataclass
 from raes_backend_protocols.capabilities import ObservationCaptureOffer
 
 from aptl.core.experiment.capture_registry import (
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
 )
 
-#: Shared limits for the built-in windowed sources: 8 MiB / 5 minutes / 4096
-#: artifacts per capture. Generous but bounded — the coordinator truncates a
-#: source that exceeds the byte quota and discloses it.
-_LIMITS = CaptureLimits(
-    max_bytes=8 * 1024 * 1024, max_artifact_count=4096, max_duration_s=300
-)
 _CAPTURE_SPEC_CONTRACT = "experiment-capture-spec/v1"
 _JSON_MEDIA_TYPE = "application/json"
 
@@ -123,26 +116,12 @@ def _offer(offer_id: str, spec: _OfferSpec) -> ObservationCaptureOffer:
     )
 
 
-_TECHVAULT_LIMITS = {
-    "readiness": CaptureLimits(256 * 1024, 1, 300),
-    "sqli": CaptureLimits(2 * 1024 * 1024, 256, 300),
-    "transcript": CaptureLimits(32 * 1024 * 1024, 4096, 24 * 60 * 60),
-    # One bounded status document per readiness capture. MISP reports three
-    # subjects (application, database, cache); the Wazuh agent capture reports
-    # one row per monitored host plus the manager, so it carries a larger byte
-    # budget while staying a single artifact.
-    "misp-readiness": CaptureLimits(256 * 1024, 1, 300),
-    "wazuh-agent-readiness": CaptureLimits(512 * 1024, 1, 300),
-}
-
-
 def _techvault_registration(
     registration_id: str,
     *,
     offer: ObservationCaptureOffer,
-    limits: CaptureLimits,
 ) -> CollectorRegistration:
-    """Bind one TechVault offer to its implementation and runtime limits."""
+    """Bind one TechVault offer to its implementation."""
 
     return CollectorRegistration(
         registration_id=registration_id,
@@ -161,7 +140,6 @@ def _techvault_registration(
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
-        limits=limits,
         redaction_policies=frozenset({offer.redaction_policy or ""}),
         retention_policies=offer.retention_policy_refs,
         capture_offer=offer,
@@ -203,7 +181,6 @@ def _builtin(
         retention_policies=frozenset({"run_lifetime"}),
         supports_loss_disclosure=supports_loss_disclosure,
         visibility_class=visibility_class,
-        limits=_LIMITS,
     )
 
 
@@ -227,7 +204,6 @@ _REDTEAM_SESSION_TRANSCRIPT = _techvault_registration(
             source_class="apparatus",
         ),
     ),
-    limits=_TECHVAULT_LIMITS["transcript"],
 )
 
 _SURICATA_RULE_READINESS = _techvault_registration(
@@ -258,7 +234,6 @@ _SURICATA_RULE_READINESS = _techvault_registration(
             redaction_policy="redact_sensitive",
         ),
     ),
-    limits=_TECHVAULT_LIMITS["readiness"],
 )
 
 _SURICATA_WAZUH_SQLI = _techvault_registration(
@@ -289,7 +264,6 @@ _SURICATA_WAZUH_SQLI = _techvault_registration(
             redaction_policy="redact_sensitive",
         ),
     ),
-    limits=_TECHVAULT_LIMITS["sqli"],
 )
 
 _MISP_AUTHENTICATED_API_READINESS = _techvault_registration(
@@ -315,7 +289,6 @@ _MISP_AUTHENTICATED_API_READINESS = _techvault_registration(
             redaction_policy="redact_secrets",
         ),
     ),
-    limits=_TECHVAULT_LIMITS["misp-readiness"],
 )
 
 _WAZUH_AGENT_READINESS = _techvault_registration(
@@ -359,7 +332,6 @@ _WAZUH_AGENT_READINESS = _techvault_registration(
             redaction_policy="redact_secrets",
         ),
     ),
-    limits=_TECHVAULT_LIMITS["wazuh-agent-readiness"],
 )
 
 
@@ -438,5 +410,4 @@ SERVICE_INDEX_READBACK_REGISTRATION = CollectorRegistration(
     retention_policies=frozenset({"run_lifetime"}),
     supports_loss_disclosure=True,
     visibility_class=CaptureVisibility.APPARATUS_ONLY,
-    limits=_LIMITS,
 )

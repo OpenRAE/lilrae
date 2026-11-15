@@ -40,7 +40,6 @@ from aptl.core.experiment.policy import (
 from aptl.core.experiment import trial_plan
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 from aptl.core.experiment.trial_plan import (
@@ -77,7 +76,6 @@ def _capture_binding(**overrides: object) -> CaptureBinding:
         "retention_policy": "retain-review-window",
         "loss_disclosure_required": True,
         "visibility_class": CaptureVisibility.EVALUATOR_ONLY,
-        "limits": CaptureLimits(max_bytes=1024, max_artifact_count=10, max_duration_s=60),
     }
     fields.update(overrides)
     return CaptureBinding(**fields)

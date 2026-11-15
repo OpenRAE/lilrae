@@ -59,7 +59,7 @@ from aptl.core.experiment._capture_matching import (
 #: the fields a registration declares, or to how the observation projection or
 #: binding is computed, bumps this so a persisted plan records which registry
 #: shape admitted it.
-REGISTRY_SCHEMA_VERSION = "aptl-collector-registry/v3"
+REGISTRY_SCHEMA_VERSION = "aptl-collector-registry/v4"
 
 #: Fixed ``ObservationCapabilities.name`` for APTL's aggregate declaration.
 _OBSERVATION_NAME = "aptl-observation"
@@ -128,19 +128,6 @@ def validate_registration_id(value: str) -> str:
 
 
 @dataclass(frozen=True)
-class CaptureLimits:
-    """Immutable size/count/time bounds a collector is admitted under.
-
-    The coordinator (EXP-010 PR 2) enforces these while streaming — a
-    collector never buffers unbounded or exceeds its admitted budget.
-    """
-
-    max_bytes: int
-    max_artifact_count: int
-    max_duration_s: int
-
-
-@dataclass(frozen=True)
 class CollectorRegistration:
     """One trusted, code-owned collector's static capability declaration.
 
@@ -150,7 +137,7 @@ class CollectorRegistration:
     (a governed ``observation-channel-kinds`` term), capture kind/scope, window
     semantics, media types, required artifact roles, sensitivities,
     redaction/integrity/sealing/retention support, loss
-    disclosure, visibility class, and limits. It carries NO factory, import
+    disclosure, and visibility class. It carries NO factory, import
     path, or executable reference — the trusted adapter wiring is composed
     separately (EXP-010 PR 2).
 
@@ -177,7 +164,6 @@ class CollectorRegistration:
     supports_retention: bool
     supports_loss_disclosure: bool
     visibility_class: CaptureVisibility
-    limits: CaptureLimits
     redaction_policies: frozenset[str] = frozenset()
     retention_policies: frozenset[str] = frozenset()
     capture_offer: ObservationCaptureOffer | None = None
@@ -220,9 +206,6 @@ class CollectorRegistration:
             "retention_policies": sorted(self.retention_policies),
             "supports_loss_disclosure": self.supports_loss_disclosure,
             "visibility_class": self.visibility_class.value,
-            "max_bytes": self.limits.max_bytes,
-            "max_artifact_count": self.limits.max_artifact_count,
-            "max_duration_s": self.limits.max_duration_s,
             "capture_offer": (
                 self.capture_offer.to_payload()
                 if self.capture_offer is not None
@@ -276,7 +259,6 @@ class CaptureBinding:
     retention_policy: str | None
     loss_disclosure_required: bool
     visibility_class: CaptureVisibility
-    limits: CaptureLimits
     accepted_limitation: str | None = None
     comparability_disclosure_ref: str | None = None
     redaction_policy: str | None = None
@@ -317,9 +299,6 @@ class CaptureBinding:
             "retention_policy": self.retention_policy,
             "loss_disclosure_required": self.loss_disclosure_required,
             "visibility_class": self.visibility_class.value,
-            "max_bytes": self.limits.max_bytes,
-            "max_artifact_count": self.limits.max_artifact_count,
-            "max_duration_s": self.limits.max_duration_s,
             "accepted_limitation": self.accepted_limitation,
             "comparability_disclosure_ref": self.comparability_disclosure_ref,
         }
@@ -457,7 +436,6 @@ def _bind(
         retention_policy=requirement.retention_policy,
         loss_disclosure_required=requirement.loss_disclosure_required,
         visibility_class=registration.visibility_class,
-        limits=registration.limits,
     )
 
 

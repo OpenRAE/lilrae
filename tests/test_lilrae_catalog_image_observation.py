@@ -304,15 +304,16 @@ def test_catalog_completion_receipt_verifies_pin_before_container_removal(
     assert not rejected.realized
 
 
-def test_compaction_preserves_source_image_evidence():
-    from aptl.backends._raes_apply_reporting import bounded_apply_details
+def test_nonconformant_details_compaction_preserves_source_image_evidence():
+    # RAES rejects the oversized realization string, so the details compact.
+    from aptl.backends._raes_apply_reporting import conformant_apply_details
 
     evidence = {
         "declared_source": {"name": "postgresql", "version": "17"},
         "selected_digest": PIN,
         "observed_config_digest": CONFIG,
     }
-    details = bounded_apply_details(
+    details = conformant_apply_details(
         {
             "realization": {"large": "x" * 70_000},
             "observation_evidence": {
