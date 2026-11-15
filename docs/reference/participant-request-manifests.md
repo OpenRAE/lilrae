@@ -216,8 +216,8 @@ Failed and interrupted calls keep safe partial membership.
 
 Nullable response fields carry `missing_value_reason`: the provider did not report a usable value, or it was not safe to keep.
 Required observation is qualified on Linux and refuses unsupported platforms before launch.
-The journal limit is 16 MiB with 128 KiB records. The serialized-request limit is 1 MiB.
-A bound violation fails capture or forwarding. The adapter does not truncate a successful record.
+The journal, its records, and serialized requests have no size limit.
+The adapter does not truncate a record.
 
 Provider-call token reports are necessary for completed-call accounting.
 Native estimates or placeholder zeros cannot replace missing provider usage.

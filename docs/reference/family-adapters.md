@@ -140,7 +140,7 @@ RAES types remain available through their own published packages.
 | `aptl.backends.scenario_capture` | Capture contexts, contribution/provider/runtime protocols, `GeneratedOutputReference`, and `ScenarioPropositionInterpreter`. |
 | `aptl.backends.scenario_planning_compatibility` | Context, bounded decision, provider protocol, permitted concern sets, and `RUNTIME_CONTAINER_DAEMON_CONCERNS`. |
 | `aptl.validation.scenario_verification` | Scenario/backend identities, atomic legacy targets, verifier and operations protocols, typed checks, prerequisites, statuses, context, and report. |
-| `aptl.core.experiment.capture_registry` | Registrations, registry, limits, visibility, and capture bindings. |
+| `aptl.core.experiment.capture_registry` | Registrations, registry, visibility, and capture bindings. Registrations declare no capture size, count, or time limits. |
 | `aptl.core.evidence.protocol` and `aptl.core.evidence.outcomes` | Collector context/protocol/outcome and status/disposition types. Core keeps persistence and redaction. |
 | `aptl.core.evidence.adapters.sources` | `SourceResult`, `WindowedSource`, `CallableWindowedSource`, `WindowedQueryCollector`, and `source_result_to_outcome`. |
 | `aptl.core.scenario_bundle`, `aptl.core.deployment.realization`, and `aptl.backends.raes_realization_model` | Existing bundle, pack identity, and admitted realization DTOs. |
