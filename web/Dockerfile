@@ -2,7 +2,7 @@
 # dev/preview container serves those static assets with Caddy and reverse-proxies
 # /api/* to the FastAPI BFF (aptl-web-api). No Node server, no control-plane
 # token, no SSR — the shipped delivery contract is `aptl web serve`.
-FROM node:26.13.0-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS builder
+FROM node:26.13.1-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS builder
 
 WORKDIR /app
 RUN test "$(node --version)" = "v26.13.0"
@@ -14,7 +14,7 @@ RUN npm run build
 
 # Build the same Caddy release with patched Go dependencies and the local
 # go-jose v3 security backport documented under caddy-build/third_party.
-FROM golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS caddy-builder
+FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS caddy-builder
 
 WORKDIR /src
 COPY caddy-build/ ./

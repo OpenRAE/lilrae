@@ -12,7 +12,7 @@
 # The official Python 3.14 image is Debian 13 (trixie) plus CPython 3.14 under
 # /usr/local. The APTL runtime closure requires Python 3.14 (RAES 9), which
 # Debian 13 does not package (issue #1407).
-FROM python:3.14-slim@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886b2d554ce40151
+FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f
 # gnupg: debian:12 ships gpgv (verify-only) but not the full gpg binary
 # apt-key needs for some bookworm InRelease signature paths — without it,
 # a materialized node's own first `apt-get update` intermittently fails

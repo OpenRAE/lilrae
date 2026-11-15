@@ -1,7 +1,7 @@
 # APTL backend substrate for an authored Active Directory identity authority.
 # Domain identity and accounts are supplied later from the admitted plan; this
 # image contains no scenario-specific realm, users, groups, or credentials.
-FROM ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
+FROM ubuntu:26.04@sha256:065aa8626841f16057b78b027b464cd59c4fac36c204c72dcbf48d66f5fa8a96
 
 # Also removes the unused /usr/bin/pebble (CVE-2026-78667, -94439, -97031, -97032), as #1248 removed yarn/corepack.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
