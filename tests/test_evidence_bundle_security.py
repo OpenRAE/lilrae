@@ -186,7 +186,7 @@ class TestMaliciousFilenames:
 
 
 class TestAccidentalSecrets:
-    def test_secret_shaped_metadata_is_redacted_in_the_envelope(
+    def test_secret_shaped_metadata_is_kept_in_the_envelope(
         self, tmp_path: Path
     ) -> None:
         run_dir = tmp_path / "run-1"
@@ -200,6 +200,5 @@ class TestAccidentalSecrets:
         )
 
         envelope = _envelope_bytes(out)
-        assert _SECRET_TOKEN.encode() not in envelope
-        assert b"[REDACTED]" in envelope
-        assert "aptl.evidence-bundle.metadata-redacted" in _codes(result)
+        assert _SECRET_TOKEN.encode() in envelope
+        assert "aptl.evidence-bundle.metadata-redacted" not in _codes(result)

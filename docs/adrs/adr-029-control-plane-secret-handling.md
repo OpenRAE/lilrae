@@ -20,7 +20,8 @@ Pull request #1773 removes redaction from the run store and removes default
 redaction from evidence persistence. `write_json`, `write_jsonl`, `append_jsonl`,
 and the create-once writes keep the supplied content without change. Evidence
 capture applies a redaction policy only when a capture binding requests one. The
-exporter archives the run-store bytes without change. The rows for these paths in
+exporter archives the run-store bytes without change, and the evidence bundle
+builder copies its metadata without redaction. The rows for these paths in
 the artifact boundary audit below are superseded. The other rows stay in force.
 
 ## Reader boundary

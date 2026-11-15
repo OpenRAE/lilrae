@@ -189,7 +189,7 @@ Neither record is a seal. They carry no signature or attestation claim.
 | `sections[]` | One entry per provenance source: status, declaration digest, content identity, and a bounded payload |
 | `limitations[]` | Every source that did not fully collect, with a stable reason code |
 
-Each source is collected by a code-owned provider under a declared time limit.
+Each source is collected by a code-owned provider. Every provider has the same time limit, `run_storage.capture_progress_timeout_seconds`.
 Provenance content is not cut or capped by size or entry count.
 A source that is unavailable, denied, unsupported, timed out, or failed appears
 in `limitations[]` with a stable reason code. Such

@@ -77,7 +77,7 @@ An unknown projection format fails closed.
 The exporter reads every source file through descriptor-relative, no-follow, one-open containment.
 It rejects symlinked components and path-traversal components. Code-owned bundle paths derive from validated identifiers and content digests. Raw filenames, URIs, media types, and Unicode spellings do not become archive paths.
 
-Build and verification apply no entry-count, member-size, or total-size limit. Path length and depth stay bounded. The verifier never extracts to disk. The shared ADR-029 redactor masks secret-shaped values in generated bundle metadata.
+Build and verification apply no entry-count, member-size, or total-size limit. Path length and depth stay bounded. The verifier never extracts to disk. Generated bundle metadata keeps its source text without redaction.
 It never rewrites canonical bytes.
 
 ## Run store permissions

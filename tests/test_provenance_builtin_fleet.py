@@ -276,3 +276,27 @@ class TestFleetFuzz:
         )
         assert collection.sections["detection-content"].status in set(ProvenanceStatus)
         assert "SECRET" not in json.dumps(collection.projection())
+
+
+def test_configured_progress_timeout_applies_to_every_builtin_provider():
+    from types import SimpleNamespace
+
+    from aptl.core.provenance.registrations import (
+        BUILTIN_REGISTRATIONS,
+        DEFAULT_PROVENANCE_REGISTRY,
+        PROVIDER_TIMEOUT_SECONDS,
+        _configured_registry,
+    )
+
+    assert {item.limits.timeout_s for item in BUILTIN_REGISTRATIONS} == {
+        PROVIDER_TIMEOUT_SECONDS
+    }
+    assert _configured_registry(None) is DEFAULT_PROVENANCE_REGISTRY
+    config = SimpleNamespace(
+        run_storage=SimpleNamespace(capture_progress_timeout_seconds=7)
+    )
+    configured = _configured_registry(config)
+    assert {item.limits.timeout_s for item in configured.registrations} == {7}
+    assert {item.provider_id for item in configured.registrations} == {
+        item.provider_id for item in BUILTIN_REGISTRATIONS
+    }

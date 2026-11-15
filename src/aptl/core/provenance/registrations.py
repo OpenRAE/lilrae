@@ -19,9 +19,11 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import replace
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from aptl.core.evidence.deadline import DEFAULT_PROGRESS_TIMEOUT_SECONDS
 from aptl.core.provenance.coordinator import ProvenanceCollection, collect_provenance
 from aptl.core.provenance.protocol import MonotonicClock, ProvenanceProvider
 from aptl.core.provenance.providers.apparatus import (
@@ -68,14 +70,20 @@ log = logging.getLogger(__name__)
 _IMPLEMENTATION_VERSION = "1.0.0"
 
 
+#: One time bound for every built-in provider: the run store's default
+#: evidence progress timeout. ``run_storage.capture_progress_timeout_seconds``
+#: overrides it for a run.
+PROVIDER_TIMEOUT_SECONDS = int(DEFAULT_PROGRESS_TIMEOUT_SECONDS)
+
+
 def _registration(
     provider_id: str,
     provenance_kind: str,
     owner_adapter: str,
     *,
-    timeout_s: int,
+    timeout_s: int = PROVIDER_TIMEOUT_SECONDS,
 ) -> ProvenanceProviderRegistration:
-    """Build one built-in registration with its declared time bound."""
+    """Build one built-in registration with the shared provider time bound."""
     return ProvenanceProviderRegistration(
         provider_id=provider_id,
         implementation_version=_IMPLEMENTATION_VERSION,
@@ -94,7 +102,6 @@ DETECTION_REGISTRATION = _registration(
     DETECTION_PROVIDER_ID,
     "detection-content",
     "provenance.providers.detection",
-    timeout_s=60,
 )
 
 #: The declared built-in fleet.
@@ -103,43 +110,49 @@ BUILTIN_REGISTRATIONS: tuple[ProvenanceProviderRegistration, ...] = (
         APPARATUS_PROVIDER_ID,
         "apparatus-manifest",
         "raes_manifest/raes_processor",
-        timeout_s=30,
     ),
     _registration(
         EXPERIMENT_PROVIDER_ID,
         "admitted-experiment",
         "experiment.trial_plan",
-        timeout_s=30,
     ),
     _registration(
         PARTICIPANT_PROVIDER_ID,
         "participant-apparatus",
         "raes_participant_apparatus",
-        timeout_s=30,
     ),
     DETECTION_REGISTRATION,
     _registration(
         CONFIG_PROVIDER_ID,
         "effective-config",
         "core.config",
-        timeout_s=15,
     ),
     _registration(
         RUNTIME_PROVIDER_ID,
         "runtime-facts",
         "core.snapshot",
-        timeout_s=30,
     ),
     _registration(
         ARTIFACTS_PROVIDER_ID,
         "dependency-artifacts",
         "provenance.providers.artifacts",
-        timeout_s=30,
     ),
 )
 
 #: The production registry.
 DEFAULT_PROVENANCE_REGISTRY = ProvenanceProviderRegistry(BUILTIN_REGISTRATIONS)
+
+
+def _configured_registry(config: object | None) -> ProvenanceProviderRegistry:
+    """Apply the configured progress timeout to every built-in provider."""
+    storage = getattr(config, "run_storage", None)
+    seconds = getattr(storage, "capture_progress_timeout_seconds", None)
+    if not isinstance(seconds, int) or seconds == PROVIDER_TIMEOUT_SECONDS:
+        return DEFAULT_PROVENANCE_REGISTRY
+    limits = ProvenanceLimits(timeout_s=seconds)
+    return ProvenanceProviderRegistry(
+        tuple(replace(item, limits=limits) for item in BUILTIN_REGISTRATIONS)
+    )
 
 #: The default run-scoped seal profile: every built-in outcome must be stated.
 DEFAULT_SEAL_PROFILE = SealProfile(
@@ -196,7 +209,7 @@ def collect_run_provenance(
     )
     return collect_provenance(
         providers=providers,
-        registry=DEFAULT_PROVENANCE_REGISTRY,
+        registry=_configured_registry(config),
         profile=DEFAULT_SEAL_PROFILE,
         monotonic=monotonic,
     )

@@ -28,7 +28,7 @@ from aptl.core.evidence_bundle.closure import (
     VerifiedClosure,
     build_closure,
 )
-from aptl.core.evidence_bundle.envelope import BundleEnvelopeV1, InventoryRow
+from aptl.core.evidence_bundle.envelope import BundleEnvelopeV1
 from aptl.core.evidence_bundle.errors import BundleError
 from aptl.core.evidence_bundle.inventory import (
     EnvelopeInputs,
@@ -43,31 +43,9 @@ from aptl.core.evidence_bundle.projections import run_projections
 from aptl.core.evidence_bundle.projections.registry import ProjectionContext
 from aptl.core.evidence_bundle.schemas import SchemaArtifact, collect_schemas
 from aptl.core.evidence_bundle.verify import VerificationReport, verify_bundle
-from aptl.utils import redaction
 
 _BUNDLE_PROFILE = "aptl-evidence-bundle-profile/v1"
 _MEDIA_SCHEMA = "application/schema+json"
-
-
-def _scrub_rows(rows: list[InventoryRow]) -> tuple[list[InventoryRow], bool]:
-    """Redact secret-shaped values in GENERATED free-text metadata only.
-
-    Export is not the first redaction boundary (ADR-029): canonical record/blob
-    bytes are never rewritten. But a free-text disclosure the builder copies into
-    the envelope is new metadata, so a secret-shaped value there is redacted and
-    disclosed rather than published.
-    """
-    scrubbed = False
-    result: list[InventoryRow] = []
-    for row in rows:
-        disclosure = row.loss_disclosure
-        if disclosure:
-            redacted = redaction.redact(disclosure)
-            if redacted != disclosure:
-                row = row.model_copy(update={"loss_disclosure": redacted})
-                scrubbed = True
-        result.append(row)
-    return result, scrubbed
 
 
 @dataclass(frozen=True)
@@ -169,16 +147,6 @@ def build_evidence_bundle(
     }
     for member in projection_run.members:
         rows.append(projection_row(member, descriptor_by_path[member.bundle_path]))
-
-    rows, scrubbed = _scrub_rows(rows)
-    if scrubbed:
-        limitations.append(
-            ClosureLimitation(
-                codes.METADATA_REDACTED,
-                "secret-shaped bundle metadata was redacted",
-                "envelope",
-            )
-        )
 
     validation_disclosures = [
         "canonical artifacts carry their published RAES JSON Schema for structural validation",
