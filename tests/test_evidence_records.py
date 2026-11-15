@@ -231,6 +231,8 @@ def test_acquisition_carries_typed_false_observation_without_changing_it(tmp_pat
     )
     record = retained.record
     assert retained.effective_status is CollectorStatus.OK
+    assert record.redaction_state == "redacted"
+    assert record.redaction_policy == "redact_secrets"
     assert project_for_participant((retained.ref,)) == ()
     description = record.typed_description.model_dump(mode="json")
     assert description["facts"][0]["value"]["value"] is False
@@ -240,3 +242,24 @@ def test_acquisition_carries_typed_false_observation_without_changing_it(tmp_pat
         )
         == record
     )
+
+
+def test_persist_without_redaction_policy_retains_raw_content(tmp_path):
+    from dataclasses import replace
+    from aptl.core.evidence._persist import persist_success_outcome
+    from aptl.core.runstore import LocalRunStore
+
+    raw = b'[{"password":"scenario-fixture-value"}]'
+    store = LocalRunStore(tmp_path)
+    store.create_run("run-1")
+    retained = persist_success_outcome(
+        binding=_binding(),
+        outcome=replace(_outcome(), chunks=(raw,), event_count=1),
+        run_store=store,
+        run_id="run-1",
+        planned_trial_id="trial-1",
+    )
+    record = retained.record
+    assert record.redaction_state == "none"
+    assert record.redaction_policy is None
+    assert (tmp_path / "run-1" / retained.ref.content_uri).read_bytes() == raw

@@ -280,7 +280,12 @@ def persist_success_outcome(
         content = replace(content, truncated=True)
     effective_status = _effective_status(outcome, content=content, binding=binding)
 
-    redaction_state = structured_redaction_state
+    # A binding that applies a redaction policy records that policy, so its
+    # state is "redacted" even when the policy changed no bytes. RAES rejects
+    # a record with a policy and the state "none".
+    redaction_state = (
+        "redacted" if binding.redaction_policy else structured_redaction_state
+    )
     loss_disclosure = _loss_disclosure(
         outcome, effective_status=effective_status, redaction_state=redaction_state
     )
