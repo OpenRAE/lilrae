@@ -191,6 +191,7 @@ Neither record is a seal. They carry no signature or attestation claim.
 
 Each source is collected by a code-owned provider. Every provider has the same time limit, `run_storage.capture_progress_timeout_seconds`.
 Provenance content is not cut or capped by size or entry count.
+
 A source that is unavailable, denied, unsupported, timed out, or failed appears
 in `limitations[]` with a stable reason code. Such
 a source is never silently omitted and never given a fabricated digest. A plain
