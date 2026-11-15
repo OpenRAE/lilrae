@@ -98,9 +98,11 @@ A broad shell contract may declare broad effects; the adapter must not invent na
 
 Each invocation receives its own RAES port and cancellation signal.
 The native executor receives a tool session only for that invocation.
+
 The backend declares up to 4,096 tool calls per invocation, with four concurrent calls.
 The RAES runtime enforces this declared limit across the invocation.
 This invocation can include many model turns within its declared duration.
+
 Existing executors without tools retain their current call interface.
 Executors with tools must implement the explicit tool-session interface.
 The same interface accepts automated harnesses and management-owned interactive controllers.
