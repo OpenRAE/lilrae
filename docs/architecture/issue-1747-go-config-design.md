@@ -93,7 +93,9 @@ give the guardrails.
     `deployment.range_egress_allowances`, the OpenCode and Vertex selections,
     `participant_serving_providers`, and `opencode_executable`. The port keeps
     their Python checks. `MCPServerIDs` copies the server order of the MCP
-    catalog, and a test compares the two.
+    catalog, and a test compares the two. The merge of #1740 adds
+    `deployment.dedicated_vm` and `experiment.trial_episode_seconds`, and the
+    port keeps their Python checks.
 11. **Other owners.** Go port 09 checks the deployment backend members. The
     scenario admission of Go port 17 checks the profiles against the admitted
     scenario. Go port 11 computes the descriptor digest.

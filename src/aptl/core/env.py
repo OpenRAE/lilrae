@@ -63,6 +63,10 @@ def _fixed(value: str) -> Callable[[Path, dict[str, str]], str]:
     return lambda _project_dir, _values: value
 
 
+#: The in-world Shuffle administrator API key. The Shuffle implementation
+#: profile gives it to the backend; the SOAR MCP client reads it from ``.env``.
+SHUFFLE_API_KEY_FIXTURE = "31a211c4-ea5c-4a49-b022-5e2434e758a7"
+
 # Generic APTL-owned values. Scenario-fixed Wazuh credentials are deliberately
 # absent: the selected, content-identified startup adapter supplies them from
 # the admitted pack instead of core templates or defaults (issue #957).
@@ -70,6 +74,7 @@ _HYDRATED_ENV_SPECS: tuple[tuple[str, Callable[[Path, dict[str, str]], str]], ..
     ("WAZUH_CLUSTER_KEY", lambda _project_dir, _values: secrets.token_hex(16)),
     ("APTL_API_TOKEN", lambda _project_dir, _values: secrets.token_hex(32)),
     ("MISP_API_KEY", lambda _project_dir, _values: _random_alnum(40)),
+    ("SHUFFLE_API_KEY", _fixed(SHUFFLE_API_KEY_FIXTURE)),
     ("GRAFANA_ADMIN_USER", _fixed("admin")),
     ("GRAFANA_ADMIN_PASSWORD", lambda _project_dir, _values: secrets.token_urlsafe(24)),
 )

@@ -24,6 +24,23 @@ lilrae lab start --scenario techvault-purpleteam \
   --run-id run-0042 --attempt-id attempt-1 --deadline 2026-11-06T12:00:00Z
 ```
 
+## Admitted plan entry
+
+`--trial-input` runs one entry of an admitted RAES trial plan. It needs the three
+trial options. The file is JSON with exactly these keys:
+
+| Key | Value |
+| --- | --- |
+| `plan` | The admitted trial plan. It must pass the RAES plan ingress gate. |
+| `plan_entry_id` | The plan entry to run. |
+| `snapshot` | The canonical instantiated scenario snapshot of that entry. |
+
+The file is at most 32 MiB. LilRAE admits the entry against the installed pack
+through the family trial path. The plan must name the installed family digest,
+the snapshot bytes must equal the entry's instantiated snapshot, and the entry's
+run ID must equal `--run-id`. The trial then runs the instantiated scenario, and
+the trial record keeps the snapshot digest as its SDL digest.
+
 ## Start and ownership
 
 The trial starts only when the lab start outcome is `ready` or
@@ -180,6 +197,17 @@ LilRAE record, not an RAES experiment-run record.
 A participant status is `completed`, `cancelled`, `failed`, or `not-started`.
 A trial without a deadline or stop ends `failed` when a participant failed.
 Participant output is under `trial/participants/` after secret redaction.
+
+The run also keeps the data that the trial leaves behind:
+
+| Path | Content |
+| --- | --- |
+| `trial/transcripts/<address>.json` | The participant's native session: prompts, reasoning, replies, tool calls and results, without granted credentials |
+| `trial/soc/` | The scenario adapter's product dump after the participants end, without granted credentials |
+| `trial/audit/audit.log` | The host audit records of the trial window, when the host runs auditd |
+
+`trial/soc/status.json` and `trial/audit/status.json` record each capture as
+`captured`, `unavailable`, or `failed`. A capture failure does not stop the seal.
 
 The seal marker lists every regular file in the run. Its run status is
 `completed`, or `aborted` for a deadline or a stop, or `failed`. Its outcome

@@ -4,6 +4,10 @@ from dataclasses import dataclass, field
 import hashlib
 import re
 
+#: A model ends a participant run by a final answer (``stop``) or by reaching
+#: its output limit (``length``). Both are participant outcomes, not harness faults.
+PARTICIPANT_END_REASONS = frozenset({"stop", "length"})
+
 from aptl.utils.strict_json import loads_strict
 from aptl.workbench.process import (
     AgentExecutionError,
@@ -116,11 +120,14 @@ class _ResponseState:
         self.cost = _cost(part.get("cost"), self.cost)
 
     def response(self, valid: bool) -> OpenCodeResponse:
-        """Freeze safe partial facts, requiring text and a successful final stop."""
+        """Freeze safe partial facts; a stop needs final text, a length end does not."""
         text = "\n".join(self.texts)
+        ended = self.finish in PARTICIPANT_END_REASONS and (
+            self.finish == "length" or bool(text.strip())
+        )
         return OpenCodeResponse(
             text=text,
-            valid=valid and bool(text.strip()) and self.finish == "stop",
+            valid=valid and ended,
             partial_text_sha256=hashlib.sha256(text.encode()).hexdigest()
             if self.texts
             else None,

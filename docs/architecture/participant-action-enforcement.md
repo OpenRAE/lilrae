@@ -71,6 +71,13 @@ The model reads compiled relations and installed offers.
 It introduces no second scenario language or mandatory external policy service.
 Native mappings are backend configuration, not new required SDL author detail.
 
+Native invocation admission matches bound temporal guarantees against installed constraint addresses and contract digests.
+Clock release constraints remain under scheduler control.
+Unbound temporal contexts retain exact constraint-name matching.
+Native return or confirmed process cleanup supplies end-event evidence on the admitted stepped clock.
+This logical coordinate does not measure elapsed wall time.
+Prelaunch refusals and unknown native outcomes supply no end-event proof.
+
 ## Installed mappings and controllers
 
 An installed tool binding names one server and tool, an affordance, an action, a boundary, and an execution offer.

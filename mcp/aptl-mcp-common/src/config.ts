@@ -94,6 +94,11 @@ export interface LabConfig {
        */
       path_param_patterns?: Record<string, string>;
       body?: any;
+      /**
+       * Media type of a raw string body, such as a rules XML file. A query
+       * without it sends a JSON body.
+       */
+      content_type?: string;
       description: string;
       response_type?: 'json' | 'text';
       verify_ssl?: boolean;

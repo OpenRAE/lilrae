@@ -74,7 +74,8 @@ type Containers struct {
 // Deployment selects the deployment backend. RangeEgressAllowances are the
 // exact external destinations that the operator grants to the native range,
 // and EnvironmentGrants are the operator grants of configured sources to
-// declared scenario variables.
+// declared scenario variables. DedicatedVM records that the lab host is a VM
+// that runs only this lab.
 type Deployment struct {
 	RangeEgressAllowances []RangeEgressAllowance `json:"range_egress_allowances"`
 	Provider              string                 `json:"provider"`
@@ -85,6 +86,7 @@ type Deployment struct {
 	SSHPort               int64                  `json:"ssh_port"`
 	RemoteDir             *string                `json:"remote_dir"`
 	EnvironmentGrants     []EnvironmentGrant     `json:"environment_grants"`
+	DedicatedVM           bool                   `json:"dedicated_vm"`
 }
 
 // RangeEgressAllowance is one exact unicast destination address and
@@ -146,13 +148,16 @@ type ScheduleEntry struct {
 // Experiment holds the non-secret apparatus settings of an experiment.
 // ParticipantServingProviders maps a trial model to its approved OpenRouter
 // serving provider, and OpencodeExecutable is the absolute path of the
-// installed OpenCode executable.
+// installed OpenCode executable. TrialEpisodeSeconds is the shared
+// wall-clock episode of a dispatched trial, and nil leaves only the attempt
+// deadline.
 type Experiment struct {
 	ParticipantActionTimeoutSeconds int64                        `json:"participant_action_timeout_seconds"`
 	ParticipantModels               ParticipantModels            `json:"participant_models"`
 	ParticipantCredentialSources    ParticipantCredentialSources `json:"participant_credential_sources"`
 	ParticipantServingProviders     ServingProviders             `json:"participant_serving_providers"`
 	OpencodeExecutable              *string                      `json:"opencode_executable"`
+	TrialEpisodeSeconds             *int64                       `json:"trial_episode_seconds"`
 }
 
 // ServingProviders maps a trial model to its serving provider. It marshals

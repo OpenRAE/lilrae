@@ -635,9 +635,7 @@ def test_create_aptl_manifest_is_canonical_backend_manifest_v2():
     assert payload["capabilities"]["participant_runtime"] is not None
     assert manifest.has_time is False
     assert manifest.orchestrator is not None
-    assert {"injects", "events", "scripts", "stories"} <= set(
-        manifest.orchestrator.supported_sections
-    )
+    assert manifest.orchestrator.supported_sections == frozenset({"workflows"})
     participant_delivery_manifest = create_aptl_manifest(
         participant_inject_delivery=True
     )

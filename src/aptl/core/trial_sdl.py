@@ -9,10 +9,15 @@ asset bytes.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from raes import Scenario, build_declaration_index
 from raes.participant_control_context import resolve_authored_control_context
+
+if TYPE_CHECKING:
+    from raes_contracts.contracts import ParticipantConfigurationResultModel
 
 __all__ = ["DeclaredParticipant", "TrialDeclarationError", "declared_participants"]
 
@@ -64,6 +69,40 @@ def declared_participants(scenario: Scenario) -> tuple[DeclaredParticipant, ...]
                 role=_declared_role(scenario, name),
                 model=model,
                 context_assets=assets,
+            )
+        )
+    return tuple(participants)
+
+
+def admitted_participants(
+    scenario: Scenario,
+    configurations: Iterable[ParticipantConfigurationResultModel],
+) -> tuple[DeclaredParticipant, ...]:
+    """Return each admitted participant with its configured model and prompt selections.
+
+    An admitted family trial owns participant configuration, so its owner-validated
+    configurations, not authored control context, select the model and prompt assets.
+    """
+    participants = []
+    for configuration in configurations:
+        address = configuration.participant_address
+        name = address.removeprefix("agents.")
+        if address != f"agents.{name}" or name not in scenario.agents:
+            raise TrialDeclarationError(f"trial participant {address} is not a scenario agent")
+        values = configuration.configuration.values
+        model = next(
+            (getattr(item.value, "value", None) for item in values if item.target_id == "model"), None
+        )
+        assets = tuple(
+            item.control_context_selection.declaration_ref.removeprefix("control_context_assets.")
+            for item in values
+            if item.control_context_selection is not None
+        )
+        if not isinstance(model, str) or not model or not assets:
+            raise TrialDeclarationError(f"trial participant {address} has no configured model or prompt")
+        participants.append(
+            DeclaredParticipant(
+                agent=name, role=_declared_role(scenario, name), model=model, context_assets=assets
             )
         )
     return tuple(participants)
