@@ -26,33 +26,28 @@ from raes_runtime.snapshot_contract import runtime_snapshot_contract_model
 
 from aptl.core.archival.coordinator import SealResult, seal_produced_run
 from aptl.core.archival.seal import SealLimitation, SealedArtifactSpec
-from aptl.core.archival.snapshot import (
-    SnapshotArtifact,
-    SnapshotLimits,
-    snapshot_run_files,
-)
+from aptl.core.archival.snapshot import SnapshotArtifact, snapshot_run_files
 from aptl.core.archival.verify import verify_sealed_archive
 from aptl.core.correlation.clock import ClockProvider
 from aptl.core.runstore import LocalRunStore, RunStoreConflictError
 from aptl.utils.pathsafe import (
     PathContainmentError,
     REASON_NOT_FOUND,
-    create_exclusive_nofollow,
     open_contained_nofollow,
     open_private_dir_contained_nofollow,
-    read_contained_nofollow,
 )
+
+from aptl.utils.pathsafe_stream import create_exclusive_stream_nofollow
 
 _OBSERVATION = "archive/observation.json"
 
 
 @dataclass(frozen=True)
 class ArchiveOptions:
-    """Installed bounds, producer validation and local seal limitations."""
+    """Producer validation and local seal limitations."""
 
     validation_passed: bool = False
     limitations: tuple[SealLimitation, ...] = ()
-    limits: SnapshotLimits = SnapshotLimits()
 
 
 class ArchiveObservation(BaseModel):
@@ -147,7 +142,11 @@ def _archive_store(store: LocalRunStore, digest: str) -> LocalRunStore:
     relative = Path("archives") / digest
     fd = open_private_dir_contained_nofollow(store.base_dir, relative)
     try:
-        return LocalRunStore(store.base_dir / relative)
+        return LocalRunStore(
+            store.base_dir / relative,
+            free_space_reserve=store.free_space_reserve,
+            progress_timeout_seconds=store.progress_timeout_seconds,
+        )
     finally:
         os.close(fd)
 
@@ -160,10 +159,11 @@ def _verify_bytes(
 ) -> None:
     """Match retained bytes to the original declared size and digest."""
     artifact = files.get(uri)
-    if artifact is None or (size is not None and len(artifact.data) != size):
+    if artifact is None or (size is not None and artifact.size != size):
         raise ValueError("trial-archive-content-unavailable")
     hasher = checksum_hasher(checksum.algorithm)
-    hasher.update(artifact.data)
+    for chunk in artifact.chunks():
+        hasher.update(chunk)
     if hasher.hexdigest() != checksum.value.lower():
         raise ValueError("trial-archive-content-mismatch")
 
@@ -227,12 +227,15 @@ def _publish_artifacts(
 ) -> None:
     """Copy a closed inventory create-once and refuse conflicting bytes."""
     for artifact in artifacts:
-        path = f"{run_id}/{artifact.path}"
         try:
-            create_exclusive_nofollow(store.base_dir, path, artifact.data)
+            create_exclusive_stream_nofollow(
+                store.base_dir,
+                f"{run_id}/{artifact.path}",
+                artifact.chunks(),
+                reserve_fraction=store.free_space_reserve,
+            )
         except FileExistsError:
-            if read_contained_nofollow(store.base_dir, path) != artifact.data:
-                raise RunStoreConflictError("trial-archive-artifact-conflict") from None
+            raise RunStoreConflictError("trial-archive-artifact-conflict") from None
 
 
 def _observation(
@@ -285,7 +288,7 @@ def seal_recovered_run(
         _validate_binding(run, source, outcome, assignment)
         with store.finalization_lock(run.run_id):
             _retain_source(store, source, assignment, outcome)
-            artifacts = snapshot_run_files(store, run.run_id, limits=options.limits)
+            artifacts = snapshot_run_files(store, run.run_id)
         _verify_evidence(run, source, outcome, artifacts)
         if any(
             item.path in {"manifest.json", "seal.json", _OBSERVATION}

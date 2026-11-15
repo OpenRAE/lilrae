@@ -11,6 +11,13 @@ updated_at: 2026-10-05T07:51:12.874346Z
 
 # REP-006: Comparable Precondition Inspection Between Runs
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/REP-006/requirement.md).
+
+
 ## Statement
 
 APTL shall produce a machine-readable inspection of explicitly comparability-relevant preconditions for two sealed ACES runs: task and scenario identities, condition assignment, non-secret parameters, stochastic controls, apparatus and participant manifests, configuration and content digests, capture plan, clock context, limitations, and missing evidence. The report shall distinguish equal, changed, unavailable, and not-comparable fields and shall consume ACES cross-run comparability semantics when published. It shall not infer root cause, statistical significance, regression, or performance conclusions.

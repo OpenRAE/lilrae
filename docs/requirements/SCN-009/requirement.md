@@ -11,6 +11,13 @@ updated_at: 2026-10-12T18:00:18.618385Z
 
 # SCN-009: Scenario Prerequisite Validation
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/SCN-009/requirement.md).
+
+
 > Historical requirement record (scope notice added 2026-10-12): The statement names the retired scenario command group. The shipped `aptl lab start --scenario` path validates the admitted scenario and its prerequisite contracts.
 > The original statement is retained; the rationale records its retirement.
 > See the current

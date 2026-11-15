@@ -8,26 +8,23 @@ accepted
 
 2026-05-03
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [defensive posture](../components/default-defensive-posture.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
-[Issue #250](https://github.com/Brad-Edwards/aptl/issues/250) closes the gap
-between two existing SOC components that did not previously talk to each
-other: MISP holds threat intelligence (IPs, domains, URLs, file hashes),
-and Suricata is the network IDS in the data path, but Suricata's ruleset
-was entirely operator-authored—IOCs added to MISP by blue (or by future
-threat-intel feeds) never reached the wire. Real OSS-SOC stacks always have
-this loop: SOC analyst (or upstream feed) adds an indicator to the canonical
-intel platform, automation pushes it to enforcement points, traffic matching
-it gets actioned within minutes. The lab needs the same loop so blue's
+[Issue #250](https://github.com/Brad-Edwards/aptl/issues/250) connected MISP indicators with Suricata rules. Previously, MISP intelligence and operator-authored network detection were separate. Newly added indicators did not automatically produce rules. The design selected a common integration pattern. An analyst or feed adds intelligence, automation updates detection, and matching traffic produces an observation. The lab needs the same loop so blue's
 threat-intel work composes with detection on the wire.
 
 Two adjacent decisions constrain the design:
 
 - **[ADR-019](adr-019-suricata-ids-only-prevention-via-wazuh-ar.md)**: Suricata stays IDS-only. Packet-level prevention is delivered by Wazuh
-  active-response. Anything this design produces must therefore be `alert`
-  rules; `drop`/`reject` rules from this pipeline would have no effect under
-  the lab's current Docker network model and would mislead blue about what
-  the lab actually enforces.
+  active-response. The pipeline must produce `alert` rules. Under this IDS design, generated `drop` or `reject` rules would falsely imply packet enforcement.
 - **[ADR-008](adr-008-soc-stack-integration.md)**: MISP is the canonical
   IOC store and the SOC stack's intel hub. The new sync component does not
   fork or duplicate that role; it consumes MISP and emits Suricata rules,
@@ -40,11 +37,7 @@ under the `soc` compose profile. Architecture and invariants:
 
 1. **Tag-graduated enforcement.** The service polls MISP's
    `POST /attributes/restSearch` filtered by a configurable tag
-   (`IOC_TAG_FILTER`, default `aptl:enforce`). MISP attributes without
-   the tag are intel only; tagging them is the explicit graduation step
-   that promotes an indicator to detection. Default lab posture is the
-   service running with zero tagged IOCs—blue's job per iteration is to
-   populate intel and graduate it.
+   (`IOC_TAG_FILTER`, default `aptl:enforce`). An untagged MISP attribute remains intelligence only. The selected tag explicitly promotes it into detection. The original default ran the service with no tagged indicators. Blue participants supplied and promoted indicators during their iterations.
 2. **Alert-only rules per ADR-019.** The translator hard-codes `alert`
    as the rule action across every IOC type. Any future "drop" semantics
    would require a follow-up ADR overriding ADR-019; the translator's
@@ -55,37 +48,21 @@ under the `soc` compose profile. Architecture and invariants:
    directives can reference their hash-list sidecars via documented
    relative paths. The host bind mount is `./config/suricata/rules/misp/
    → /var/lib/suricata/rules/misp` shared between the Suricata
-   container and the sync service. The repo ships a seed `misp-iocs.rules`
-   plus empty `misp-{md5,sha1,sha256}.list` files so Suricata can load
-   the configured rule paths cleanly on the very first `aptl lab start`,
-   before the sync service has had a chance to write. The bind mount
-   also avoids the named-volume initialization race where Suricata
-   starts ahead of the sync service and finds the rule path missing.
+   container and the sync service. The original tree supplied `misp-iocs.rules` and empty `misp-{md5,sha1,sha256}.list` files. They let Suricata load its paths before the first synchronization. The bind mount also avoided an initialization race. Suricata could start before synchronization without encountering a missing rule path.
    The operator-authored `local.rules` is never touched. The two files
    are concatenated by Suricata at runtime via the `rule-files:` list
    in `config/suricata/suricata.yaml`. Mixing them was rejected: it
    would conflate hand-written and intel-driven rules in `git blame`,
    in run archives, and in any operator inspection.
 4. **Deterministic SID allocation.** SID is computed as
-   `SID_BASE + (zlib.crc32(f"{type}|{value}") & 0x7FFFFFF)`. CRC32 over a
-   stable composite key gives a deterministic, content-addressable SID
-   that does not shift when other IOCs are added or removed (the failure
-   mode of "list-position" allocation). On the rare collision the
-   translator drops the second occurrence and logs a warning; emitting two
-   rules with the same SID would be a Suricata startup error. `SID_BASE`
+   `SID_BASE + (zlib.crc32(f"{type}|{value}") & 0x7FFFFFF)`. CRC32 over a stable composite key supplies a deterministic SID. Unlike list positions, this identity does not shift when other indicators change. On collision, the translator omits the second occurrence and logs a warning. Duplicate SIDs could prevent Suricata startup. `SID_BASE`
    defaults to `2_000_000`, well clear of the operator's hand-written
    range (current max `1000091` in `local.rules`) and well clear of ET
    Open's reserved 2.x ranges.
 5. **Idempotent file writes.** ``rule_writer.write_if_changed`` reads
    the existing file (if any), compares to the would-be content, and
    only writes—atomically via `<path>.tmp` + `Path.replace`—on
-   change. The rule-file header carries the MISP URL, tag filter,
-   `sid_base`, and IOC count but **no timestamp**—adding a fresh
-   timestamp every render would always invalidate the equality check
-   and trigger a Suricata reload every interval even when the IOC set
-   is unchanged. The same idempotent writer also produces the
-   per-type hash list sidecars; reload only triggers if any of the rule
-   file or any list file actually changed.
+   change. The header records the MISP URL, tag filter, `sid_base`, and count without a timestamp. A timestamp would change identical output and cause unnecessary reloads. The writer also produces the hash-list sidecars. A reload requires an actual rule-file or list-file change.
 6. **Live reload via the unix-command socket.** `suricata.yaml` enables
    the unix-command interface at
    `/var/run/suricata/suricata-command.socket`. The sync service mounts
@@ -101,46 +78,28 @@ under the `soc` compose profile. Architecture and invariants:
    outage does not collapse Suricata's intel-driven detection.
 8. **Hash-content escaping.** Bytes outside `[A-Za-z0-9._-/?=&]` are
    hex-escaped via Suricata's `|XX|` notation in any `content:` value.
-   The threat model is a poisoned upstream MISP feed (or a hostile
-   contributor to a public feed), not a hostile lab operator—but the
-   escape cost is zero and the test
-   `test_rejects_quote_or_semicolon_in_value_via_escape` is the
-   regression guard.
+   The threat model covers poisoned public feeds rather than a hostile lab operator. Escaping prevents those values from becoming rule syntax. `test_rejects_quote_or_semicolon_in_value_via_escape` protects that boundary.
 
 9. **Validation at the IOC boundary.** IPs are validated via
-   :mod:`ipaddress` before being spliced into rule headers (a malformed
-   value would render an unparseable rule and break Suricata reload);
-   hashes are validated for hex format and per-type length (md5=32,
-   sha1=40, sha256=64) before being written to a list file (bad data
-   would make the entire hash list unloadable). Invalid IOCs are
+   :mod:`ipaddress` before insertion into rule headers. A malformed value could prevent a reload. Hash validation requires hexadecimal values of exact length: md5 32, sha1 40, and sha256 64. Invalid hash content could make a list unloadable. Invalid IOCs are
    skipped with a warning rather than poisoning the output.
 
 10. **URL parsing via stdlib.** ``urllib.parse.urlparse`` handles
     credentials, ports, fragments, query strings, IPv6 hosts, and
     schemeless inputs correctly—none of which a hand-rolled splitter
-    gets right. Hosts are lowercased and stripped of userinfo / port;
-    path includes the query string when present so URL IOCs that vary
-    by query parameter still match.
+    gets right. Hosts become lowercase without user information or ports. Paths keep query strings so indicators with different queries remain distinct.
 
 11. **Anchored domain / host matching.** ``dns.query`` and ``http.host``
     matches use the ``dotprefix`` modifier so an IOC for ``bad.com``
     matches ``bad.com`` and ``sub.bad.com`` but not ``notbad.com``.
-    Without ``dotprefix`` the ``content:`` directive is a substring
-    match and produces avoidable false positives on every domain
-    sharing a suffix with the IOC.
+    Without ``dotprefix``, ``content:`` can match unrelated domains that share the indicator suffix. The transformation prevents that avoidable false positive.
 
 12. **Reload retry on failure.** ``SyncRunner`` carries a
-    ``reload_pending`` flag across ticks. If a Suricata reload fails
-    (socket not yet ready on first start, transient signal failure),
-    the next tick retries the reload even when the rule file is
-    unchanged, so transient reload failures cannot leave generated
-    rules permanently inactive.
+    ``reload_pending`` flag across ticks. A failed reload remains pending for the next tick, even if the files stay unchanged. This covers an unavailable startup socket or transient signal failure.
 
 13. **Transactional file ordering.** Per-type hash list files
     (``misp-<type>.list``) are written *before* ``misp-iocs.rules`` on
-    each tick. Suricata's hash rules reference the list files; writing
-    them first means the rule file's references are always resolved
-    against fresh content, never stale.
+    each tick. Hash lists are written before the rules that reference them. Reload then uses the new list content.
 
 14. **MISP envelope drift preservation.** ``MispClient`` returns
     ``None`` for both transport failures *and* malformed envelope
@@ -165,18 +124,13 @@ under the `soc` compose profile. Architecture and invariants:
       --cacert <path>`` (verify against the supplied CA bundle).
     * ``MISP_VERIFY_SSL=true`` + no path → curl's system trust store.
 
-    The lab default is the first mode because MISP self-signs its
-    certificate at first boot and there is no shared lab CA today
-    that consumers could pin against. The full fix (extending
-    ``INF-005``'s automated cert generation to issue a lab CA whose
-    chain covers MISP, TheHive, Cortex, and Shuffle, and switching
-    every SOC stack client (this service, the threatintel/casemgmt/
-    soar MCPs, ``aptl.core.collectors``) to verify-on-by-default)
-    is out of scope for this issue and tracked under **SEC-006**
-    (DRAFT) and issue [#258](https://github.com/Brad-Edwards/aptl/issues/258).
-    The ``MISP_CA_CERT_PATH`` hook in this PR is the consumer-side
-    plumbing SEC-006 will fill in; flipping the lab to verify-on
-    once #258 ships is a single env-var change.
+    The original default used the first mode because MISP self-signed at first boot. The later ADR-034 amendment supplies the lab-managed CA. SEC-006 and [issue #258](https://github.com/Brad-Edwards/aptl/issues/258) owned its broader rollout.
+That rollout extended INF-005 certificate generation to MISP, TheHive, Cortex, and Shuffle.
+It also covered this service, SOC MCP clients, and `aptl.core.collectors`.
+SEC-006 was DRAFT in that original record.
+Later ADR-034 amendments define the selected verification boundary.
+
+    ``MISP_CA_CERT_PATH`` supplies consumer-side CA selection. Issue #258 used that existing input when enabling lab CA verification.
 
 ### Translator IOC matrix
 
@@ -235,21 +189,21 @@ script `aptl-misp-suricata-sync` is the entrypoint.
 - Tag-graduated enforcement gives blue a deliberate "promote to detect"
   step instead of every MISP indicator silently becoming a rule.
 - Sync service is stateless across restarts (CRC32 SID is a function of
-  IOC content, not insertion order), so container restarts don't
-  resequence rules and don't trigger spurious Suricata reloads.
+  IOC content, not insertion order), so container restarts do not
+  resequence rules and do not trigger spurious Suricata reloads.
 - The service container is small (`python:3.11-slim` + curl + the aptl
   wheel) and short—the entire service is < 400 LOC of Python.
 
 ### Negative
 
 - The lab now has a unix-command socket on the Suricata container.
-  Modest attack surface: it's bound to a unix socket on a private
+  Modest attack surface: it is bound to a unix socket on a private
   Docker volume, not exposed on any network. Only the sync service
   container mounts the same volume.
 - Every IOC matches Suricata's IDS-only posture—`alert`, not `drop`.
   Blue cannot author MISP IOCs that *block* traffic. Real prevention
   remains the Wazuh AR path (#248/#249). This ADR makes that boundary
-  explicit so blue doesn't expect MISP-driven blocking.
+  explicit so blue does not expect MISP-driven blocking.
 - The service is the lab's first Python daemon, so the supervisord /
   in-process pattern that exists for Wazuh agents does not apply. New
   service is a single foreground process under restart=unless-stopped.
@@ -262,15 +216,9 @@ script `aptl-misp-suricata-sync` is the entrypoint.
   default is empty. Future work could batch reloads.
 - **Tag misuse.** If the wrong tag is applied to a high-traffic IOC
   (`tlp:white` instead of `aptl:enforce`, etc.), a flood of false
-  positives is possible. Mitigation: the tag is documented in this ADR
-  and in the README; the default config is `aptl:enforce`, not
-  `tlp:white`, specifically so generic TLP tags don't graduate IOCs by
-  accident.
+  positives is possible. Mitigation: the documented default is `aptl:enforce`. A general `tlp:white` tag does not promote an indicator accidentally.
 - **Suricata socket protocol drift.** The handshake currently uses
-  `version: 0.2`. If upstream Suricata bumps the protocol, the
-  reloader's `_send_command` will report `return: NOK` and we fall
-  back to "skip reload, log warning"—the rule file still updates on
-  disk, and a Suricata container restart still picks it up. Detection
+  `version: 0.2`. A protocol change can produce `return: NOK` from `_send_command`. The reloader reports the failure and skips reload. The file still updates, and container restart loads it. Detection
   degrades to "rules apply on next restart," which is acceptable until
   the protocol bump is addressed.
 
@@ -283,12 +231,7 @@ script `aptl-misp-suricata-sync` is the entrypoint.
   MISP client (auth header, tag filter, malformed-response tolerance,
   no-API-key-in-logs invariant), config (validators), and the sync
   loop (skip-on-fetch-error, skip-on-no-change).
-- E2E lab recipe: `aptl lab stop -v && aptl lab start --profiles soc`,
-  submit an IOC via the `aptl-threatintel` MCP with the `aptl:enforce`
-  tag, wait one sync interval, then
-  `docker exec aptl-suricata cat /var/lib/suricata/rules/misp/misp-iocs.rules`
-  to confirm the rule landed and check `suricata_logs/eve.json` for
-  alerts on matching traffic.
+- E2E lab recipe: `aptl lab stop -v && aptl lab start --profiles soc`, add an IOC through the historical `aptl-threatintel` MCP with `aptl:enforce`. Wait one synchronization interval. Examine `misp-iocs.rules` and matching `suricata_logs/eve.json` alerts. The recorded file command was `docker exec aptl-suricata cat /var/lib/suricata/rules/misp/misp-iocs.rules`.
 
 ## Related
 

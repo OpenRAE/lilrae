@@ -1,11 +1,19 @@
 # Scoped tool affordances
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1646-scoped-tool-affordances-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 LilRAE declares scoped tool support only when installed participant bindings contain tools.
 The declaration owner remains `autonomous_manifest_options`.
 It adds `scoped_tool_affordances` with exact support and the public required contracts.
+
 Tool profile semantics remain `participant-tool-profile/v1`.
 No new profile capacity limit is enforced or declared.
 Existing per-invocation limits remain 16 calls and four concurrent calls.
+
 RAE owns selector resolution, capability admission, scheduling, and accepted history.
 LilRAE checks installed action digests, targets, boundaries, and participant relations before provisioning.
 Each invocation receives only its installed tool mappings and its own RAE port.
@@ -27,9 +35,11 @@ flowchart LR
 Peer authority is the protected asset.
 A shared policy must not grant the union of participant tools.
 Installed relation checks and invocation ports enforce that boundary.
+
 Deterministic native handlers verify peer refusal and both completion orders.
 Malformed claims fail public manifest validation or admission before effects.
 Unsupported composition retains the existing refusal tests.
+
 Private launch data stays outside the manifest and public evidence.
 Trusted host code remains outside this isolation claim.
 

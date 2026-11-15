@@ -1,5 +1,13 @@
 # Issue 957: Wazuh Attestation, Evidence, and Credentials Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-957-wazuh-attestation-evidence-credentials-preflight.md).
+Its last recorded file change before this rewrite was `41551db875b1`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 > **Dated preflight record.** Written on 2026-09-21 and kept as written. Since
 > then, #1152 (d1871df3, 2026-09-21) removed
 > `config/wazuh_indexer/internal_users.yml`, which it cites.

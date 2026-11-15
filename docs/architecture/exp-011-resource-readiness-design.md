@@ -1,5 +1,11 @@
 # Required trial readiness
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/exp-011-resource-readiness-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 This design implements [#753](https://github.com/OpenRAE/lilrae/issues/753).
 The [preflight](exp-011-resource-readiness-preflight.md) states the binding constraints.
 Readiness supplies the later experiment entry point with a required-resource gate.
@@ -22,18 +28,23 @@ There is no check discovery, waiver, or configurable recheck policy.
 Preparation and live readiness have different boundaries.
 `LilraeTrialUnit` checks clean placement under its existing project and daemon locks.
 It records that observation and prepares readiness before handing work to RAES.
+
 The gate checks local artifacts without downloading, building, or starting resources.
 A fully ceased pre-dispatch refusal releases only fences newly claimed by that invocation.
 Existing ownership and unconfirmed probes retain their fences.
+
 Required mutation stays in the existing RAES provisioning path.
 The native provisioner requires prepared readiness and held placement fences before applying effects.
 Deletion plans still reach the existing cleanup policy when execution readiness fails.
+
 The orchestration, evaluation, and participant adapters require live readiness before their effects.
 The provisioner checks live readiness when its complete admitted resource set is present.
 Live checks run after provisioning, against the exact selected target.
+
 A failed live check leaves cleanup and interruption handling with RAES.
 `ReadinessTrialServices` projects readiness refusal into the terminal trial outcome.
 It preserves native cessation evidence and successful provisioning effects.
+
 An unavailable check, crash, malformed result, or timeout never permits dispatch.
 
 ## Owner inputs
@@ -41,18 +52,22 @@ An unavailable check, crash, malformed result, or timeout never permits dispatch
 The selected participant binding supplies the implementation manifest, complete configuration, and executor.
 The gate reconstructs the binding and compares its configuration with the sealed entry.
 The executor's readiness operation must verify its selected build and approved provider access.
+
 Unsupported request controls remain an admission failure; the gate does not omit them.
 The managed OpenCode owner verifies its pinned executable and uses its explicit OpenRouter route and key.
 Read-only authenticated key, user-model, and model-endpoint observations check the exact model and serving provider.
+
 Catalog reads use bounded pages and never select a replacement model or endpoint.
 No inference request, task text, or artifact is sent during this check.
 
 Each required capture binds an installed collector and its read-only source readiness operation.
 The operation proves the source and its destination are usable within the binding's limits.
 It returns a strict boolean, not source data, a transcript, or an exception message.
+
 Separate capture destinations need their own effective-writer and capacity checks.
 Clock accuracy is checked only when the selected capture owner declares an accuracy requirement.
 The existing `ClockProvider` supplies the source clock's offset and uncertainty.
+
 Unknown synchronization does not satisfy an accuracy requirement.
 
 The collector registration declares any required clock accuracy in milliseconds.
@@ -62,21 +77,27 @@ Omitting a required clock therefore fails the selected capture check.
 
 The installed owner graph is Entry composition. The placement qualifier is an Application operation.
 Core readiness interfaces separate the gate from concrete deployment and RAES implementations.
+
 The installed native provisioner owns offline artifact resolution, qualification, and startup requirements.
 The installed composition connects the selected Docker backend, participant executors,
 windowed capture sources, and local run store to these fixed ports.
 It reuses the approved placement's bound endpoint and daemon observation.
+
 It compares fresh observations with that approved placement.
 `AppliancePlacementReadiness` requires fresh host and guest proof through the ordinary boundary qualifier.
 Matching but unverified endpoint observations cannot replace positive perimeter and enforcement proof.
+
 Missing or failed proof blocks preparation and live readiness.
 This check does not approve a new VM.
 Its source probe invokes an explicit, bounded, read-only operation on the actual source owner.
+
 Acquisition is never a readiness operation. Owners without a read-only operation are refused.
 Stimuli, remote writes, and declared observer effects stay in the capture lifecycle.
+
 Native startup resource requirements pass their exact minimum to the ordinary system check.
 An unknown resource owner cannot satisfy a required resource check.
 The ordinary startup adapter is resolved against each entry's reconstructed family trial.
+
 The installed selection must match its pack, snapshot, provider provenance, and plan.
 An absent or stale selection cannot remove a resource requirement.
 
@@ -90,23 +111,29 @@ The gate does not create a temporary artifact in the experiment target.
 Every observation uses RAES diagnostics with fixed codes and fixed messages.
 Results bind the plan, entry, run, attempt, target, snapshot, and configuration digests.
 Canonical result bytes select a content-addressed path in the existing run store.
+
 Writes use `create_run_json_once`; sealed runs and conflicting bytes are refused.
 The gate retains failed observations when storage works.
 Persistence failure blocks execution and never claims that evidence was retained.
+
 The handoff references readiness observations for the existing archival inventory.
 
 The RAES execution adapter bounds synchronous owner calls and limits outstanding workers.
-An injected existing `BoundedProcessRunner` bounds Docker and HTTP probe bytes during acquisition.
+An injected existing `ProbeProcessRunner` bounds Docker and HTTP probe bytes during acquisition.
 Its scope applies only inside read-only owner callbacks, not ordinary lifecycle execution.
+
 Readiness accepts only bounded typed outputs and never renders owner output.
 Owner transport implementations must enforce their byte bounds during acquisition.
 Archive-backed source checks stream JSONL through bounded reads.
+
 They share one byte budget across the selected files and refuse overflow before parsing it.
 Container-log checks share one result budget across their selected containers.
 A timed-out call cannot establish cessation; existing trial fences retain ownership.
+
 Unverified child cleanup blocks further preparation, execution, handoff, and fence release.
 Later passing checks cannot clear that refusal.
 Pending delivery must use the same gate, request, target, and RAES ledger.
+
 A new attempt cannot reuse another attempt's readiness authority.
 
 ## Data flow
@@ -162,12 +189,15 @@ ADR-047, ADR-052, and ADR-064 retain their existing decisions.
 RAE 10.6.1 preserves absent node identity values through its public planner.
 Use that release and the compatible environment-pack release for this gate.
 Move consumer imports to the current contract and processor owners.
+
 Do not restore retired compatibility modules or alter public plan values.
 Use the existing Pydantic serializer with the public canonical fallback for runtime values.
 The existing lock and hashed requirements retain the tested dependency closure.
+
 The bounded participant freeze is requalified against its prior complete model.
 Only twelve absent architecture and OS-distribution values change from empty strings to null.
 The source digest and all action and authority values stay unchanged.
+
 The regression reverses those twelve values and recovers the prior approved model digest.
 
 Verification includes the native control-only admission regression and affected

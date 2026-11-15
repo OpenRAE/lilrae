@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -17,7 +18,6 @@ from aptl.core.evidence.outcomes import AcquisitionDisposition, CollectorStatus
 from aptl.core.evidence.protocol import CollectorContext
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 from aptl.core.runstore import LocalRunStore
@@ -91,7 +91,6 @@ def _binding(registration_id: str, requirement_id: str) -> CaptureBinding:
             if registration
             else CaptureVisibility.EVALUATOR_ONLY
         ),
-        limits=(registration.limits if registration else CaptureLimits(4096, 10, 60)),
     )
 
 
@@ -108,6 +107,7 @@ def test_on_demand_collector_bounds_query_then_records_actual_finish():
     )
     clock = _SequenceClock(
         "2026-09-14T00:00:00Z",
+        "2026-09-14T00:00:04Z",
         "2026-09-14T00:00:05Z",
     )
     binding = _binding("aptl.collector.misp-authenticated-api-readiness", "misp")
@@ -116,7 +116,7 @@ def test_on_demand_collector_bounds_query_then_records_actual_finish():
         run_id="run-1",
         attempt_id="provisioning",
         binding=binding,
-        deadline_seconds=60,
+        progress_timeout_seconds=60,
         clock=clock,
     )
 
@@ -124,9 +124,10 @@ def test_on_demand_collector_bounds_query_then_records_actual_finish():
         _OnDemandNativeCollector.start(context)
     )
 
+    # The window closes when the check runs, not at a fixed duration.
     assert source.window == (
         "2026-09-14T00:00:00Z",
-        "2026-09-14T00:01:00Z",
+        "2026-09-14T00:00:04Z",
     )
     assert outcome.started_at == "2026-09-14T00:00:00Z"
     assert outcome.finished_at == "2026-09-14T00:00:05Z"
@@ -146,6 +147,7 @@ def test_on_demand_collector_rejects_source_time_after_actual_finish():
     clock = _SequenceClock(
         "2026-09-14T00:00:00Z",
         "2026-09-14T00:00:05Z",
+        "2026-09-14T00:00:05Z",
     )
     binding = _binding("aptl.collector.misp-authenticated-api-readiness", "misp")
     context = CollectorContext(
@@ -153,7 +155,7 @@ def test_on_demand_collector_rejects_source_time_after_actual_finish():
         run_id="run-1",
         attempt_id="provisioning",
         binding=binding,
-        deadline_seconds=60,
+        progress_timeout_seconds=60,
         clock=clock,
     )
 
@@ -202,14 +204,14 @@ def test_acquire_native_evidence_persists_only_immediate_native_bindings(
     start = datetime(2026, 9, 14, tzinfo=UTC)
     times = tuple(
         (start + timedelta(seconds=offset)).isoformat().replace("+00:00", "Z")
-        for offset in range(10)
+        for offset in range(20)
     )
 
     result = acquisition.acquire_native_evidence(
         acquisition.NativeEvidenceRequest(
             plan=plan,
             backend=object(),
-            realization=object(),
+            realization=SimpleNamespace(nodes=(), generated_artifacts=()),
             project_dir=tmp_path,
             environment={
                 "INDEXER_USERNAME": "admin",
@@ -257,7 +259,7 @@ def test_acquire_native_evidence_fails_when_a_required_source_is_unavailable(
         acquisition.NativeEvidenceRequest(
             plan=plan,
             backend=object(),
-            realization=object(),
+            realization=SimpleNamespace(nodes=(), generated_artifacts=()),
             project_dir=tmp_path,
             environment={
                 "INDEXER_USERNAME": "admin",
@@ -269,6 +271,7 @@ def test_acquire_native_evidence_fails_when_a_required_source_is_unavailable(
             clock=_SequenceClock(
                 "2026-09-14T00:00:00Z",
                 "2026-09-14T00:00:01Z",
+                "2026-09-14T00:00:02Z",
             ),
         )
     )
@@ -861,15 +864,13 @@ def test_finalize_transcript_quiesces_broker_persists_evidence_and_marks_complet
         export_capture_apparatus=export_capture_apparatus,
     )
     if collapse_retained:
-        from aptl.core.evidence import _persist
+        from aptl.core.evidence import _stream_prepare
 
-        monkeypatch.setitem(
-            _persist._REDACTION_HANDLERS,
-            "redact_secrets",
-            lambda _payload: {
-                "schema_version": "aptl-techvault-transcript/v2",
-                "transcript_entries": [],
-            },
+        collapsed = json.dumps(
+            {"schema_version": "aptl-techvault-transcript/v2", "transcript_entries": []}
+        ).encode()
+        monkeypatch.setattr(
+            _stream_prepare, "_redacted_json", lambda _chunks: iter([collapsed])
         )
 
     result = finalize_active_transcript_authority(
@@ -1219,40 +1220,22 @@ def test_lab_stop_records_transcript_backend_timeouts(
                 _exported_session(frames=({"sequence": True, "data_b64": "eA=="},))
             ],
         },
-        {
-            "expected_session_ids": ["session-1"],
-            "sessions": [
-                _exported_session(
-                    frames=(
-                        {
-                            "sequence": 1,
-                            "timestamp": "2026-09-14T10:00:01Z",
-                            "direction": "input",
-                            "data_b64": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eA==",
-                        },
-                    )
-                )
-            ],
-        },
     ],
-    ids=("duplicate-session-inventory", "malformed-frame", "oversized-export"),
+    ids=("duplicate-session-inventory", "malformed-frame"),
 )
 def test_transcript_export_validation_maps_to_finalization_failure(payload):
     from aptl_techvault.evidence.transcript_parsing import (
         FinalizedTranscriptCollector as _FinalizedTranscriptCollector,
     )
 
-    binding = replace(
-        _binding("aptl.collector.redteam-session-transcript", "transcript"),
-        limits=CaptureLimits(max_bytes=300, max_artifact_count=10, max_duration_s=60),
-    )
+    binding = _binding("aptl.collector.redteam-session-transcript", "transcript")
     clock = _SequenceClock("2026-09-14T10:00:03Z")
     context = CollectorContext(
         planned_trial_id="capture-plan-test",
         run_id="run-1",
         attempt_id="teardown",
         binding=binding,
-        deadline_seconds=60,
+        progress_timeout_seconds=60,
         clock=clock,
     )
     collector = _FinalizedTranscriptCollector(binding, payload, "2026-09-14T10:00:00Z")
@@ -1260,3 +1243,29 @@ def test_transcript_export_validation_maps_to_finalization_failure(payload):
     outcome = collector.stop(collector.start(context))
 
     assert outcome.status is CollectorStatus.FINALIZATION_FAILURE
+
+
+def test_transcript_export_keeps_frames_larger_than_the_removed_frame_bound():
+    from aptl_techvault.evidence.transcript_parsing import transcript_sessions
+
+    data = b"x" * (5 * 1024 * 1024)
+    payload = {
+        "expected_session_ids": ["session-1"],
+        "sessions": [
+            _exported_session(
+                frames=(
+                    {
+                        "sequence": 1,
+                        "timestamp": "2026-09-14T10:00:01Z",
+                        "direction": "input",
+                        "data_b64": base64.b64encode(data).decode(),
+                    },
+                )
+            )
+        ],
+    }
+
+    expected, sessions = transcript_sessions(payload)
+
+    assert expected == ("session-1",)
+    assert sessions[0].frames[0].data == data

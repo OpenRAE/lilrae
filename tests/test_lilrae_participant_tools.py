@@ -190,10 +190,16 @@ def test_ledger_failure_during_unknown_does_not_leak_or_skip_peer_cleanup():
     assert all(state.phase == Phase.INDETERMINATE for state in session.states())
 
 
-def test_effective_server_configuration_is_part_of_the_installed_authority():
+@pytest.mark.parametrize("deferred", [False, True])
+def test_effective_server_configuration_is_part_of_the_installed_authority(deferred):
     authority = port()
     native = Mock(return_value=result())
-    session = LilraeToolSession(authority, (binding(),), Event())
+    installed = binding()
+    if deferred:
+        installed = replace(
+            installed, configuration_digest=lambda: canonical_json_digest({})
+        )
+    session = LilraeToolSession(authority, (installed,), Event())
     with pytest.raises(AgentExecutionError):
         session.invoke(
             "aptl-red",
@@ -205,6 +211,27 @@ def test_effective_server_configuration_is_part_of_the_installed_authority():
         )
     native.assert_not_called()
     authority.admit.assert_not_called()
+
+
+def test_installed_configuration_can_resolve_after_service_realization():
+    configuration = {}
+    installed = replace(
+        binding(), configuration_digest=lambda: canonical_json_digest(configuration)
+    )
+    session = LilraeToolSession(port(), (installed,), Event())
+    configuration["target"] = "realized-service"
+    observed = result()
+    assert (
+        session.invoke(
+            "aptl-red",
+            "kali_run_command",
+            {"command": "id"},
+            "realized",
+            lambda _: observed,
+            configuration=configuration,
+        )
+        == observed
+    )
 
 
 def test_metadata_observation_does_not_need_a_fabricated_success_field():

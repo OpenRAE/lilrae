@@ -1,5 +1,13 @@
 # Issue #1424: runtime retry ownership preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1424-runtime-retry-preflight.md).
+Its last recorded file change before this rewrite was `6b79634e7f14`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 > **Superseded (issue #1407).** RAES 9.0.0 keeps one runtime for the whole run (OpenRAE/rae#1660). After a failed apply, its backend effects are unknown, and RAES refuses another apply. A failed apply now ends the start, and the automatic retry and its `before_backend_retry` hook are removed.
 
 The contract is a clean retry or a clean failure against the same runtime

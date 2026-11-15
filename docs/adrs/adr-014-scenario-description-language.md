@@ -8,17 +8,23 @@
 > authority. The APTL-local SDL parser and models described here were removed
 > after the RAES SDL cutover; this record remains historical context.
 
+## Applicability
+
+The local parser and models in this decision are historical.
+[ADR-035](adr-035-raes-sdl-adoption.md) assigns their portable contracts to RAES.
+The [SDL guide](../sdl/index.md) links current authoring and runtime owners.
+
 ## Context
 
-APTL's scenario format was an ad-hoc YAML schema validated only by Pydantic structural checks. The DSL-001 requirement called for a formal specification language with a documented grammar, parser, and semantic validation. Research across 12 cybersecurity SDLs, 10 adjacent DSLs, 6 security standards, and 6 agent evaluation frameworks (documented in internal research notes) identified the Open Cyber Range (OCR) SDL as the closest existing precedent.
+APTL's scenario format was an ad-hoc YAML schema validated only by Pydantic structural checks. The DSL-001 requirement called for a formal specification language with a documented grammar, parser, and semantic validation. The recorded research covered 12 cybersecurity SDLs, 10 adjacent DSLs, six security standards, and six agent-evaluation frameworks. It selected Open Cyber Range as the closest precedent.
 
 The OCR SDL is a YAML-based language with 14 sections (nodes, infrastructure, features, conditions, vulnerabilities, metrics/evaluations/TLOs/goals, entities, injects/events/scripts/stories) parsed by a Rust library. It separates logical topology from physical deployment and includes a full scoring pipeline and exercise orchestration model.
 
-However, the OCR SDL lacks: data/content modeling, user accounts, network access controls, OS classification, asset values, service exposure, platform-targeted commands, relationships between services (authentication, trust, federation), agent specifications, and parameterization.
+The comparison identified missing content, accounts, ACLs, OS classes, asset values, service exposure, platform commands, service relationships, agents, and parameters. These were the proposed extensions.
 
 ## Decision
 
-Use the OCR SDL as the starting surface for `aptl.core.sdl`, preserve coverage across the OCR-derived sections, extend that base with 7 new sections adapted from existing systems (not invented), and decouple the language from any specific deployment backend.
+Use OCR as the starting surface for `aptl.core.sdl`. Preserve the OCR-derived sections and add seven sections from existing precedents. Keep deployment outside the language.
 
 ### Architecture
 
@@ -48,7 +54,7 @@ This is simpler and more composable than a dedicated identity layer.
 
 Two-phase validation:
 1. **Structural** (Pydantic)—types, ranges, required fields, intra-model constraints
-2. **Semantic** (SemanticValidator)—22 named passes checking cross-references, dependency cycles, IP/CIDR consistency, typed VM/network references, OCR count constraints, workflow graph integrity, and SDL domain rules
+2. **Semantic** (SemanticValidator): 22 passes for references, cycles, IP/CIDR, VM/network types, counts, workflow graphs, and SDL rules
 
 The validator collects all errors rather than failing on the first.
 
@@ -62,17 +68,12 @@ workflow and step name." They must not duplicate Pydantic field constraints,
 semantic cross-reference passes, YAML normalization, shorthand expansion, or
 runtime/deployment readiness checks.
 
-Contract predicates and descriptions must be pure, cheap, and safe to expose:
-no filesystem, Docker, network, environment, secret-reading, or backend calls;
-no interpolation of whole scenario objects or raw YAML; and no raw
-`icontract` violation text crossing CLI/API/log/persistence boundaries. Public
+Contract predicates must be pure, inexpensive, and safe to expose. They must not access files, Docker, networks, environments, secrets, or backends. They must not interpolate scenarios or raw YAML. Raw `icontract` violations must not cross CLI, API, logging, or persistence boundaries. Public
 scenario loading still reports failures as `ScenarioValidationError`, wrapping
 `SDLParseError` or `SDLValidationError` as appropriate.
 
 Use contracts only where they add boundary clarity that the SDL validation
-pipeline does not already provide. If an invariant can be expressed as a
-Pydantic model validator or as a collecting `SemanticValidator` pass, keep it
-there so authors get normal field paths or aggregated validation errors.
+pipeline does not already provide. Keep an invariant in its existing Pydantic validator or collecting `SemanticValidator` pass when possible. This preserves field paths and aggregated errors.
 
 ### Parser
 
@@ -90,18 +91,11 @@ Any future work that reopens those concepts must reconcile them through the
 current SDL surface rather than restoring a second scenario schema.
 
 The historical authoring schema for this ADR was the local SDL model and parser.
-After ADR-035, those local parser/model APIs are no longer authoritative. Any
-future scenario-level fields such as `mode`, stable IDs, versions, difficulty,
-or estimates must be designed through RAES SDL and the APTL catalog/runtime
-handoff; they must not be read from raw YAML side channels, inferred from
-filenames, or reintroduced through a legacy local scenario schema.
+After ADR-035, those local parser/model APIs are no longer authoritative. Future scenario fields must use RAES SDL and the catalog/runtime handoff. This includes mode, IDs, versions, difficulty, and estimates. Raw YAML side channels, filenames, and legacy schemas must not supply them.
 
 Backend/runtime concerns stay out of the specification layer. Container
 requirements should flow through `nodes`, `infrastructure`, backend capability
-validation, and runtime planning. Objective checks, Wazuh queries, command
-execution, file checks, and expected detection probes belong in conditions,
-metrics/evaluations, evaluator adapters, or orchestration bindings; they should
-not become a second objective-validation schema embedded in SDL.
+validation, and runtime planning. Objective probes belong in conditions, metrics, evaluations, evaluator adapters, or orchestration bindings. Wazuh queries, commands, file observations, and detection probes must not form another SDL validation schema.
 
 ### Backward Compatibility
 

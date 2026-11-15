@@ -14,33 +14,40 @@ accepted
 
 > **Terminology note ([#1193](https://github.com/Brad-Edwards/aptl/issues/1193)).**
 > "Image-free" in this record is a historical term, kept so the original
-> decision text stays unchanged. These nodes are not literally image-free: each
-> one starts as a base container from a real base image, and APTL then applies
-> the node's declared state to it. Current documentation and code call them
+> decision text stays unchanged. Each node starts from a real base image.
+> Native materialization then applies its declared state.
+> The historical term does not mean absence of container images. Current documentation and code call them
 > **base-container-materialized nodes**; see
 > [Node Realization Routes](../components/node-realization.md).
+
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [realization Reference](../components/node-realization.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
 
 ## Context
 
 ADR-035 adopted RAES SDL and wired APTL in as a conformant RAES backend.
-ADR-046 established dynamic realization: APTL compiles an authored RAES SDL into
-a typed `RuntimeModel`, plans an `ExecutionPlan`, interprets it into
-`AptlRealization` and `DeploymentRealizationSpec`, and applies it through the
-deployment backend. ADR-046's Image Realization Addendum (issue #574) then
+ADR-046 compiles SDL into `RuntimeModel`, plans `ExecutionPlan`, and interprets typed native realization. `AptlRealization` and `DeploymentRealizationSpec` carry that result to the backend. ADR-046's Image Realization Addendum (issue #574) then
 defined a node's realized identity as an image: a node `source` is either
 pulled (a pullable image reference) or built (from captured `source.build`
 provenance).
 
 Issue #581 exposes why that image model is the wrong foundation for APTL's
-realization envelope. The whole point of APTL being a RAES-conformant backend
-is to demonstrate that an arbitrary conformant RAES SDL dynamically composes
-into a meaningfully realistic range within a backend's realization envelope. A
+realization envelope. The backend must demonstrate meaningful realization of admitted RAES declarations within its supported envelope. Booting one fixed appliance does not establish that capability.
+
+A
 pre-baked appliance image (for example `wazuh/wazuh-manager:4.x` or
 `docker.elastic.co/...`) already contains the node's software, services,
 content, accounts, and configuration. When a node is realized by pulling or
 building such an image, the SDL is not driving the realization; the image is.
 The range's meaningful detail lives outside the SDL, in a hand-curated image
-specific to one scenario. That proves nothing about RAES's ability to compose
+specific to one scenario.
+
+That proves nothing about RAES's ability to compose
 ranges. It re-encodes the previously hand-built Docker lab in RAES clothing.
 
 RAES already models the surface needed to do this properly. A compiled
@@ -74,38 +81,19 @@ APTL realizes a node's meaningful state from the compiled RAES
 image. This supersedes ADR-046's Image Realization Addendum as APTL's
 node-realization model.
 
-1. **Placements and declared runtime state are the realization mechanism.** A
-   node's software (`packages`, `software_components`, `feature-binding`), data
-   and configuration (`content-placement`, `filesystem_inventory`), and
-   identities (`account-placement`, `local_identity`) are realized by the
-   backend applying the declared RAES desired state onto a node, at the
-   granularity the current `docker-compose.yml` expresses or better. The SDL and
+1. **Placements and declared runtime state are the realization mechanism.** The backend applies declared packages, software, bindings, content, filesystems, accounts, and local identity to the target. The result must meet the authored granularity, not approximate a Compose role. The SDL and
    its compiled plan are the sole authority for what a node contains.
 
 2. **A generic base substrate is permitted; an appliance image is not.** A node
    still runs on some container base. A generic operating-system base image (the
-   substrate a container needs to exist) is allowed. What is forbidden is an
-   appliance image that encodes the node's scenario-meaningful software,
-   services, content, accounts, or configuration outside the SDL. The test is:
-   would this node realize into the same meaningful range if the image were
-   replaced by a generic base of the same OS family? If not, the range detail is
+   substrate a container needs to exist) is allowed. A whole-node appliance must not silently supply scenario software, services, content, accounts, or configuration outside the authored contract. The test is:
+   would a generic image of the same OS family still produce the same meaningful node under the declared materialization? If not, the range detail is
    being smuggled in through the image and the realization is invalid.
 
 3. **APTL stays Docker-based and local.** No migration to libvirt or VM targets.
-   APTL's realization envelope is designed for its own affordances, a
-   single-user local Docker range, not as a copy of the reference backend. This
-   ADR sets the foundation for APTL's entire RAES realization envelope, optimized
-   for security, maintainability, extensibility, and reliability, not for the
-   minimum needed to boot one scenario.
+   The original envelope targets a single-user local Docker range. It does not copy the reference backend's implementation choices. The decision covers the whole realization envelope and its security, maintenance, extension, and reliability goals. It is not permission for one-scenario shortcuts.
 
-4. **Expressivity gaps are surfaced upstream, never worked around.** When the
-   RAES contract cannot express a fact a realistic node needs, the fix is a RAES
-   issue against the contract (repo `Brad-Edwards/aces`), not an APTL-local
-   schema, a scenario-name branch, an appliance image, or a silent backend
-   injection. Where the RAES realization posture legitimately admits
-   backend-supplied detail, that detail is authored as an open realization scope
-   (`AuthorRealizationPosture.OPEN`), not smuggled in under a closed-world
-   default. Surfacing expressivity gaps is an intended output of this work.
+4. **Expressivity gaps are surfaced upstream, never worked around.** A missing portable node fact needs an upstream RAES contract issue. Local schemas, scenario branches, appliance images, and silent injection cannot replace that contract. Permitted backend detail requires authored open realization scope, `AuthorRealizationPosture.OPEN`. It must not enter through a closed-world default. Surfacing expressivity gaps is an intended output of this work.
 
 5. **`docker-compose.yml` is not an authoring or topology authority.** Any
    retained Compose file is derived reference output only. It is never a
@@ -148,9 +136,7 @@ Concretely, for every node the materializer:
 4. **Identity.** Creates the declared `runtime.local_identity` (users, groups,
    sudo) and realizes `accounts`, including domain-bound accounts through the
    existing directory provider.
-5. **Services.** Installs, enables, and starts the declared `service_manager_units`
-   and the units implied by the typed runtime service families, through one
-   generic service-unit mechanism, never a product-named startup path.
+5. **Services.** Installs, enables, and starts declared `service_manager_units` and units implied by typed service families. One generic mechanism owns this work without product-specific startup paths.
 6. **Runtime wiring.** Applies declared networks, mounts, published ports,
    environment (reference names and classification only), Linux capabilities, and
    container settings.
@@ -161,10 +147,7 @@ Concretely, for every node the materializer:
 APTL's backend manifest is expanded to honestly declare exactly the realization
 kinds the materializer both materializes and verifies (`packages`,
 `software_components`, service units and families, `filesystem_inventory`,
-`local_identity`), drawn from RAES's published controlled vocabularies. A
-declared node fact that APTL cannot express, materialize, and verify generically
-is either a RAES contract gap (file a RAES issue) or a blocking admission
-diagnostic, never a product-specific workaround and never a silent drop.
+`local_identity`), drawn from RAES's published controlled vocabularies. An unsupported declared fact requires an upstream contract fix or blocking admission diagnostic. It must not disappear or use a product-specific workaround.
 Capability-specific knowledge (which packages, which config, which service units
 make a working Wazuh) lives entirely in the SDL.
 
@@ -172,9 +155,7 @@ make a working Wazuh) lives entirely in the SDL.
 
 ### Positive
 
-- APTL becomes a genuine demonstration that arbitrary conformant RAES SDLs
-  realize into meaningful ranges, the actual research claim, rather than a
-  re-skin of a hand-built Compose lab.
+- This supplies a native demonstration of supported RAES declarations. A hand-built Compose lab with renamed inputs would not establish that research claim.
 - The realization envelope generalizes beyond TechVault: any node describable by
   RAES features, content, and accounts realizes without a bespoke image.
 - Expressivity gaps in RAES are surfaced as concrete upstream issues, improving
@@ -203,24 +184,14 @@ make a working Wazuh) lives entirely in the SDL.
 ## Supersession
 
 > **Superseded in part by [ADR-051](adr-051-component-level-raes-realization.md)
-> (2026-07-28).** Decision point 2 above, that a generic base substrate is the
-> only permitted container image and that no per-component image may supply a
-> node's software, no longer holds. A node may be realized from a pinned upstream
-> artifact or a digest-bound per-component materialization when the authored RAES
-> `Source.artifact_requirement` says so, because under SEM-218 the authored
-> posture binds the backend and APTL does not get to substitute a generic
-> materialization for an exact declaration. Everything else in this ADR remains in
-> force: placement-driven realization, fail-closed readback, the
-> no-scenario-branch materializer invariant, Docker-local single-user scope,
-> bidirectional parity, `docker-compose.yml` as derived reference only, and the
-> prohibition on a whole-range appliance image. ADR-051 additionally requires the
-> complete runtime contract for *every* node, including image-backed ones, so an
-> image may own component software but never TechVault's topology, credentials,
-> accounts, seeded content, or peer wiring.
+> (2026-07-28).** Decision point 2 no longer prohibits every component image.
+> ADR-051 supersedes that generic-substrate-only clause. Authored `Source.artifact_requirement` can require a pinned upstream or digest-bound component artifact.
+>
+> SEM-218 binds that posture; the backend cannot substitute generic materialization for an exact declaration. Other decisions remain: placement ownership, observed refusal, no scenario branches, local single-user scope, bidirectional parity, derived Compose, and no whole-range appliance. ADR-051 requires a complete runtime contract for every node.
+>
+> A component image cannot own scenario topology, credentials, accounts, seeded content, or peer wiring.
 
-This ADR supersedes ADR-046's Image Realization Addendum (issue #574): a node's
-realized software, content, accounts, and configuration is no longer sourced
-from a pulled or built appliance image. ADR-046 otherwise remains authoritative
+This decision supersedes ADR-046's original image addendum from #574. ADR-051 later permits component artifacts under authored contracts, as the update above states. ADR-046 otherwise remains authoritative
 for the dynamic realization pipeline, network realization, generated-model and
 lifecycle contract, and parity model. ADR-046's addendum is annotated to point
 here.

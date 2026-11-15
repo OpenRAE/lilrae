@@ -1,5 +1,13 @@
 # Issue #892 Dynamic-Composition Artifact Satisfaction Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-892-dynamic-composition-artifact-preflight.md).
+Its last recorded file change before this rewrite was `3db5171f3e4a`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes the repository-wide boundary for ADR-051 route 3. It is design
 guidance, not an implementation plan. The issue completes the source-artifact
 half of a mechanism whose runtime-concern half is already owned by RAES 3.1.0

@@ -11,6 +11,13 @@ updated_at: 2026-07-28T17:38:03.665415Z
 
 # REP-003: Run-Scoped Apparatus and Detection-Content Provenance
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/REP-003/requirement.md).
+
+
 ## Statement
 
 At each run seal point APTL shall record the selected ACES processor, backend, participant-implementation, and capability manifests; canonical scenario snapshot; APTL configuration identity; image and dependency digests; detector/rule/policy content digests; collector and tool versions; range snapshot identity; and relevant host/runtime inventory. Collection shall reuse DeploymentBackend, RangeSnapshot, ACES manifest, and existing inventory owners. Secret values, rendered secret-bearing configuration, private keys, tokens, cookies, and raw environment dumps shall never enter the provenance record.

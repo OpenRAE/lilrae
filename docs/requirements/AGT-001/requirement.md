@@ -11,6 +11,13 @@ updated_at: 2026-10-09T00:00:00.000000Z
 
 # AGT-001: ACES-Aligned Agent Orchestration Layer
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/AGT-001/requirement.md).
+
+
 ## Statement
 
 The platform shall provide an agent orchestration layer that consumes ACES scenario, runtime, participant, orchestration, and evaluation surfaces, instantiates configured LLM-backed or scripted agents, invokes APTL/MCP tools under declared authority and scope, observes portable workflow/evaluation state, and adapts plans based on recorded outcomes without bypassing the ACES backend contracts.

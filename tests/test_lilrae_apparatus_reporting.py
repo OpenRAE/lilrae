@@ -46,6 +46,7 @@ def test_verified_capture_container_is_admitted_by_the_public_runtime(
                     "running": True,
                 },
             ),
+            request,
         )
 
     monkeypatch.setattr(provisioner, "_apply_valid_plan", realized)
@@ -55,6 +56,7 @@ def test_verified_capture_container_is_admitted_by_the_public_runtime(
         additions = set(result.snapshot.entries) - set(plan.provisioning.resources)
         captures = [address for address in additions if ".lilrae-cap-" in address]
         assert len(captures) == 1
+        assert result.snapshot.entries[captures[0]].status == "applied"
         assert any(
             entry.address == captures[0]
             and entry.provenance.value == "backend-realized"
@@ -87,5 +89,5 @@ def test_missing_native_capture_readback_grants_no_entry(tmp_path):
         )
         applied = ApplyResult(True, manager.snapshot)
         with pytest.raises(ValueError, match="readback"):
-            append_verified_apparatus(applied, resources, ())
+            append_verified_apparatus(applied, resources, (), plan.provisioning)
         assert not manager.snapshot.entries

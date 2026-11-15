@@ -14,6 +14,14 @@ stay in force.
 
 2026-10-05
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [CLI Reference](../reference/cli.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 The APTL (Advanced Purple Team Lab) repository was transferred into the OpenRAE
@@ -32,9 +40,7 @@ identifiers that existing installations, scripts, and records depend on.
 
 [ADR-054](adr-054-lilrae-core-and-experience-ownership.md) describes APTL and
 LilRAE as one product across a rename and proposes a broader capability
-ownership model. It remains proposed. This ADR records only the completed
-repository and name change and the limited naming transition; it does not
-accept ADR-054 or claim that its migration work is complete.
+ownership model. It remains proposed. This records the completed name/repository change and limited naming transition. It does not accept ADR-054 or claim completion of that proposal.
 
 ## Decision
 

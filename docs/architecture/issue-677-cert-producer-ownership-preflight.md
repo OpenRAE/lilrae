@@ -1,5 +1,13 @@
 # Issue #677 Certificate Producer Ownership Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-677-cert-producer-ownership-preflight.md).
+Its last recorded file change before this rewrite was `ced66dcc408b`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes the architecture guardrails for making Wazuh certificate
 generation host-user-owned from creation. It is design guidance, not an
 implementation plan. ADR-007 remains authoritative for the Python lab control

@@ -15,6 +15,14 @@ This record supersedes two clauses of earlier records:
 
 2026-10-31
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [design-check explanation](../architecture/design-checks.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 [Issue #1510](https://github.com/OpenRAE/lilrae/issues/1510) starts a
@@ -154,9 +162,7 @@ moves give each package one layer:
 
 ### Reuse rules
 
-1. Each shared concern has one implementation, for example atomic writes,
-   path containment, digests, time, strict JSON, locks, waits, process runs,
-   HTTP, and redaction.
+1. Each shared concern must have one implementation and one owner. Examples include atomic writes, containment, digests, time, strict JSON, locks, waits, subprocesses, HTTP, and redaction.
 2. Use the standard library or an established dependency before custom code.
 3. Use the existing schema, validator, error type, or result envelope. Do not
    copy it.

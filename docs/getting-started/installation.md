@@ -86,12 +86,12 @@ Expected result: scripts use the supported command with their existing options.
 
 For a script that cannot change yet, set `LILRAE_SUPPRESS_APTL_DEPRECATION=1` in its environment.
 Only the value `1` suppresses the notice.
-Prefer updating the script before the alias is removed.
+Prefer updating the script instead of relying on continued alias availability.
 
 ### When The Alias Is Removed
 
-Replace older seat images and scripts before upgrading to LilRAE 10.0.0.
-That release removes the deprecated commands.
+Replace older seat images and scripts before installing a release that removes the aliases.
+The planned removal target was 10.0.0, but the candidate still registers them.
 See [command compatibility](installation-reference.md#command-compatibility).
 
 ## Move From aptl-labs To lilrae

@@ -1,5 +1,13 @@
 # Issue #1022 Appliance Seat Delivery Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1022-appliance-seat-delivery-preflight.md).
+Its last recorded file change before this rewrite was `35ebb3bead57`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 **Current scope (2026-09-20):** [ADR-060](../adrs/adr-060-vm-only-seat-containment.md)
 records the owner's VM-only decision. It supersedes this note's internal-zone
 enforcement obligations for #1022. APP-1 and internal security move to #1127;

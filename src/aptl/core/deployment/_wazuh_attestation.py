@@ -35,7 +35,7 @@ def load_stateful_env(project_dir: Path) -> tuple[EnvVars | None, bool]:
                 candidate.api_password,
             )
             env = candidate if all(credentials) else None
-    except (OSError, ValueError):
+    except OSError, ValueError:
         env = None
     return env, placeholder_input
 
@@ -123,6 +123,8 @@ def observe_indexer_declared_facts(
     username: str,
     password: str,
     datastore: object | None,
+    *,
+    ca_cert_path: str,
 ) -> tuple[dict[str, str], ...]:
     """Compare bounded indexer readback with every declared native fact."""
 
@@ -136,14 +138,14 @@ def observe_indexer_declared_facts(
     header = basic_auth_header(username, password)
     base = url.rstrip("/")
     return (
-        _observe_partitions(base, header, partitions)
-        + _observe_templates(base, header, templates)
-        + _observe_mappings(base, header, mappings)
+        _observe_partitions(base, header, ca_cert_path, partitions)
+        + _observe_templates(base, header, ca_cert_path, templates)
+        + _observe_mappings(base, header, ca_cert_path, mappings)
     )
 
 
 def _observe_partitions(
-    base: str, header: str, partitions: tuple[object, ...]
+    base: str, header: str, ca_cert_path: str, partitions: tuple[object, ...]
 ) -> tuple[dict[str, str], ...]:
     """Observe every declared datastore partition."""
 
@@ -153,7 +155,7 @@ def _observe_partitions(
     payload = curl_json(
         f"{base}/_cluster/state/metadata/{names}",
         auth_header=header,
-        insecure=True,
+        ca_cert_path=ca_cert_path,
         timeout=30,
     )
     indices = _index_metadata(payload)
@@ -163,7 +165,7 @@ def _observe_partitions(
 
 
 def _observe_templates(
-    base: str, header: str, templates: tuple[object, ...]
+    base: str, header: str, ca_cert_path: str, templates: tuple[object, ...]
 ) -> tuple[dict[str, str], ...]:
     """Observe every declared legacy index template."""
 
@@ -173,7 +175,7 @@ def _observe_templates(
     payload = curl_json(
         f"{base}/_template/{names}",
         auth_header=header,
-        insecure=True,
+        ca_cert_path=ca_cert_path,
         timeout=30,
     )
     return tuple(
@@ -191,7 +193,7 @@ def _observe_templates(
 
 
 def _observe_mappings(
-    base: str, header: str, mappings: tuple[object, ...]
+    base: str, header: str, ca_cert_path: str, mappings: tuple[object, ...]
 ) -> tuple[dict[str, str], ...]:
     """Observe every declared index mapping."""
 
@@ -201,7 +203,7 @@ def _observe_mappings(
     payload = curl_json(
         f"{base}/{names}/_mapping",
         auth_header=header,
-        insecure=True,
+        ca_cert_path=ca_cert_path,
         timeout=30,
     )
     return tuple(

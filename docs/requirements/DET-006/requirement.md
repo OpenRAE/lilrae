@@ -11,6 +11,13 @@ updated_at: 2026-05-03T03:24:20.586939Z
 
 # DET-006: Portable Detection Rule Formats
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/DET-006/requirement.md).
+
+
 ## Statement
 
 Detection rules shall be expressible in portable, vendor-neutral formats (at minimum Sigma for log-based detections, YARA for file/memory indicators, and Snort/Suricata-compatible format for network signatures), enabling rule sharing and cross-platform use.

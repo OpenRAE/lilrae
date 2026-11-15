@@ -13,6 +13,14 @@ decisions in ADR-008 remain in force.
 
 2026-10-30
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [defensive posture](../components/default-defensive-posture.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 ADR-008 added TheHive 5 for case management and Cortex for observable

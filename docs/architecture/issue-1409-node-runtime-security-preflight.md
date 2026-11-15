@@ -1,5 +1,13 @@
 # Issue #1409 Node Runtime Security Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1409-node-runtime-security-preflight.md).
+Its last recorded file change before this rewrite was `ad4b7c6a363c`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The supplied GitHub issue is the delivery contract. This note fixes the
 architecture and verification boundaries before implementation; it is not an
 implementation plan. No new ADR is needed: ADR-003 owns the shared MCP HTTP

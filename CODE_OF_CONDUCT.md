@@ -1,37 +1,30 @@
 # Code of Conduct
 
+Use these rules when participating in project spaces.
+
 ## Expected Behavior
 
-Participants are expected to keep discussion technical, concrete, and
-respectful. Good-faith disagreement about architecture, security tradeoffs,
-lab fidelity, documentation, and implementation details is welcome.
+Keep discussion technical, specific, and respectful.
+Good-faith disagreement about architecture, security, lab fidelity, documentation, and implementation is welcome.
 
-Expected behavior includes:
-
-- focusing criticism on ideas, code, evidence, and project goals
-- giving enough context for others to understand a concern
-- accepting that maintainers may reject changes that do not fit the project
-- avoiding personal attacks, harassment, and discriminatory language
-- not publishing private information without permission
-- not using project spaces to coordinate unauthorized activity
+- Criticize ideas, code, evidence, and project goals.
+- Give enough context to explain a concern.
+- Accept that maintainers may reject changes that do not fit the project.
+- Avoid personal attacks, harassment, and discriminatory language.
+- Get permission before publishing private information.
+- Do not use project spaces to coordinate unauthorized activity.
 
 ## Scope
 
-This code of conduct applies to project spaces, including issues, pull
-requests, discussions, documentation contributions, and other repository-linked
-collaboration.
+Apply these rules in issues, PRs, discussions, documentation contributions, and other repository-linked collaboration.
 
 ## Reporting
 
-Report conduct concerns privately to the maintainer through the contact path
-listed on Brad Edwards' GitHub profile.
-
-Reports will be handled as practically and fairly as possible, including
-removing comments, closing threads, declining contributions, or blocking
-participants when needed.
+Report concerns privately through the contact path on [Brad Edwards' profile](https://github.com/Brad-Edwards).
+Maintainers handle reports as fairly and practically as possible.
+They can remove comments, close threads, decline contributions, or block participants when needed.
 
 ## Attribution
 
-This document is intentionally minimal and project-specific. It is informed by
-common open-source conduct policies, including the Contributor Covenant, but it
-is not a verbatim copy.
+This project-specific policy draws on common open-source conduct policies, including the Contributor Covenant.
+It is not a verbatim copy.

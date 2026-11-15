@@ -1,5 +1,13 @@
 # Issue #1413 Configured Pack Source Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1413-configured-pack-source-preflight.md).
+Its last recorded file change before this rewrite was `137169cebb8a`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note guides [issue #1413](https://github.com/OpenRAE/lilrae/issues/1413),
 which blocks #1220. It records design boundaries, not an implementation plan or
 implemented support. The issue is the delivery contract; no requirement is

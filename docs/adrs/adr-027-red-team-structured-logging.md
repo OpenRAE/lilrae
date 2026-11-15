@@ -13,10 +13,7 @@ accepted (amended 2026-05-17 by [ADR-033](adr-033-agent-reasoning-trace-boundary
 The SIEM-transport portion of this ADR (rsyslog-to-Wazuh forwarding
 from the Kali container, Wazuh-agent-on-Kali ingestion, and the
 `kali_redteam_rules.xml` decoder loaded by the Wazuh manager) is
-**superseded by ADR-033** under the non-contamination principle. Red
-activity must not bleed into the blue defensive stack's awareness via
-the SIEM, because that injection inflates blue's artificial picture
-of red and contaminates purple-loop experiments.
+**superseded by ADR-033** under the non-contamination principle. Red activity must not enter blue awareness through attacker-authored SIEM logs. Such injection supplies artificial knowledge and contaminates the experiment.
 
 What stays from this ADR is **the OCSF schema work**:
 
@@ -68,11 +65,17 @@ record must emit `status_id=0` / `status="Unknown"` even when the raw-mode SSH
 result contains `exit_code: 0`.
 
 This keeps the common MCP session layer as the source of truth for execution
-mode and keeps `mcp-red` as a best-effort observer. Do not duplicate the common
-session mode rules in `mcp-red`, do not parse session ids or query session state
-from the logger, and do not let OCSF logging failures affect tool execution.
+mode and keeps `mcp-red` as a best-effort observer. The common layer owns session-mode rules. The red logger must not parse session IDs or query session state. OCSF failures must not affect command execution.
 
 ---
+
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [capture explanation](../components/red-side-capture-boundary.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
 
 ## Context
 
@@ -113,20 +116,12 @@ Implementations must:
   not invent competing labels.
 - Emit a generic OCSF Process Activity record for unclassified commands rather
   than failing command execution or dropping the event entirely.
-- Make SIEM logging best-effort. Classification, extraction, serialization, or
-  transport failures must be visible on stderr/telemetry but must not prevent
-  the requested MCP command from running or returning its result.
-- Reuse the shared TypeScript redaction policy from
-  `mcp/aptl-mcp-common/src/redaction.ts` at every serialization boundary that
-  can contain command lines, outputs, errors, usernames, tokens, passwords,
-  cookies, API keys, or private key material.
+- Make SIEM logging best-effort. Classification, extraction, serialization, and transport failures must remain visible through stderr or telemetry. They must not prevent command execution or result delivery.
+- `mcp/aptl-mcp-common/src/redaction.ts` owns shared serialization redaction. It covers commands, outputs, errors, usernames, tokens, passwords, cookies, API keys, and private keys.
 
 ## Guardrails
 
-- Do not log secret values to SIEM. For credential-oriented commands, record
-  credential type, username/account when safe, and redaction markers or hashes
-  where needed for correlation; do not preserve plaintext passwords, bearer
-  tokens, cookies, API keys, private keys, or wordlist contents.
+- Do not log secret values to SIEM. Credential-oriented records can name credential types and safe account identities. Correlation can use markers or hashes. Plaintext secrets, replayable tokens, private keys, and wordlist contents must not be kept.
 - Do not duplicate the `SeverityId` concept with incompatible numeric values.
   If TypeScript needs constants, name them as OCSF severity IDs and keep their
   values aligned to the Python enum.

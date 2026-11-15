@@ -11,6 +11,13 @@ updated_at: 2026-07-20T03:49:54.664825Z
 
 # EXP-002: ACES Experiment Specification Admission and Trial Planning
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/EXP-002/requirement.md).
+
+
 ## Statement
 
 APTL shall consume ACES experiment-authoring-input-v1 specifications and their referenced experiment-task-v1, capture-spec, and scenario artifacts through published ACES contract APIs. Admission shall validate closed-world structure, ACES semantic invariants, artifact identities and digests, supported contract versions, apparatus constraints, and backend capabilities before expanding the run allocation into a deterministic immutable trial plan with stable run identities, condition assignments, stochastic controls, and execution controls. APTL shall not define a private experiment protocol, task, study, or analysis schema.

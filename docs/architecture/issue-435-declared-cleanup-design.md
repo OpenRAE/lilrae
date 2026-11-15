@@ -1,5 +1,11 @@
 # Declared native cleanup
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-435-declared-cleanup-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 ## Ownership
 
 RAES owns trial progression, cancellation, retries, and the operation ledger.
@@ -26,17 +32,21 @@ Named volumes require their own exact receipt and declared boundary.
 The service follows declared dependency order with `graphlib.TopologicalSorter`.
 Failed prerequisites prevent dependent effects.
 Independent obligations can still run.
+
 Each obligation keeps its authored timeout.
 The primary trial outcome remains separate from cleanup status.
 Only fresh native absence checks can establish successful destruction.
+
 Missing or unreadable authority never establishes absence.
 
 The native adapter uses existing Docker transport and receipt validation.
 It checks ownership before observation and removal.
 It removes containers by native ID without an implicit volume flag.
+
 It removes networks and volumes only through their exact bound receipts.
 It quiesces recorded creation before destructive work.
 Unresolved creation or incomplete descendant coverage prevents destructive work.
+
 The caller must select the complete attempt when quiescing its producers.
 The adapter refuses an incomplete attempt selection before effects.
 
@@ -45,17 +55,21 @@ The adapter refuses an incomplete attempt selection before effects.
 The runtime calls capture before destroy and declared cleanup.
 The native service does not replace that order or collect evidence after removal.
 It writes bounded native readback as content-addressed evidence in the configured run store.
+
 It publishes immutable RAES evidence records and cleanup receipts before archival sealing.
 The receipt binds the plan, entry, run, execution attempt, and native scope.
 Receipt evidence includes residual references and project-qualified recovery commands.
+
 Raw inspect output, daemon errors, credentials, and environment values are excluded.
 
 The runtime ledger retains interrupted operations.
 Existing native receipts retain resource authority across process death.
 A repeated idempotent cleanup checks native state again.
+
 A prior successful receipt does not authorize a replacement object.
 Failed receipts remain immutable.
 Recovery produces a separate receipt with new observations.
+
 Publication failure prevents a successful return.
 No cleanup service changes a sealed archive.
 
@@ -89,9 +103,11 @@ The service adds no listener, credential lookup, external service, or new ledger
 A core protocol separates the RAES adapter from the Docker adapter.
 Composition injects the native operation owner, run store, and clocks.
 No new mixin, registry, schema, lifecycle loop, or record policy is needed.
+
 The manifest declares only installed cleanup capabilities.
 The existing manifest validators and architecture checks remain authoritative.
 No new policy-as-code mechanism or ADR is required.
+
 ADR-029, ADR-050, ADR-055, and ADR-064 retain their existing decisions.
 
 Targeted tests cover lifecycle triggers, ordering, failure, interruption, repetition,

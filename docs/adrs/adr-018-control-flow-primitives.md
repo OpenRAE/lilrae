@@ -8,9 +8,15 @@ accepted
 
 2026-04-01
 
+## Applicability
+
+This record explains control-flow additions to the earlier local SDL.
+[ADR-035](adr-035-raes-sdl-adoption.md) later assigns the portable language to RAES.
+The [SDL guide](../sdl/index.md) links current contracts.
+
 ## Context
 
-[ADR-016](adr-016-workflows-targetable-subobjects-and-enum-variables.md) introduced declarative workflows to the SDL with four step types: `objective`, `if`, `parallel`, and `end`. The [limitations document](../sdl/limitations.md) identified loops, error recovery, and richer conditional branching as the primary remaining control flow gaps, citing CACAO v2.0 workflow types as a precedent.
+[ADR-016](adr-016-workflows-targetable-subobjects-and-enum-variables.md) introduced declarative workflows to the SDL with four step types: `objective`, `if`, `parallel`, and `end`. The [limitations document](../sdl/limitations.md) identified loops, error recovery, and conditional branching as remaining gaps. It cited CACAO v2.0 workflow types as a precedent.
 
 Real attack scenarios involve retry-with-variation loops (for example, credential spraying with different wordlists), error recovery paths (for example, falling back to a different exploit when the primary one fails), and branching decisions based on whether a prior step succeeded or failed. The existing `if` predicate could reference conditions, metrics, and objectives, but could not reference the outcome of a previously executed workflow step.
 
@@ -43,7 +49,7 @@ Optional fields: `next` (step after the loop exits), `max-iterations` (positive 
 
 `WorkflowPredicate` gains a `step-outcomes` field: a list of step names whose success/failure outcome the predicate references. This allows `if` and `while` predicates to branch based on whether a prior objective step succeeded or failed, closing the "conditionals based on action outcomes" requirement.
 
-Step outcome references are validated against the step names in the same workflow but do not produce external resource addresses in the compiler since they are internal workflow state.
+Outcome references must name steps in the same workflow. They remain internal workflow state and do not create external resource addresses.
 
 ## Consequences
 
@@ -57,7 +63,7 @@ Step outcome references are validated against the step names in the same workflo
 ### Negative
 
 - The workflow surface grows again, increasing validation and documentation surface area.
-- `while` iteration semantics are carried by the node rather than the graph structure, which means static analysis tools cannot reason about loop termination from the graph alone.
+- `while` the node carries iteration semantics instead of the graph. Static analysis therefore cannot determine loop termination from graph structure alone.
 - `max-iterations` is optional; unbounded loops are the author's responsibility.
 
 ### Risks

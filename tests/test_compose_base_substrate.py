@@ -421,7 +421,6 @@ def test_start_base_container_can_retain_the_provider_image_command(tmp_path):
         image_ref="aptl/generic-samba-ad-base:latest",
         runs_services=False,
         use_image_command=True,
-        backend_run_capabilities=("SYS_ADMIN",),
     )
 
     with patch("subprocess.run") as mock_run:
@@ -436,7 +435,8 @@ def test_start_base_container_can_retain_the_provider_image_command(tmp_path):
     argv = run_call.args[0]
     image_index = argv.index("aptl/generic-samba-ad-base:latest")
     assert argv[image_index:] == ["aptl/generic-samba-ad-base:latest"]
-    assert argv[image_index - 2 : image_index] == ["--cap-add", "SYS_ADMIN"]
+    # Issue #976: the Samba provider adds no capability.
+    assert "--cap-add" not in argv
 
 
 def test_start_base_container_with_init_still_carries_the_label(tmp_path):
@@ -1455,15 +1455,14 @@ class TestBaseContainerReuseRejectsDrift:
         )
 
     def _provider_spec(self) -> BaseContainerSpec:
-        # A backend-selected provider substrate (the Samba AD base) carries its
-        # own measured capability minimum, separate from any authored grant.
+        # A backend-selected provider substrate (the Samba AD base). Since
+        # issue #976 it adds no capability of its own.
         return BaseContainerSpec(
             node_address="provision.node.ad",
             container_name="aptl-ad",
             image_ref="aptl/generic-samba-ad-base:latest",
             runs_services=False,
             use_image_command=True,
-            backend_run_capabilities=("SYS_ADMIN",),
         )
 
     def _provider_inspect(self, cap_add):
@@ -1471,10 +1470,10 @@ class TestBaseContainerReuseRejectsDrift:
         info["HostConfig"]["CapAdd"] = cap_add
         return info
 
-    def test_a_backend_selected_capability_is_expected_state(self, tmp_path):
+    def test_a_provider_without_added_capabilities_is_expected_state(self, tmp_path):
         backend = _backend(tmp_path)
         backend._raw_container_inspect = MagicMock(
-            return_value=self._provider_inspect(["CAP_SYS_ADMIN"])
+            return_value=self._provider_inspect(None)
         )
 
         assert backend._base_container_already_realized(
@@ -1484,14 +1483,14 @@ class TestBaseContainerReuseRejectsDrift:
     @pytest.mark.parametrize(
         "cap_add",
         [
-            pytest.param(None, id="backend-grant-missing"),
-            pytest.param(["SYS_ADMIN", "NET_ADMIN"], id="extra-grant"),
+            pytest.param(["CAP_SYS_ADMIN"], id="stale-pre-976-grant"),
+            pytest.param(["NET_ADMIN"], id="extra-grant"),
         ],
     )
     def test_capability_drift_is_checked_on_plain_nodes_too(self, tmp_path, cap_add):
         # The capability set is compared for every base container, not only
-        # init-capable ones: a provider substrate's grant is realized state
-        # APTL chose, so anything more or less is a different policy.
+        # init-capable ones: a provider container that holds any added
+        # capability, such as the grant retired by #976, is a different policy.
         backend = _backend(tmp_path)
         backend._raw_container_inspect = MagicMock(
             return_value=self._provider_inspect(cap_add)

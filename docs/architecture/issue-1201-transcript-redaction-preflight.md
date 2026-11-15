@@ -1,5 +1,13 @@
 # Issue #1201: transcript evidence redaction preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1201-transcript-redaction-preflight.md).
+Its last recorded file change before this rewrite was `df2f4e313887`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 ## Decision and boundaries
 
 The TechVault adapter owns a new retained transcript payload version. Render a

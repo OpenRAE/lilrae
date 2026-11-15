@@ -8,17 +8,23 @@ accepted
 
 2026-03-29
 
+## Applicability
+
+This record explains declarative objective semantics in the earlier local SDL.
+[ADR-035](adr-035-raes-sdl-adoption.md) later assigns the portable language to RAES.
+The [SDL guide](../sdl/index.md) links the current owner instead of defining another local schema.
+
 ## Context
 
-[ADR-014](adr-014-scenario-description-language.md) established the APTL SDL as a backend-agnostic specification language grounded in the Open Cyber Range (OCR) SDL and extended with additional sections adapted from other precedents.
+[ADR-014](adr-014-scenario-description-language.md) established a deployment-independent SDL from Open Cyber Range and other existing precedents.
 
-During initial implementation, the branch preserved OCR's scoring pipeline (`conditions -> metrics -> evaluations -> TLOs -> goals`) in the SDL, but treated APTL-style objectives primarily as runtime concerns because the legacy implementation had mixed together:
+The first implementation kept the OCR scoring pipeline: `conditions -> metrics -> evaluations -> TLOs -> goals`. It left APTL objectives in runtime because the earlier implementation mixed:
 
 - experiment meaning
 - backend-specific validation probes
 - scenario engine behavior
 
-That cleanup removed legacy runtime coupling, but it left an architectural gap: the SDL could describe topology, orchestration, agents, and scoring criteria, yet it lacked a first-class way to declare who was trying to do what, against which targets, during which exercise window, and by what success semantics.
+The separation removed runtime coupling but left no explicit objective model. Authors still needed to state actors, targets, exercise windows, and success semantics.
 
 Research and precedent review pointed in the same direction:
 
@@ -52,7 +58,7 @@ It does **not** encode backend-specific validation probes such as Wazuh queries,
 
 ### Relationship to ADR-014
 
-This ADR refines ADR-014's SDL boundary by making declarative objectives part of the language itself while preserving ADR-014's backend-agnostic separation between specification and deployment/runtime mechanics.
+This ADR adds declarative objectives to ADR-014's language boundary. It keeps specification separate from deployment and runtime mechanics.
 
 ## Consequences
 

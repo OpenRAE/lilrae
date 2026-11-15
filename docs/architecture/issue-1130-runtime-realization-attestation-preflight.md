@@ -1,5 +1,13 @@
 # Issue #1130 Runtime Realization Attestation Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1130-runtime-realization-attestation-preflight.md).
+Its last recorded file change before this rewrite was `274234628ff6`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Issue #1130, including folded-in #1128, is the single delivery contract and PR.
 Child attribution, receipts, supervision, and teardown are in scope alongside
 runtime reporting. This note records architecture boundaries, not an

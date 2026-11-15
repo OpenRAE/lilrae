@@ -11,6 +11,13 @@ updated_at: 2026-03-21T06:50:33.807675Z
 
 # SYS-010: Notebook-Style Web User Interface
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/SYS-010/requirement.md).
+
+
 ## Statement
 
 The system shall provide an interactive workbench web UI (SvelteKit frontend + FastAPI backend) that unifies scenario execution, terminal access, and container management in a scrollable document-style interface, visually distinct from enterprise SOC dashboards. SIEM integration is limited to automated objective validation (checking whether expected alerts fired for a scenario step), not open-ended query building.

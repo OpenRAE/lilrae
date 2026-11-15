@@ -14,16 +14,11 @@ or a legacy Compose file.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from ipaddress import IPv4Network, IPv6Network, ip_address, ip_network
 from urllib.parse import urlparse
 
-from pathlib import Path
 
-from aptl_techvault.evidence.techvault_enrollment_baseline import (
-    enrollment_baseline,
-    record_enrollment_baseline,
-)
 from aptl_techvault.evidence.techvault_misp_readiness import AdmittedMispState
 from aptl_techvault.evidence.techvault_readiness_probes import (
     agent_identity,
@@ -66,16 +61,19 @@ def misp_readiness(backend: object, realization: object) -> Mapping[str, object]
     )
 
 
+EnrollmentRetainer = Callable[[Mapping[str, str]], Mapping[str, str] | None]
+
+
 def wazuh_agent_readiness(
     execute: object,
     realization: object,
-    scenario_root: Path,
+    retain_enrollment_ids: EnrollmentRetainer | None,
     start_iso: str,
     end_iso: str,
 ) -> Mapping[str, object] | None:
     """Correlate each declared endpoint agent with one active manager member."""
 
-    context = _wazuh_readiness_context(execute, realization, scenario_root)
+    context = _wazuh_readiness_context(execute, realization, retain_enrollment_ids)
     if context is None:
         return None
     declared, roster, recorded = context
@@ -101,30 +99,32 @@ def wazuh_agent_readiness(
 def _wazuh_readiness_context(
     execute: object,
     realization: object,
-    scenario_root: Path,
+    retain_enrollment_ids: EnrollmentRetainer | None,
 ) -> (
     tuple[
         dict[str, tuple[str, tuple[str, ...]]],
         tuple[tuple[str, str, str], ...],
-        dict[str, str],
+        Mapping[str, str],
     ]
     | None
 ):
-    """Load the declared agents, manager roster, and immutable id baseline."""
+    """Load the declared agents, manager roster, and retained id baseline.
 
-    context = None
+    Core owns the baseline record. Only the establishing preparation capture
+    can add the observed ids; every other context only reads. The record is
+    read again after the observation, so in the establishing capture the ids it
+    retained are the baseline that capture compares with. A fresh lab can thus
+    pass on its first start, and every later capture compares with those ids.
+    """
+
     declared = declared_endpoint_agents(realization)
     roster = wazuh_roster(execute) if declared else None
-    if declared and roster is not None:
-        observed_ids = _observed_agent_ids(execute, declared)
-        baseline_ready = not observed_ids or record_enrollment_baseline(
-            scenario_root, observed_ids
-        )
-        if baseline_ready:
-            recorded = enrollment_baseline(scenario_root)
-            if recorded is not None:
-                context = (declared, roster, recorded)
-    return context
+    if roster is None or retain_enrollment_ids is None:
+        return None
+    if retain_enrollment_ids(_observed_agent_ids(execute, declared)) is None:
+        return None
+    recorded = retain_enrollment_ids({})
+    return None if recorded is None else (declared, roster, recorded)
 
 
 def _wazuh_host_readiness(
@@ -133,7 +133,7 @@ def _wazuh_host_readiness(
     enrollment_name: str,
     sources: tuple[str, ...],
     roster: tuple[tuple[str, str, str], ...],
-    recorded: dict[str, str],
+    recorded: Mapping[str, str],
     observation_window: tuple[str, str],
 ) -> dict[str, object] | None:
     """Correlate one host with its unique member, telemetry, and baseline."""

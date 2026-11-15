@@ -2,7 +2,7 @@
 
 Split out of ``runstore.py`` (which owns the :class:`LocalRunStore` filesystem
 implementation) so the module stays focused: this file holds the id/path
-validators, the create-once canonicalization + secret-invariant helpers, the
+validators, the create-once canonicalization helpers, the
 per-run lock registry, the create-once error taxonomy, the cross-process
 run-dir resolution, and the owner-only mode helpers. ``runstore`` re-imports
 and re-exports these, so existing ``from aptl.core.runstore import ...`` call
@@ -23,7 +23,6 @@ from typing import Any, TypedDict
 import rfc8785
 
 from aptl.utils.logging import get_logger
-from aptl.utils.redaction import redact
 
 log = get_logger("runstore")
 
@@ -77,17 +76,6 @@ _LOCK_REGISTRY: dict[tuple[str, str, int], _HeldLock] = {}
 _LOCK_REGISTRY_GUARD = threading.Lock()
 
 
-class SecretInvariantError(ValueError):
-    """Raised by :meth:`LocalRunStore.create_json_once` when applying the
-    shared secret-classification policy (:mod:`aptl.utils.redaction`) would
-    change the payload.
-
-    ADR-047 "Persistence and state model": the create-once operation must
-    preserve semantic bytes exactly. It must never silently persist a
-    payload that differs from what was approved for execution, so a
-    payload containing identity-bearing secret-shaped content is rejected
-    outright rather than redacted-and-written.
-    """
 
 
 class RunStoreConflictError(ValueError):
@@ -176,36 +164,11 @@ def _canonicalize_payload(payload: object) -> tuple[bytes, object]:
     return rfc8785.dumps(normalized), normalized
 
 
-def _assert_no_secret_drift(normalized: object) -> None:
-    """Reject ``normalized`` if the shared :func:`redact` policy would
-    change it at all (ADR-047 create-once secret invariant).
-
-    Reuses the exact production :func:`redact` — the same classification
-    :func:`aptl.utils.redaction.is_sensitive_key` and
-    :func:`aptl.utils.redaction.is_secret_shaped_value` are built from — so
-    this can never silently drift out of lockstep with what actually gets
-    redacted elsewhere.
-    """
-    if redact(normalized) != normalized:
-        raise SecretInvariantError(
-            "create_json_once payload contains identity-bearing content "
-            "the shared secret-classification policy (aptl.utils.redaction) "
-            "would change; rejecting rather than silently persisting a "
-            "payload that differs from what was approved for execution"
-        )
 
 
 def _safe_default(obj: object) -> str:
-    """``json.dumps`` ``default`` hook that stringifies AND redacts.
-
-    Plain ``default=str`` would let any non-JSON-serializable value
-    (an exception, a custom object, a ``Path`` whose ``__str__``
-    contains an unexpected token) reach disk after :func:`redact`
-    has already returned the structure — bypassing the redaction
-    contract. Routing the produced string back through ``redact``
-    closes that escape hatch (ADR-029).
-    """
-    return redact(str(obj))
+    """Serialize presentation values without rewriting scenario content."""
+    return str(obj)
 
 
 def _restrict_fd(fd: int) -> None:

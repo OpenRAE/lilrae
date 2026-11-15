@@ -1,5 +1,11 @@
 # Issue #1372: Capture Spec Version Design
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1372-capture-spec-version-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 This design pins each admitted capture spec version in the run traceability.
 It refines the [preflight](issue-1372-capture-spec-version-preflight.md).
 [ADR-047](../adrs/adr-047-raes-experiment-admission-and-trial-plan-boundary.md)

@@ -24,6 +24,10 @@ Security: the PR title is untrusted GitHub event data. The CLI reads it from
 a shell-interpolated argument, and never dumps the event payload or
 environment. It is intentionally stdlib-only so the CI job runs on a bare
 ``python`` interpreter with no third-party dependencies.
+
+A ``merge_group`` event (the ``dev`` merge queue, ADR-068) carries no pull
+request. The checker gets the pull request number from the queue ref, reads the
+pull request from the GitHub API, and validates its current title.
 """
 
 from __future__ import annotations
@@ -33,8 +37,10 @@ import json
 import os
 import re
 import sys
-from collections.abc import Sequence
+import urllib.request
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 # --- Policy data (the extensibility seam: parameterize, do not hard-fork) ---
 
@@ -69,6 +75,12 @@ PROMOTION_REPOSITORY = "OpenRAE/lilrae"
 PROMOTION_BASE_REF = "main"
 PROMOTION_HEAD_REF = "dev"
 PROMOTION_PLATFORM_TITLE = "Dev"
+
+#: GitHub names each merge group ref for its queue base and its pull request.
+MERGE_GROUP_REF = re.compile(
+    r"refs/heads/gh-readonly-queue/(?P<base>.+)/pr-(?P<number>[1-9][0-9]*)-[0-9a-f]{40}"
+)
+GITHUB_API = "https://api.github.com"
 
 
 @dataclass(frozen=True)
@@ -195,8 +207,77 @@ def is_allowed_platform_promotion_title(title: str) -> bool:
     return title == PROMOTION_PLATFORM_TITLE
 
 
+def merge_group_pr_number(merge_group: object) -> int | None:
+    """Return the pull request number of a merge group, or ``None``.
+
+    The head ref must name the same base branch as ``base_ref``.
+    """
+    if not isinstance(merge_group, dict):
+        return None
+    head_ref = merge_group.get("head_ref")
+    base_ref = merge_group.get("base_ref")
+    if not isinstance(head_ref, str) or not isinstance(base_ref, str):
+        return None
+    match = MERGE_GROUP_REF.fullmatch(head_ref)
+    if match is None or f"refs/heads/{match['base']}" != base_ref:
+        return None
+    return int(match["number"])
+
+
+def fetch_pull_request(
+    repository: str,
+    number: int,
+    token: str | None,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> dict[str, object]:
+    """Read one pull request from the GitHub REST API."""
+    request = urllib.request.Request(
+        f"{GITHUB_API}/repos/{repository}/pulls/{number}",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            **({"Authorization": f"Bearer {token}"} if token else {}),
+        },
+    )
+    with opener(request, timeout=30) as response:
+        return json.load(response)
+
+
+def _merge_group_pull_request(
+    merge_group: object,
+    opener: Callable[..., Any],
+) -> dict[str, object] | None:
+    """Resolve the queued pull request, or ``None`` when it cannot be trusted."""
+    number = merge_group_pr_number(merge_group)
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    if number is None or not re.fullmatch(r"[\w.-]+/[\w.-]+", repository):
+        print(
+            "pr-title-guard: merge group ref or repository is not recognized.",
+            file=sys.stderr,
+        )
+        return None
+    try:
+        pull_request = fetch_pull_request(
+            repository, number, os.environ.get("GITHUB_TOKEN"), opener
+        )
+    except (OSError, ValueError) as exc:
+        print(
+            f"pr-title-guard: could not read pull request #{number}: {exc}",
+            file=sys.stderr,
+        )
+        return None
+    if not isinstance(pull_request, dict) or pull_request.get("number") != number:
+        print(
+            f"pr-title-guard: API response is not pull request #{number}.",
+            file=sys.stderr,
+        )
+        return None
+    return pull_request
+
+
 def _resolve_title(
     args: argparse.Namespace,
+    opener: Callable[..., Any] = urllib.request.urlopen,
 ) -> tuple[str | None, dict[str, object] | None]:
     """Resolve title and event without shell-interpolating untrusted data.
 
@@ -223,6 +304,11 @@ def _resolve_title(
                 file=sys.stderr,
             )
             return None, None
+        if "merge_group" in event:
+            pull_request = _merge_group_pull_request(event["merge_group"], opener)
+            if pull_request is None:
+                return None, None
+            event = {"pull_request": pull_request}
         pull_request = event.get("pull_request")
         title = pull_request.get("title") if isinstance(pull_request, dict) else None
         if not isinstance(title, str):
@@ -236,7 +322,10 @@ def _resolve_title(
     return os.environ.get("PR_TITLE"), None
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> int:
     parser = argparse.ArgumentParser(
         description="Repository-side PR title guard.",
     )
@@ -252,7 +341,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    title, event = _resolve_title(args)
+    title, event = _resolve_title(args, opener)
     if title is None:
         # Fail closed: a pull_request event should always carry a title.
         print(

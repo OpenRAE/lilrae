@@ -1,5 +1,13 @@
 # Issue #1603: Released RAES dependency adoption
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1603-raes-11-module-locations-preflight.md).
+Its last recorded file change before this rewrite was `fda638221fcd`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The maintainer selected RAES 10.6.0 and environment packs 7.2.2.
 These releases replace the originally anticipated RAES 11 target.
 Both releases are published on PyPI.
@@ -28,7 +36,7 @@ The structural adapter fixture must accept the same release set.
 - Keep credential environment grants, private files, bounded process controls, and redaction.
 - Preserve canonical storage identities and immutable archive seals in `LocalRunStore`.
 - Follow [ADR-064](../adrs/adr-064-layered-architecture-and-code-conventions.md) for dependency directions.
-- Follow [ADR-066](../adrs/adr-066-runtime-readback-reports-realized-state.md) for observed runtime state.
+- Follow [ADR-071](../adrs/adr-071-runtime-readback-reports-realized-state.md) for observed runtime state.
 
 Do not restore the removed planning, ordering, or content-attestation bridge.
 Do not add local schema, digest, or validator substitutes.

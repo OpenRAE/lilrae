@@ -105,6 +105,92 @@ def test_an_unavailable_misp_probe_reports_no_evidence():
 
     assert result.status is CollectorStatus.SOURCE_UNAVAILABLE
     assert result.chunks == ()
+    assert result.observer_effect is None
+
+
+_MISP_EFFECT = "one MISP readiness event created, read, and deleted"
+_MISP_ATTEMPT = (
+    "one MISP readiness event write attempted; creation and deletion unconfirmed"
+)
+
+
+@pytest.mark.parametrize(
+    ("payload", "status", "effect"),
+    [
+        (
+            {**_READY_MISP, "api_write_attempted": True, "api_write_completed": True},
+            CollectorStatus.OK,
+            _MISP_EFFECT,
+        ),
+        (
+            {"api_write_attempted": True, "api_write_completed": True},
+            CollectorStatus.MID_RUN_LOSS,
+            _MISP_EFFECT,
+        ),
+        (
+            {"api_write_attempted": True, "api_write_completed": False},
+            CollectorStatus.MID_RUN_LOSS,
+            _MISP_ATTEMPT,
+        ),
+    ],
+)
+def test_the_misp_source_claims_only_the_write_effect_it_observed(
+    payload, status, effect
+):
+    # A started write is a lost observation, not a source that never started.
+    result = _misp_source(payload).fetch(_START, _END)
+
+    assert result.status is status
+    assert result.observer_effect == effect
+
+
+_NOT_STARTED = None
+_WRITE_UNCONFIRMED = {"api_write_attempted": True, "api_write_completed": False}
+_WRITE_COMPLETED = {"api_write_attempted": True, "api_write_completed": True}
+
+
+@pytest.mark.parametrize(
+    ("failing_step", "failure", "expected"),
+    [
+        (0, 1, _NOT_STARTED),
+        # The API step failed: creation and the delete are both unconfirmed.
+        (1, 1, _WRITE_UNCONFIRMED),
+        (1, ValueError("runtime-operation-failed"), _WRITE_UNCONFIRMED),
+        (1, OSError("transport-canary"), _WRITE_UNCONFIRMED),
+        # Core refused the API step before it called the backend.
+        (1, ValueError("runtime-node-not-admitted"), _NOT_STARTED),
+        # A later step failed after the API step exited 0 with its delete.
+        (3, 1, _WRITE_COMPLETED),
+        (3, ValueError("runtime-operation-failed"), _WRITE_COMPLETED),
+        (3, ValueError("runtime-operation-invalid"), _WRITE_COMPLETED),
+    ],
+)
+def test_the_misp_probe_reports_how_far_the_api_write_got(
+    failing_step, failure, expected
+):
+    from aptl_techvault.evidence.techvault_readiness_probes import (
+        misp_readiness_probe,
+    )
+
+    calls = []
+
+    def execute(name, cmd, payload, *, timeout):
+        calls.append(name)
+        if len(calls) - 1 != failing_step:
+            return _Result("probe_ok=true\n", 0)
+        if isinstance(failure, BaseException):
+            raise failure
+        return _Result("probe_ok=true\n", failure)
+
+    observed = misp_readiness_probe(
+        execute,
+        canonical_url="https://misp.techvault.local",
+        canonical_host="misp.techvault.local",
+        misp_address="172.20.0.135",
+        verifier_container="aptl-misp",
+    )
+
+    assert observed == expected
 
 
 def test_admitted_cache_policy_comes_from_misps_bound_cache_node():
@@ -489,49 +575,6 @@ def test_a_failed_telemetry_probe_is_not_read_as_no_events():
     assert telemetry_events(execute, "001", _START, _END) is None
 
 
-def test_the_enrollment_baseline_is_recorded_once_and_not_overwritten(tmp_path):
-    """Overwriting it would erase the evidence a later comparison depends on."""
-
-    from aptl_techvault.evidence.techvault_enrollment_baseline import (
-        enrollment_baseline,
-        record_enrollment_baseline,
-    )
-
-    record_enrollment_baseline(tmp_path, {"db": "001"})
-    assert enrollment_baseline(tmp_path) == {"db": "001"}
-
-    # The agent re-enrolled and now reports a different id.
-    record_enrollment_baseline(tmp_path, {"db": "009", "suricata": "002"})
-
-    assert enrollment_baseline(tmp_path) == {"db": "001", "suricata": "002"}
-
-
-def test_a_missing_baseline_reads_as_no_recorded_identity(tmp_path):
-    from aptl_techvault.evidence.techvault_enrollment_baseline import (
-        enrollment_baseline,
-    )
-
-    assert enrollment_baseline(tmp_path) == {}
-
-
-def test_a_corrupt_baseline_is_not_replaced_with_a_fresh_identity(tmp_path):
-    """Corruption is unknown state, not permission to bless the current id."""
-
-    from aptl_techvault.evidence.techvault_enrollment_baseline import (
-        ENROLLMENT_BASELINE_RELPATH,
-        enrollment_baseline,
-        record_enrollment_baseline,
-    )
-
-    path = tmp_path / ENROLLMENT_BASELINE_RELPATH
-    path.parent.mkdir(parents=True)
-    path.write_text("not-json\n", encoding="utf-8")
-
-    assert enrollment_baseline(tmp_path) is None
-    assert record_enrollment_baseline(tmp_path, {"db": "001"}) is False
-    assert path.read_text(encoding="utf-8") == "not-json\n"
-
-
 def test_a_re_enrolled_agent_does_not_pass_enrollment_preservation(tmp_path):
     """Delete the retained identity and both current views agree on a new id.
 
@@ -540,14 +583,11 @@ def test_a_re_enrolled_agent_does_not_pass_enrollment_preservation(tmp_path):
     regenerated one.
     """
 
-    from aptl_techvault.evidence.techvault_enrollment_baseline import (
-        record_enrollment_baseline,
-    )
     from aptl_techvault.evidence.techvault_native_readiness import (
         wazuh_agent_readiness,
     )
 
-    record_enrollment_baseline(tmp_path, {"db": "001"})
+    _retainer(tmp_path, establish=True)({"db": "001"})
     realization = _one_agent_realization()
 
     def execute(name, _cmd, _payload, timeout=None):
@@ -557,7 +597,7 @@ def test_a_re_enrolled_agent_does_not_pass_enrollment_preservation(tmp_path):
             return _Result("telemetry_event_count=2\n")
         return _Result("agent_id=009\nsources_readable=true\n")
 
-    observed = wazuh_agent_readiness(execute, realization, tmp_path, _START, _END)
+    observed = wazuh_agent_readiness(execute, realization, _retainer(tmp_path), _START, _END)
 
     assert observed is not None
     row = observed["hosts"][0]
@@ -572,14 +612,11 @@ def test_a_re_enrolled_agent_does_not_pass_enrollment_preservation(tmp_path):
 
 
 def test_a_preserved_identity_passes_against_its_recorded_baseline(tmp_path):
-    from aptl_techvault.evidence.techvault_enrollment_baseline import (
-        record_enrollment_baseline,
-    )
     from aptl_techvault.evidence.techvault_native_readiness import (
         wazuh_agent_readiness,
     )
 
-    record_enrollment_baseline(tmp_path, {"db": "001"})
+    _retainer(tmp_path, establish=True)({"db": "001"})
     realization = _one_agent_realization()
 
     def execute(name, _cmd, _payload, timeout=None):
@@ -589,7 +626,7 @@ def test_a_preserved_identity_passes_against_its_recorded_baseline(tmp_path):
             return _Result("telemetry_event_count=2\n")
         return _Result("agent_id=001\nsources_readable=true\n")
 
-    observed = wazuh_agent_readiness(execute, realization, tmp_path, _START, _END)
+    observed = wazuh_agent_readiness(execute, realization, _retainer(tmp_path), _START, _END)
 
     assert observed is not None
     row = observed["hosts"][0]
@@ -605,14 +642,11 @@ def test_a_preserved_identity_passes_against_its_recorded_baseline(tmp_path):
 def test_a_silent_agent_is_not_ready_even_while_connected(tmp_path):
     """`active` says it is talking to the manager, not that it shipped events."""
 
-    from aptl_techvault.evidence.techvault_enrollment_baseline import (
-        record_enrollment_baseline,
-    )
     from aptl_techvault.evidence.techvault_native_readiness import (
         wazuh_agent_readiness,
     )
 
-    record_enrollment_baseline(tmp_path, {"db": "001"})
+    _retainer(tmp_path, establish=True)({"db": "001"})
     realization = _one_agent_realization()
 
     def execute(name, _cmd, _payload, timeout=None):
@@ -622,7 +656,7 @@ def test_a_silent_agent_is_not_ready_even_while_connected(tmp_path):
             return _Result("telemetry_event_count=0\n")
         return _Result("agent_id=001\nsources_readable=true\n")
 
-    observed = wazuh_agent_readiness(execute, realization, tmp_path, _START, _END)
+    observed = wazuh_agent_readiness(execute, realization, _retainer(tmp_path), _START, _END)
 
     assert observed["hosts"][0]["status"] == "active"
     assert observed["hosts"][0]["telemetry_fresh"] is False
@@ -648,7 +682,7 @@ def test_a_duplicate_manager_member_stops_the_observation(tmp_path):
             return _Result("telemetry_event_count=2\n")
         return _Result("agent_id=001\nsources_readable=true\n")
 
-    assert wazuh_agent_readiness(execute, realization, tmp_path, _START, _END) is None
+    assert wazuh_agent_readiness(execute, realization, _retainer(tmp_path), _START, _END) is None
 
 
 class _Source:
@@ -687,6 +721,27 @@ def _one_agent_realization() -> _Realization:
     return _Realization()
 
 
+def _retainer(project_dir, *, establish=False):
+    """Return the core scenario retainer, as the capture context supplies it."""
+
+    from aptl.core.retained_enrollment import scenario_enrollment_retainer
+
+    return scenario_enrollment_retainer(project_dir, establish=establish)
+
+
+def _one_agent_execute(agent_id):
+    def execute(name, _cmd, _payload, timeout=None):
+        if name == "aptl-wazuh-manager":
+            if "agent_control" in _payload:
+                return _Result(
+                    f"   ID: {agent_id}, Name: techvault-db-agent, IP: any, Active\n"
+                )
+            return _Result("telemetry_event_count=2\n")
+        return _Result(f"agent_id={agent_id}\nsources_readable=true\n")
+
+    return execute
+
+
 def test_duplicate_endpoint_agents_on_one_node_fail_declaration_closed():
     from aptl_techvault.evidence.techvault_native_readiness import (
         declared_endpoint_agents,
@@ -715,52 +770,71 @@ def test_the_first_capture_establishes_its_own_baseline(tmp_path):
     """A fresh installation has no identity to compare against yet.
 
     Reporting every host as re-enrolled on the first capture would mean
-    readiness could never succeed once, so the first observation establishes
-    the baseline. Every later capture is then compared against it.
+    readiness could never succeed once, so the establishing preparation capture
+    retains the baseline and compares with it. Every later capture is then
+    compared against it.
     """
 
-    from aptl_techvault.evidence.techvault_enrollment_baseline import (
-        enrollment_baseline,
-    )
     from aptl_techvault.evidence.techvault_native_readiness import (
         wazuh_agent_readiness,
     )
 
-    realization = _one_agent_realization()
-
-    def execute(name, _cmd, _payload, timeout=None):
-        if name == "aptl-wazuh-manager":
-            if "agent_control" in _payload:
-                return _Result("   ID: 001, Name: techvault-db-agent, IP: any, Active\n")
-            return _Result("telemetry_event_count=2\n")
-        return _Result("agent_id=001\nsources_readable=true\n")
-
-    assert enrollment_baseline(tmp_path) == {}
-
-    observed = wazuh_agent_readiness(execute, realization, tmp_path, _START, _END)
+    observed = wazuh_agent_readiness(
+        _one_agent_execute("001"),
+        _one_agent_realization(),
+        _retainer(tmp_path, establish=True),
+        _START,
+        _END,
+    )
 
     assert observed["hosts"][0]["enrollment_preserved"] is True
-    assert enrollment_baseline(tmp_path) == {"db": "001"}
+    assert dict(_retainer(tmp_path)({})) == {"db": "001"}
     result = WazuhAgentReadinessSource(lambda _s, _e: observed, ("db",)).fetch(
         _START, _END
     )
     assert result.status is CollectorStatus.OK
 
 
-def test_the_explicit_reset_clears_the_baseline_it_owns(tmp_path):
-    """Otherwise a legitimate `stop -v` leaves every host permanently failing."""
+def test_measurement_cannot_establish_a_missing_baseline(tmp_path):
+    """Only the establishing preparation capture may create the baseline."""
 
-    from aptl.core.lifecycle_cleanup import clear_wazuh_enrollment_baseline
-    from aptl_techvault.evidence.techvault_enrollment_baseline import (
-        enrollment_baseline,
-        record_enrollment_baseline,
+    from aptl_techvault.evidence.techvault_native_readiness import (
+        wazuh_agent_readiness,
     )
 
-    record_enrollment_baseline(tmp_path, {"db": "001"})
-    assert enrollment_baseline(tmp_path) == {"db": "001"}
+    observed = wazuh_agent_readiness(
+        _one_agent_execute("001"), _one_agent_realization(), _retainer(tmp_path),
+        _START, _END,
+    )
 
-    clear_wazuh_enrollment_baseline(tmp_path)
+    assert observed is None
+    assert _retainer(tmp_path)({}) is None
 
-    assert enrollment_baseline(tmp_path) == {}
-    # Clearing what is already absent is not a failure; the reset is idempotent.
-    clear_wazuh_enrollment_baseline(tmp_path)
+
+def test_measurement_compares_with_the_baseline_without_replacing_it(tmp_path):
+    from aptl_techvault.evidence.techvault_native_readiness import (
+        wazuh_agent_readiness,
+    )
+
+    _retainer(tmp_path, establish=True)({"db": "001"})
+
+    observed = wazuh_agent_readiness(
+        _one_agent_execute("009"), _one_agent_realization(), _retainer(tmp_path),
+        _START, _END,
+    )
+
+    assert observed["hosts"][0]["enrollment_preserved"] is False
+    assert dict(_retainer(tmp_path)({})) == {"db": "001"}
+
+
+def test_readiness_without_a_retainer_reports_no_evidence():
+    from aptl_techvault.evidence.techvault_native_readiness import (
+        wazuh_agent_readiness,
+    )
+
+    assert (
+        wazuh_agent_readiness(
+            _one_agent_execute("001"), _one_agent_realization(), None, _START, _END
+        )
+        is None
+    )

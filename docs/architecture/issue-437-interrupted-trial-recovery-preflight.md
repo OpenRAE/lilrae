@@ -1,5 +1,13 @@
 # Issue #437: Interrupted trial recovery
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-437-interrupted-trial-recovery-preflight.md).
+Its last recorded file change before this rewrite was `5a84a099a1f3`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Architecture guidance, not an implementation plan or a claim of shipped recovery.
 The supplied #437 contract governs scope. Reuse [trial serving](trial-serving.md),
 its cross-cutting gates, and ADR-047/050's released-contract successor clauses.

@@ -1,118 +1,88 @@
-# Releasing aptl
+# Release LilRAE
 
-Releases are automated with [release-please](https://github.com/googleapis/release-please).
-Nobody runs a script, hand-edits the version, or edits `CHANGELOG.md`.
+Use this guide to promote reviewed changes and release the Python package.
+Release Please owns versions and `CHANGELOG.md`. Do not edit either by hand.
+Use the [release contract](reference/release-contract.md) for title rules, baseline files, and publisher identities.
 
 ## Per PR (all contributors / agents)
 
-- **Squash-merge** PRs so the PR title becomes the commit on the branch.
-- The PR title must be a **Conventional Commit** (`<type>: <lowercase subject>`).
-  Bump rules: `feat:` → minor, `fix:` / `perf:` → patch, `feat!:` or a
-  `BREAKING CHANGE:` footer → major (demoted to minor while `0.x`). Other types
-  (`docs`, `chore`, `refactor`, `test`, `ci`, `build`) → no release.
-- Use one Conventional Commit type and scope only; compound titles such as
-  `fix(...) + docs:` are not parseable by release-please.
-- **Do not** edit `CHANGELOG.md` or the version; release-please owns both.
-  Because feature PRs never touch `CHANGELOG.md`, concurrent PRs never conflict
-  on it.
+1. Give the PR one Conventional Commit type and optional scope.
+2. Use a lowercase subject. Do not combine types such as `fix(...) + docs:`.
+3. Deliver feature PRs to `dev` through its squash merge queue.
+4. Keep the repository's squash commit message blank, so the PR title becomes the commit subject.
+5. Do not add a manual changelog or version edit.
+
+[ADR-068](adrs/adr-068-dev-merge-queue.md) explains the queue and release-history constraints.
 
 ## Promoting `dev` to `main`
 
-Feature PRs land on `dev`. Nothing releases until `dev` is promoted to `main`.
+Feature PRs normally land on `dev`.
+For the milestone 44 Go-port exception, follow [CI verification](architecture/ci-verification.md#go-cutover-branch).
 
-Milestone 44 is the exception. Its PRs land on `go-cutover` and use a type
-that does not release. Go port 31 merges `go-cutover` into `dev` with a merge
-commit, so Release Please keeps each commit subject. See
-[CI verification](architecture/ci-verification.md#go-cutover-branch).
+1. Open the promotion PR:
 
-Open the promotion PR with:
+   ```shell
+   make devmain
+   ```
 
-```bash
-make devmain
-```
+2. Confirm its source is `dev`, target is `main`, and title is `chore(main): promote dev`.
+3. Wait for its required checks and obtain the user's approval before merging into `main`.
+4. Merge the promotion with a merge commit. Do not squash it.
 
-That creates a `dev` → `main` PR titled `chore(main): promote dev`. The title is
-fixed rather than free-form because it is unambiguous and `chore` is a
-no-release type, so the promotion never computes a version bump of its own.
-
-GitHub's web and API flows can instead generate the branch title `Dev`. The
-PR-title guard accepts that fallback only when the event identifies the exact
-same-repository `dev` → `main` branch pair. Forks, differently named heads,
-other base branches, and arbitrary titles remain subject to the normal
-Conventional Commit policy.
-
-**Merge the promotion with a merge commit. Do not squash it.** This is the one
-place in the workflow where squashing is wrong. release-please computes the
-version and `CHANGELOG.md` from the Conventional Commit subjects on `main`;
-squashing collapses every feature commit in the batch into a single subject, so
-the release loses its changelog entries and can compute the wrong bump. A merge
-commit preserves each subject underneath.
-
-The merge commit's own subject (`Merge pull request #N from ...`) is not a
-Conventional Commit and does not need to be—release-please reads the feature
-commits it carries, not the merge subject.
-
-Promotion also refreshes repository posture: `.github/workflows/scorecard.yml`
-runs only on pushes to `main`, so the published OpenSSF Scorecard result and the
-README badge do not update until a promotion lands.
+The merge commit preserves feature subjects for Release Please.
+The promotion also triggers the main-branch Scorecard workflow.
+Use the [title reference](reference/release-contract.md#promotion-title) for GitHub's exact `Dev` fallback.
 
 ## How a release happens
 
-1. On merges to `main`, release-please keeps a **release PR** open
-   (`chore(main): release X.Y.Z`) with the computed version bump in
-   `pyproject.toml` and the generated `CHANGELOG.md` section.
-2. Treat the release PR head as the immutable release candidate. Build its
-   wheel and sdist, then have a person complete the
-   [Release Candidate Manual QA](testing/smoke-test-plan.md) against both the
-   exact candidate wheel and a clean checkout of the same commit. Attach or
-   link the completed, redacted record from the release PR. Every row is
-   release-blocking; a changed commit or artifact invalidates the record.
-3. **Merge that release PR only after the manual QA record passes.** It's
-   opened by `GITHUB_TOKEN`. Workflow runs
-   triggered that way are restricted: depending on the repository's Actions
-   settings they may not start at all, or may sit awaiting approval. Either way
-   do not expect the required checks to go green on their own—merge it as an
-   admin, or wire a PAT if you want checks genuinely enforced on the release PR.
-4. Merging tags `vX.Y.Z` and cuts the GitHub Release; the `publish` job then
-   builds the sdist + wheel, generates an SBOM, and publishes to PyPI via OIDC.
-   Because the current workflow rebuilds at publish time, a later
-   `pip install lilrae==X.Y.Z` check is corroboration, not the pre-cut
-   release gate or proof that the bytes are identical. If byte-for-byte
-   promotion becomes required, publish the tested artifacts instead of
-   rebuilding them.
-5. A `main`→`dev` **back-merge PR** is then opened automatically (main now has
-   the version bump + `CHANGELOG.md`), titled `chore: back-merge <tag> into dev`.
-   **Admin-merge it with "Create a merge commit"** to keep `dev` current—like
-   the release PR it is bot-opened, so its required checks should not be relied
-   on to run. Do not squash it. A squash copies the release changes but leaves
-   the release commit out of the `dev` history. The next promotion then replays
-   the version bump against `dev` and can conflict, as it did in #1375.
+1. Find the Release Please PR on `main`, titled `chore(main): release X.Y.Z`.
+2. Keep its head commit fixed while qualifying the candidate.
+3. Build its wheel and sdist from that exact commit.
+4. Have a person complete every row of [release candidate manual QA](testing/smoke-test-plan.md).
+5. Test the exact wheel and a clean checkout of the same commit.
+6. Link the completed, redacted record from the release PR.
+7. If the commit or an artifact changes, repeat both installation paths from clean state.
+8. Merge the release PR only after the human QA record passes and merge approval is present.
+
+The bot-created release PR might not trigger checks, or its runs might need approval.
+Do not assume its required checks will run automatically.
+The existing release procedure uses an administrator merge for this PR.
+A PAT integration is needed if maintainers choose to enforce those checks automatically.
+
+The merge creates the version tag and GitHub Release.
+The publish job builds artifacts, generates an SBOM, records provenance, and publishes through PyPI OIDC.
+It rebuilds at publish time. A later package installation does not prove identity with the tested candidate bytes.
+For byte-identical promotion, change the release design to publish tested artifacts instead of rebuilding them.
+
+After publication:
+
+1. Find the automatic `main` to `dev` back-merge PR.
+2. Confirm its title is `chore: back-merge <tag> into dev`.
+3. Obtain the user's merge approval.
+4. Use an administrator merge with **Create a merge commit**, outside the queue.
+5. Do not squash the back-merge or assume bot-triggered checks will run.
+
+The merge commit retains the release commit in `dev` history.
+A squash can make the next promotion replay the version bump and conflict.
 
 ## Baseline
 
-The release baseline is recorded in `.release-please-manifest.json` and
-`pyproject.toml`; do not duplicate a version number in this guide.
-release-please computes the next version from that baseline plus the
-Conventional Commits merged since. No version, manifest, or `CHANGELOG.md` is
-hand-edited.
+Use the [baseline reference](reference/release-contract.md#baseline).
+Do not copy a current version into this guide.
 
 ## PyPI trusted publisher (one-time)
 
-On pypi.org, open the `lilrae` project → Settings → Publishing. The trusted
-publisher must have owner `OpenRAE`, repository `lilrae`, workflow
-`release-please.yml`, and environment `pypi`. PyPI matches these names in the
-OIDC token, so a publisher with other names rejects the upload. Before the
-first release of a new project, add the same values as a pending publisher
-under Account → Publishing. The first upload then creates the project.
-`raes` must be on PyPI first (the project depends on it). The distribution is
-named `lilrae` because `aptl` is reserved on PyPI; the import package and CLI
-stay `aptl`. Releases up to 7.0.0 published as `aptl-labs`
-([ADR-062](adrs/adr-062-lilrae-name-and-naming-convention.md)).
+1. Confirm `raes` is already available on PyPI.
+2. Open the `lilrae` project's Settings, then Publishing.
+3. Set the trusted publisher to the [recorded identity](reference/release-contract.md#pypi-publisher).
+4. Before a new project's first release, add that identity under Account, then Publishing, as a pending publisher.
+5. Confirm the first upload creates the intended project.
+
+Do not substitute other names; PyPI matches them against the OIDC token.
 
 ## Seat image cuts
 
-VM images are built, qualified, signed with Cosign and published locally to GHCR.
-They are independent of Python package releases: Release Please does not build,
-qualify or publish seats, and its back-merge does not depend on a seat tag.
-Follow the [seat image procedure](reference/appliance-seat-launcher.md#building-the-image)
-and preserve actual manual VM evidence for each cut.
+Follow [the seat image procedure](reference/appliance-seat-launcher.md#building-the-image).
+Preserve actual manual VM evidence for each cut.
+Seat images have a separate build, qualification, signing, and GHCR publication process.
+Release Please does not perform those steps or wait for a seat tag before its back-merge.

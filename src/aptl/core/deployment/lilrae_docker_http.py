@@ -17,13 +17,20 @@ from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
 
 
 class _UnixConnection(http.client.HTTPConnection):
-    """Send HTTP requests to a Docker daemon through a Unix socket."""
+    """Send HTTP requests to a Docker daemon through a Unix socket.
+
+    The ``Host`` header names ``localhost``: Docker 29 refuses a socket path there.
+    """
+
+    def __init__(self, socket_path: str, *, timeout: float) -> None:
+        super().__init__("localhost", timeout=timeout)
+        self.socket_path = socket_path
 
     def connect(self) -> None:
-        """Open the Unix socket that the host field names."""
+        """Open the Docker daemon's Unix socket."""
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.settimeout(self.timeout)
-        self.sock.connect(self.host)
+        self.sock.connect(self.socket_path)
 
 
 class NativeDocker:

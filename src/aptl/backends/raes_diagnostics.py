@@ -203,7 +203,7 @@ def snapshot_after_apply(
             ordering_dependencies=resource.ordering_dependencies,
             refresh_dependencies=resource.refresh_dependencies,
             profile_bindings=resource.profile_bindings,
-            status=_entry_status(actions.get(address)),
+            status=entry_status(actions.get(address)),
         )
     from aptl.backends._raes_operational_observation import runtime_observation_disclosures
 
@@ -220,7 +220,7 @@ def snapshot_after_apply(
     return updated
 
 
-def _entry_status(action: ChangeAction | None) -> str:
+def entry_status(action: ChangeAction | None) -> str:
     """Name what the backend did with one planned operation."""
 
     if action is ChangeAction.UNCHANGED:

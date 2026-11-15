@@ -258,7 +258,7 @@ def start(
         )
     except WorkbenchConfigurationError as exc:
         _fail(SeatLauncherError("invalid-host-access", str(exc)))
-    except (OSError, ValidationError) as exc:
+    except (OSError, ValidationError):
         _fail(SeatLauncherError("invalid-host-access", "host access input is invalid"))
     except SeatLauncherError as exc:
         _fail(exc)

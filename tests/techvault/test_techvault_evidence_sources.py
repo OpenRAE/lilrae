@@ -129,6 +129,46 @@ def test_sqli_source_rejects_legacy_or_uncorrelated_alerts():
     ).fetch(_START, _END)
 
     assert result.status is CollectorStatus.MID_RUN_LOSS
+    assert result.observer_effect == "one fixed POST /login containing UNION SELECT"
+
+
+def test_sqli_source_keeps_the_probe_effect_when_a_store_is_unreadable():
+    """The probe ran, so the lost observation is not a source that never started."""
+
+    result = SuricataWazuhSqliSource(
+        _trigger,
+        lambda _start, _end: None,
+        lambda _start, _end: [_wazuh_event()],
+    ).fetch(_START, _END)
+
+    assert result.status is CollectorStatus.MID_RUN_LOSS
+    assert result.observer_effect == "one fixed POST /login containing UNION SELECT"
+
+
+def test_sqli_source_reports_an_unconfirmed_probe_after_a_transport_failure():
+    from aptl_techvault.evidence.techvault import SQLI_DELIVERY_UNCONFIRMED
+
+    result = SuricataWazuhSqliSource(
+        lambda: SQLI_DELIVERY_UNCONFIRMED,
+        lambda _start, _end: [_suricata_event()],
+        lambda _start, _end: [_wazuh_event()],
+    ).fetch(_START, _END)
+
+    assert result.status is CollectorStatus.MID_RUN_LOSS
+    assert result.observer_effect == (
+        "one fixed POST /login containing UNION SELECT attempted; delivery unconfirmed"
+    )
+
+
+def test_sqli_source_without_a_sent_probe_reports_no_effect():
+    result = SuricataWazuhSqliSource(
+        lambda: None,
+        lambda _start, _end: [_suricata_event()],
+        lambda _start, _end: [_wazuh_event()],
+    ).fetch(_START, _END)
+
+    assert result.status is CollectorStatus.SOURCE_UNAVAILABLE
+    assert result.observer_effect is None
 
 
 def _session(session_id="session-1"):
@@ -213,19 +253,53 @@ def test_transcript_empty_census_is_legitimate_empty():
 
 
 def test_transcript_parser_rejects_accepted_ledger_without_matching_sessions():
-    from aptl.core.experiment.capture_registry import CaptureLimits
     from aptl_techvault.evidence.transcript_parsing import transcript_sessions
 
-    limits = CaptureLimits(max_bytes=10000, max_artifact_count=10, max_duration_s=60)
     with pytest.raises(ValueError, match="broker ledger"):
         transcript_sessions(
             {
                 "expected_session_ids": ["session-1"],
                 "accepted_session_ids": ["session-1"],
                 "sessions": [],
-            },
-            limits,
+            }
         )
+
+
+def test_transcript_parser_keeps_frames_and_sessions_of_any_size():
+    import base64
+
+    from aptl_techvault.evidence.transcript_parsing import transcript_sessions
+
+    # One frame larger than the old 4 MiB frame bound, in more sessions than
+    # the old artifact count allowed.
+    data = b"a" * (5 * 1024 * 1024)
+    ids = [f"session-{index}" for index in range(3000)]
+    sessions = [
+        {
+            "session_id": session_id,
+            "started_at": _START,
+            "finished_at": _END,
+            "close_reason": "closed",
+            "final_chain_digest": "sha256:" + "0" * 64,
+            "frames": [
+                {
+                    "sequence": 0,
+                    "timestamp": _START,
+                    "direction": "output",
+                    "data_b64": base64.b64encode(data if index == 0 else b"x").decode(),
+                }
+            ],
+        }
+        for index, session_id in enumerate(ids)
+    ]
+
+    expected, parsed = transcript_sessions(
+        {"expected_session_ids": ids, "sessions": sessions}
+    )
+
+    assert expected == tuple(ids)
+    assert parsed[0].frames[0].data == data
+    assert len(parsed) == 3000
 
 
 def test_portable_transcript_validator_rejects_contradictory_gap_report():

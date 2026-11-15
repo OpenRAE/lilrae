@@ -842,6 +842,43 @@ class TestRedactorBounds:
         assert "password=hunter2" not in out
         assert f"password={REDACTED}" in out
 
+    def test_long_dash_run_is_linear_not_redos(self):
+        # The long-flag matcher re-scanned a dash run from each `--` in it.
+        payload = "-" * 20000
+        out, elapsed = self._redact_within_budget(payload)
+        assert elapsed < self._BUDGET_S
+        assert out == payload
+
+    def test_repeated_impacket_targets_are_linear_not_redos(self):
+        # The bare target regex scanned the value again from each `u:` start.
+        payload = "psexec.py " + "u:x!" * 15000
+        out, elapsed = self._redact_within_budget(payload)
+        assert elapsed < self._BUDGET_S
+        assert out == payload
+
+    def test_oversized_input_still_runs_command_flag_passes(self):
+        from aptl.utils.redaction import _MAX_SCAN_LEN
+
+        command = "hydra -l admin -p 1234 ssh://host"
+        payload = ("x" * 100 + "\n") * 2000 + command
+        assert len(payload) > _MAX_SCAN_LEN
+        out, elapsed = self._redact_within_budget(payload)
+        assert elapsed < self._BUDGET_S
+        assert out.endswith(f"hydra -l admin -p {REDACTED} ssh://host")
+
+    def test_command_scan_windows_cover_the_text_in_bounded_parts(self):
+        from aptl.utils.redaction import _MAX_SCAN_LEN, _command_scan_windows
+
+        text = ("y" * (_MAX_SCAN_LEN - 10) + "\n") + "z" * (_MAX_SCAN_LEN + 5) + " tail"
+        windows = _command_scan_windows(text)
+        assert windows[0] == (0, _MAX_SCAN_LEN - 9)  # ends after the newline
+        assert windows[1] == (_MAX_SCAN_LEN - 9, 2 * _MAX_SCAN_LEN - 9)  # hard cut
+        assert windows[-1][1] == len(text)
+        assert all(b == c for (_, b), (c, _) in zip(windows, windows[1:]))
+        assert all(0 < end - start <= _MAX_SCAN_LEN for start, end in windows)
+        assert _command_scan_windows("") == []
+        assert _command_scan_windows("a b") == [(0, 3)]
+
     def test_deep_dict_fails_closed_without_recursionerror(self):
         from aptl.utils.redaction import _MAX_DEPTH
 
@@ -1028,3 +1065,85 @@ def test_numeric_model_limits_and_usage_are_safe_but_secret_replacements_are_not
     declaration = {"target_id": name, "value_type": "integer", "allowed_value_kinds": ["literal"], "sensitivity": "internal"}
     assert redact({name: declaration}) == {name: declaration}
     assert redact({name: {**declaration, "api_key": "private-credential"}}) == {name: "[REDACTED]"}
+
+
+def test_opencode_per_call_token_usage_is_kept_but_any_other_tokens_value_is_redacted():
+    from aptl.utils.redaction import redact
+
+    usage = {"input": 1200, "output": 85, "reasoning": 40, "total": 1325, "cache": {"read": 900, "write": 0}}
+    assert redact({"tokens": usage}) == {"tokens": usage}
+    for value in (
+        "ghp_private-credential",
+        {**usage, "api_key": "private-credential"},
+        {**usage, "cache": {"read": "private-credential"}},
+        {"input": -1},
+        {"input": True},
+    ):
+        assert redact({"tokens": value}) == {"tokens": "[REDACTED]"}
+
+
+_ARGV_LISTS = (
+    ["hydra", "-p", "hunter2", "ssh://host"],
+    ["--password", "hunter2"],
+    ["a", "--user", "alice:S3cr3t"],
+    ["run", ["hydra", "-p", "x"], {"token": "y"}],
+    [{"cmd": ["--password", "hunter2"]}, "--password", 7, "plain"],
+    ["--password", "--password", "hunter2"],
+    [],
+)
+
+
+@pytest.mark.parametrize("value", _ARGV_LISTS)
+def test_incremental_list_redaction_matches_the_whole_list_policy(value):
+    """A list streamed one item at a time redacts exactly as the whole list."""
+    from aptl.utils.redaction import iter_redact_list
+
+    assert list(iter_redact_list(iter(value))) == redact(value)
+
+
+def test_incremental_list_redaction_keeps_known_argv_results():
+    from aptl.utils.redaction import iter_redact_list
+
+    assert list(iter_redact_list(["hydra", "-p", "hunter2"])) == [
+        "hydra",
+        "-p",
+        REDACTED,
+    ]
+    assert list(iter_redact_list(["--password", "hunter2", "next"])) == [
+        "--password",
+        REDACTED,
+        "next",
+    ]
+
+
+def test_incremental_list_redaction_reads_one_item_ahead_at_most():
+    """The generator yields each item before it reads the item after the next."""
+    from aptl.utils.redaction import iter_redact_list
+
+    consumed: list[int] = []
+
+    def source():
+        for index in range(5):
+            consumed.append(index)
+            yield f"item-{index}"
+
+    stream = iter_redact_list(source())
+    next(stream)
+    assert consumed == [0]
+
+
+def test_mapping_item_redaction_matches_the_whole_mapping_policy():
+    from aptl.utils.redaction import redact_mapping_item
+
+    value = {
+        "password": "hunter2",
+        "api_key": "abc",
+        "note": "Authorization: Bearer XYZ.TOKEN",
+        "nested": {"secret": "s", "count": 3},
+        "args": ["hydra", "-p", "x"],
+        "authorization_scope": ["read", "write"],
+        "tokens": {"input": 10, "output": 2},
+    }
+    assert {key: redact_mapping_item(key, item) for key, item in value.items()} == redact(
+        value
+    )

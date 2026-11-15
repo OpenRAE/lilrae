@@ -13,6 +13,7 @@ from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
 from aptl.backends import raes_participant_delivery as participant_delivery
 
 if TYPE_CHECKING:
+    from raes.scenario import ExpandedScenario
     from raes_processor.models import ExecutionPlan
     from raes_runtime.registry import RuntimeTarget
     from aptl.backends.raes_realization_model import AptlRealization
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 
 from aptl.backends.scenario_family import (
     FamilyTrialInput,
+    admit_family_source,
     admit_family_trial,
     require_family_capabilities,
 )
@@ -45,6 +47,7 @@ from aptl.backends.scenario_startup import (
 from aptl.core.config import AptlConfig
 from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
 from aptl.core.scenario_bundle import ScenarioBundle
+from aptl.core.trial_attempt import TrialAttempt
 
 
 def bind_admission_trial(
@@ -83,6 +86,30 @@ def bind_admission_trial(
     elif bundle.trial is not None:
         raise ValueError("family-trial-input-required")
     return bundle
+
+
+def family_trial_input(bundle: ScenarioBundle, attempt: TrialAttempt) -> FamilyTrialInput:
+    """Pair the attempt's admitted plan entry with the installed family source."""
+
+    if attempt.unit is None:
+        raise ValueError("family-trial-input-required")
+    family = cast("ExpandedScenario", admit_family_source(bundle.sdl_path))
+    return FamilyTrialInput(
+        attempt.unit.plan, attempt.unit.plan_entry_id, family, attempt.unit.snapshot
+    )
+
+
+def bind_trial_unit(
+    bundle: ScenarioBundle, config: AptlConfig, attempt: TrialAttempt
+) -> ScenarioBundle:
+    """Admit the attempt's plan entry against this bundle; the run IDs must agree."""
+
+    bound = bind_admission_trial(bundle, config, family_trial_input(bundle, attempt), None, None)
+    assert bound.trial is not None
+    provenance = bound.trial.scenario.instantiation_provenance.trial
+    if provenance is None or provenance.run_id != attempt.run_id:
+        raise ValueError("family-trial-run-mismatch")
+    return bound
 
 
 def resolve_admission_adapters(

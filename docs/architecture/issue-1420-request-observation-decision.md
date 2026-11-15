@@ -1,5 +1,11 @@
 # Native participant observation assessment
 
+Reader purpose: historical Reference.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1420-request-observation-decision.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 Status: native sources inspected with OpenCode 1.19.5; the local observer is approved.
 The implementation now consumes bounded native session facts through the existing invocation evidence sink.
 
@@ -15,9 +21,11 @@ Selected gateway identity does not attest the upstream serving provider.
 The pinned binary also exports native OpenTelemetry traces without a plugin.
 A synthetic local collector received these traces with pure mode still enabled.
 The probe enabled `experimental.openTelemetry` and selected a loopback OTLP endpoint.
+
 A second probe used debug logging and a short trace export interval.
 It received 644 spans after one completed model request.
 Neither probe exposed model-request control attributes or a generation identifier in its trace spans.
+
 The debug log did not contain temperature, generation limit or the generation identifier.
 These findings apply to the inspected execution path and pinned binary.
 They do not establish that every supported native path has the same limits.
@@ -44,15 +52,19 @@ The qualification evidence must not be described as continuous runtime request c
 Native logs, exported history and supported traces must be assessed before adding an observation mechanism.
 The initial plugin proposal preceded native inspection and was withdrawn.
 The completed inspection leaves outgoing request controls and provider generation identifiers without a native source on this path.
+
 The user approved one repository-owned local plugin through OpenCode's supported provider-fetch interface.
 Observed trial invocations select that pinned local file and disable blanket pure mode.
 Private configuration, disabled ambient discovery, default plugins and tool restrictions remain enforced.
+
 The child uses npm offline mode, so the local observer requires no package downloads.
 The request URL and credential remain unusable until the observer initializes.
 The implementation retains actual safe controls and available response claims through the existing evidence sink.
+
 The [qualification matrix](../testing/participant-trial-1420-qualification.md) maps required evidence fields to their native or observer source.
 Missing observations must remain unknown, or fail admission when a capture contract requires them.
 Generated configuration and matching digests cannot replace missing actual-request observations.
+
 Raw histories and traces require safe reduction before they enter the retained metadata evidence.
 The inspection used only synthetic content, synthetic credentials and local fake services.
 

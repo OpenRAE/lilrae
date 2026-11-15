@@ -12,6 +12,13 @@ ADR-064 rules. The SonarCloud gate and the global `C901` gate stay in force.
 
 2026-03-07
 
+## Applicability
+
+This record keeps the chronology of quality-gate decisions.
+Dated sections describe their own revision, including obsolete hook ordering and advisory states.
+[CI verification](../architecture/ci-verification.md) describes the current workflow.
+[ADR-064](adr-064-layered-architecture-and-code-conventions.md) defines current staged layer and rule enrollment.
+
 ## Context
 
 APTL had no automated code quality analysis. Code quality was assessed through manual review only—first during development, then formally in the team review documented in `notes/team-review-synthesis.md`. That review found 30 issues (17 major, 13 minor), including `any`-typed MCP args, duplicated code, dead config fields, and a process-global SSL disable.
@@ -36,7 +43,7 @@ Integrate SonarCloud via GitHub Actions for continuous code quality analysis acr
 
 ### Key Implementation Details
 
-- **Test file separation**: MCP test files under `mcp/**/tests/**` are added to `sonar.exclusions` (excluded from source analysis) while simultaneously listed in `sonar.tests` (recognized as test sources). Without this, SonarCloud reported "can't be indexed twice" errors (v4.6.8).
+- **Test file separation**: MCP test files under `mcp/**/tests/**` are added to `sonar.exclusions` (excluded from source analysis) while simultaneously listed in `sonar.tests` (recognized as test sources). Without this, SonarCloud reported `can't be indexed twice` errors (v4.6.8).
 - **Coverage bootstrapping**: The initial CI workflow ran SonarCloud without running tests first, resulting in 0% coverage. Fixed by adding pytest and vitest steps before the scan (v4.5.0, v4.6.8).
 - **Scanner migration**: Migrated from deprecated `SonarSource/sonarcloud-github-action` to `SonarSource/sonarqube-scan-action@v7` (v4.7.0).
 - **CI action versions**: Upgraded to Node.js 24-compatible versions (`actions/checkout@v6`, `actions/setup-python@v6`, `actions/setup-node@v6`) in v4.7.0.
@@ -61,10 +68,7 @@ Integrate SonarCloud via GitHub Actions for continuous code quality analysis acr
 
 ## Update (2026-06-21): SonarCloud gate is required again (issue #502)
 
-The SonarCloud job in `.github/workflows/checks.yml` is a **required** merge
-gate again: it runs with `-Dsonar.qualitygate.wait=true` and invokes
-`tools/sonar/assert_no_new_issues.py` so any open issue in the new-code leak
-period fails CI. Advisory vulnerability scanners (Trivy, OSV-scanner,
+The SonarCloud job in `.github/workflows/checks.yml` is a required merge gate. It uses `-Dsonar.qualitygate.wait=true` and `tools/sonar/assert_no_new_issues.py`. An open new-code issue fails CI. Advisory vulnerability scanners (Trivy, OSV-scanner,
 dependency-audit) stay non-blocking per ADR-026.
 
 Branch protection on `main` and `dev` uses strict required status checks
@@ -78,23 +82,10 @@ Pre-commit hooks job.
 
 ## Update (2026-05-10): SonarCloud gate stayed advisory; hard complexity gate added
 
-The SonarCloud analysis lived in `.github/workflows/checks.yml` (the
-former `sonarcloud.yml` was folded in), and the quality-gate job was run
-**advisory** (`continue-on-error`, no `-Dsonar.qualitygate.wait`): the
-"Sonar way" gate's *Coverage on New Code ≥ 80%* condition would otherwise
-block infra-only commits (Dockerfiles, compose, workflows, scripts) that add
-no covered code. Issue #502 reverts that posture now that the repo also
+The former `sonarcloud.yml` moved into `.github/workflows/checks.yml`. The 2026-05-10 policy used advisory analysis with `continue-on-error` and no quality-gate wait. Its reason was the 80% new-code coverage condition on infrastructure-only commits. Issue #502 reverts that posture now that the repo also
 carries the new-code issue gate script.
 
-To keep god-methods / non-modular code out of the tree without the coverage
-trap and without the new-code-only blind spot, a dedicated, **hard**,
-repo-wide per-function complexity gate runs in pre-commit and CI: `ruff
-check src/` with **only `C901` enabled** (`[tool.ruff.lint] select =
-["C901"]`) and `[tool.ruff.lint.mccabe] max-complexity = 15`—matching
-SonarCloud's default cognitive-complexity threshold (cyclomatic complexity is
-a fine proxy for "this method does too much"). This is the only `ruff` rule
-turned on; it is a complexity guard, not a style linter; widen the rule set
-deliberately if/when the team wants more from `ruff`.
+The original hard Python gate used only Ruff `C901` across `src/`. Its McCabe threshold was 15. This is cyclomatic complexity, a different metric from SonarCloud cognitive complexity. That decision enabled only the complexity rule. Later rule additions required an explicit decision, supplied for enrolled code by ADR-064.
 
 > **Update (ADR-064, 2026-10-31):** ADR-064 adds Ruff rules for enrolled code.
 > `ruff check src/` with only `C901` still runs on all code.
@@ -123,10 +114,7 @@ Keep one source of truth for the threshold, target globs, and legacy
 exemptions. Reuse the existing flat ESLint/TypeScript-parser pattern if ESLint
 is selected, but do not copy the full `mcp-red` / `mcp-reverse` style lint
 rules into every package. Biome is acceptable only if it covers the same
-`mcp` and Svelte inputs and can express explicit legacy exemptions. Existing
-offenders should be carved out with the narrowest tool-supported exemption and
-listed in this ADR's backlog with measured scores; new code should not be
-added to exempted files.
+`mcp` and Svelte inputs and can express explicit legacy exemptions. Existing exceptions needed the narrowest supported exemption and a measured score in the backlog. New code could not enter exempted files.
 
 ### TypeScript complexity gate (realized)
 
@@ -145,22 +133,11 @@ first-class: functions inside `<script lang="ts">` are parsed by
 
 Enforcement is the `ts-complexity` hook in `.pre-commit-config.yaml`, a
 `language: node` hook with pinned `additional_dependencies`, self-contained
-like `ruff-complexity`'s pinned `ruff`. It runs immediately after
-`ruff-complexity`, before the slower vitest hooks, and is **not** in the CI
-`SKIP` list, so it gates in the required `Pre-commit hooks` job and locally from
-the same config (no separate CI job and no branch-protection change). The config
-is CommonJS so `require()` resolves the pinned parsers through the `NODE_PATH`
-that pre-commit's node environment exports; `noInlineConfig` keeps the gate
-central and tamper-resistant (a function cannot be exempted with an inline `//
-eslint-disable`), and the hook passes `--quiet` so the resulting "directive has
-no effect" meta-warnings stay out of the output without hiding a real error.
+like `ruff-complexity`'s pinned `ruff`. The original hook followed `ruff-complexity` and preceded slower Vitest hooks. It used the same local and required CI hook configuration, without another required job. CommonJS resolved pinned parsers through pre-commit's `NODE_PATH`. `noInlineConfig` prevented inline rule exceptions. `--quiet` suppressed ineffective-directive warnings without hiding errors.
 
 ### TypeScript complexity backlog (cleared)
 
-Empty. Issue #286 added the gate and, in the same change, split the three
-functions that were initially over threshold into helpers, so `eslint.config.js`
-carries no `complexity: 'off'` exemptions and every function under the scoped
-globs is gated at 15. The historical offenders (all CC 18) were `harvestSession`
+Empty. Issue #286 added the gate and split three functions above the threshold. At that revision, every scoped function passed 15 without `complexity: 'off'` exemptions. The historical offenders (all CC 18) were `harvestSession`
 (`mcp/aptl-mcp-common/src/captures.ts`), `predefined_query`
 (`mcp/aptl-mcp-common/src/tools/api-handlers.ts`), and `buildBlockSequence`
 (`web/src/lib/workbench.ts`). If a future change must temporarily exempt a file,
@@ -199,9 +176,7 @@ complementary and both worth driving to zero.)
 
 Known wart: `src/aptl/core/lab.py:63` has a malformed `# noqa: delayed import
 for mocking` (it predates this gate)—`ruff check` prints a one-line warning
-for it but still passes. Left as-is here because fixing it touches `lab.py`,
-which would drag `lab.py`'s pre-existing SonarCloud issues into this
-config-only PR; fix it to `# noqa: PLC0415` the next time `lab.py` is edited.
+for it but still passes. The original record deferred the correction because it would touch `lab.py`. The dated update below records its later removal.
 
 > **Update (2026-10-31):** `src/aptl/core/lab.py` no longer has this comment.
 

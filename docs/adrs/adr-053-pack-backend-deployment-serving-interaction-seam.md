@@ -8,6 +8,14 @@ accepted
 
 2026-08-10
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [adapter Reference](../reference/family-adapters.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 APTL can now realize an environment pack from declared RAES desired state and
@@ -20,21 +28,14 @@ component membership in operator-facing groups such as `soc`, `enterprise`,
 This grouping is not portable scenario content. RAES `Node` is a closed model,
 and its `roles` field describes local identity rather than backend operator
 packaging. It is also not a general APTL rule. The grouping names components in
-one pack and operator controls in one backend. The same pack could be served by
-a backend with different controls, and APTL must be able to serve another pack
-without learning its component names.
+one pack and operator controls in one backend. Another backend can serve the same pack with different native controls. Core must also serve other packs without learning their component names.
 
 Issue #875 temporarily placed the TechVault/APTL grouping in
-`src/aptl/backends/_component_profiles.py`. The table is deliberately marked as
-operator packaging, not realization, but it is queried independently while the
-RAES plan is interpreted and while generated Compose is rendered. Leaving the
+`src/aptl/backends/_component_profiles.py`. The operator-packaging table is not realization authority. The old path nevertheless queried it independently during plan interpretation and Compose rendering. Leaving the
 table there would make pack knowledge part of core and let the two lookups
 drift.
 
-APTL already has a precedent for scenario-and-backend glue:
-[the issue #878 scenario-verification seam](../architecture/issue-878-scenario-verification-plugin-seam-preflight.md)
-uses Python distribution entry points, records host-observed package
-provenance, and keeps scenario adapters out of the core distribution. The
+The [#878 verification boundary](../architecture/issue-878-scenario-verification-plugin-seam-preflight.md) supplies an existing pattern. Distribution entry points discover external adapters and record host-observed package provenance. The
 pack-backend seam uses the same installed-extension mechanism, but it has a
 different, intentionally smaller contract. It returns inert serving data and
 receives no operations surface.
@@ -58,10 +59,7 @@ TechVault/APTL is a separately installed distribution maintained alongside the
 pack release or in another out-of-tree integration package.
 
 Discovery uses installed distribution metadata only. The entry-point name is a
-documented selector composed from the exact pack id and backend target id. This
-lets core ignore providers for other installed pack/backend pairs without
-importing them; pack version, set digest, backend version/profile, and optional
-transport are then checked on the loaded typed provider. Scenario data, pack
+documented selector composed from the exact pack id and backend target id. Metadata filters unrelated pack/backend providers before import. Typed loading then validates pack version, set digest, backend version/profile, and any explicit transport constraint. Scenario data, pack
 files, `aptl.json`, environment variables, CLI arguments, the current
 directory, and participant profiles never provide a module, class, path, URL,
 command, or import string.
@@ -85,10 +83,7 @@ from a directory name, use a staging path as identity, or duplicate the
 env-packs schema. Project-tree bundles have no pack identity and continue to use
 their existing Compose index during the legacy transition.
 
-Backend identity is also not `DeploymentConfig.provider`. The canonical
-identity is the RAES target name, target version, and capability profile;
-`docker-compose` versus `ssh-compose` is a transport fact that is included only
-when a provider explicitly constrains transport. The neutral backend-identity
+Backend identity is also not `DeploymentConfig.provider`. Canonical backend identity is the RAES target, version, and capability profile. Local versus SSH Compose is included only when transport is explicitly constrained. The neutral backend-identity
 value already used by scenario verification must be reused or moved to a
 neutral module and re-exported. A second backend identity DTO is prohibited.
 
@@ -108,11 +103,7 @@ process environment, filesystem path, run store, logger, subprocess helper, or
 network client.
 
 The versioned result contains one typed field: a total mapping from each input
-component address to a finite set of operator-group labels. The provider cannot
-return component definitions, service names, images, build instructions,
-artifacts, content, runtime configuration, environment bindings, commands,
-mounts, networks, ports, health checks, dependencies, paths, URLs, credentials,
-or arbitrary extension data.
+component address to a finite set of operator-group labels. Providers cannot return definitions, builds, artifacts, content, runtime settings, commands, mounts, topology, ports, health, dependencies, paths, URLs, credentials, or arbitrary extension data.
 
 Core validates the result before any backend mutation:
 
@@ -132,9 +123,7 @@ claim.
 
 When no entry point claims the exact pack identity, core uses the pack-agnostic
 default. The default returns every admitted component with an empty group set.
-For generated Compose this means that the admitted component is unprofiled and
-therefore starts with the admitted scenario; it does not infer a group from the
-component name. An installed provider must use an explicit empty set for a
+An admitted component without an operator profile group starts unprofiled with the scenario. Core must not infer its group from its name. An installed provider must use an explicit empty set for a
 component that is deliberately always active. Total coverage makes a stale
 provider fail when a pack adds or removes a component instead of silently
 misclassifying it.
@@ -182,10 +171,7 @@ accidentally because one copied list happens to contain it.
 ### Enforce the non-realization invariant structurally
 
 The interaction result may only label or select components already present in
-the admitted plan. Applying it must leave all non-serving projections unchanged:
-node and service identity, source route, image/build identity, runtime desired
-state, artifact/content placement, generated artifacts, accounts, persistence,
-topology, ACLs, dependencies, published ports, and observation requirements.
+the admitted plan. Serving selection must leave non-serving projections unchanged. These include identities, sources/builds, desired state, artifacts/content, accounts, persistence, topology/ACLs, dependencies, publications, and required observations.
 
 The provider is never passed to `RuntimeManager.plan()`, artifact availability,
 `interpret_provisioning_plan()`, materializers, image resolution, stateful
@@ -228,10 +214,7 @@ or result, raw exceptions, pack paths, environment/config values, Compose
 stderr, or serialized realization data.
 
 The run record's existing `backend_evidence` section remains the persistence
-owner. It records the validated pack identity, extension API version,
-host-observed provider distribution/version and entry-point id, a deterministic
-digest of the normalized component-to-group result, and the already-recorded
-selected profiles. The digest reuses the RFC 8785, domain-separated
+owner. Evidence records validated pack/API identity, observed provider distribution/version and entry point, normalized mapping digest, and already selected profiles. The digest reuses the RFC 8785, domain-separated
 `aptl.core.provenance.identity.derive_identity()` primitive with a code-owned
 serving domain; it is not another JSON hashing helper. Plugin metadata must not
 be written under RAES realization state, used as portable scenario identity, or
@@ -257,7 +240,7 @@ or import controls.
 | Errors and logs | RAES `Diagnostic`, `aptl.backends.raes_diagnostics.diagnostic()` / `render_raes_diagnostics()`, `ApplyResult`, `LabResult`, `get_logger()`, and `redact()`. |
 | Persistence and provenance | `RunRecordInputs`, `build_reproducibility_record()`, the `backend_evidence` namespace, `aptl.core.provenance.identity.derive_identity()`, `LocalRunStore`, and existing run-id/path/redaction rules. |
 | Packaging and supply chain | `pyproject.toml`, `uv.lock`, hashed requirements, Hatch package boundaries, `_asset_manifest.py`, and the core-wheel tests. Core registers and bundles zero pack-specific providers. |
-| Quality workflow | Focused pytest seam, realization, renderer, config, run-record, and packaging tests; the fast suite; the TechVault static gate where backend/manifest behavior changes; Ruff complexity; `pre-commit run --all-files`; and CI/Sonar. Compose, Dockerfile, or `config/` edits still trigger the clean-lab gate in `.gc/plan-rules.md`. |
+| Quality workflow | Focused CI evidence covers extension, realization, rendering, configuration, records, and packaging. Static TechVault verification applies to backend changes. CI owns broader tests, lint, and Sonar. Compose, Dockerfile, or `config/` edits still trigger the clean-lab gate in `.gc/plan-rules.md`. |
 
 ## Security And Host-Layer Passage
 

@@ -1,5 +1,13 @@
 # Issue #952: failed-start recovery preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-952-start-failure-recovery-preflight.md).
+Its last recorded file change before this rewrite was `4285e8ea1c6f`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 The supplied issue is the delivery contract; no GRC workflow requirement is
 attached. This checkout already has `--teardown-on-failure`, `StartResidue`,
 recovery rendering, and focused tests. Extend those incumbents rather than

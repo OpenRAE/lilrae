@@ -1,5 +1,13 @@
 # Issue #824 Kiosk Launcher, Reset, And Recovery Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-824-kiosk-launcher-reset-recovery-preflight.md).
+Its last recorded file change before this rewrite was `41551db875b1`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 > **Dated preflight record.** Written on 2026-07-27 and kept as written. Since
 > then, #1163 (0ae24994, 2026-09-23) removed the appliance modules it cites
 > (`bootstrap.py`, `build.py`, `launch.py`, `manifest.py`, `models.py`,

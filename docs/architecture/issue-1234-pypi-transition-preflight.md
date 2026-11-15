@@ -1,5 +1,13 @@
 # Issue #1234: PyPI Distribution Transition Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1234-pypi-transition-preflight.md).
+Its last recorded file change before this rewrite was `d77c06f4b5c1`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Issue #1234 is the authoritative contract; there is no formal requirement.
 This note constrains design before implementation. It changes no packaging,
 version, release, account configuration, or runtime behavior.

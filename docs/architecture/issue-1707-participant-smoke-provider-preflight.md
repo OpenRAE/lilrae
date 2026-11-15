@@ -1,5 +1,13 @@
 # Admitted participant smoke providers
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1707-participant-smoke-provider-preflight.md).
+Its last recorded file change before this rewrite was `4a9b11b2799c`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Issue #1707 owns this change. No formal requirement applies.
 [ADR-067](../adrs/adr-067-admitted-participant-smoke-providers.md) records the decisions.
 The [family adapter reference](../reference/family-adapters.md#participant-mcp-smoke-providers)

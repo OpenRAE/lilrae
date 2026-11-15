@@ -7,6 +7,8 @@ import subprocess
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from aptl_techvault.evidence import techvault_native
 
 from aptl.core.deployment.realization import (
@@ -18,6 +20,7 @@ from aptl_techvault.evidence.techvault_native import (
     TechVaultNativeDependencies,
     TechVaultNativeEvidenceOwner,
 )
+from aptl.core.deployment._compose_log_capture import StreamExit
 from aptl.core.evidence.outcomes import CollectorStatus
 
 _START = "2026-09-14T10:00:00Z"
@@ -107,8 +110,14 @@ class _Backend:
         assert "-f" not in cmd[1]
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
-    def container_exec(self, name, cmd, *, timeout):
-        self.exec_calls.append((name, cmd, timeout))
+    def container_exec_stream(self, name, cmd, *, stdout, stderr):
+        self.exec_calls.append((name, cmd))
+        stdout.write(self.container_exec(name, cmd, timeout=30, record=False).stdout.encode())
+        return StreamExit(0, False, False)
+
+    def container_exec(self, name, cmd, *, timeout, record=True):
+        if record:
+            self.exec_calls.append((name, cmd, timeout))
         event = (
             {
                 "timestamp": _FINISH,
@@ -132,13 +141,17 @@ class _Backend:
         return subprocess.CompletedProcess(cmd, 0, json.dumps(event) + "\n", "")
 
 
-def _owner(tmp_path, backend=None):
+def _owner(tmp_path, backend=None, *, may_prepare=True):
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+    from aptl.core.retained_enrollment import scenario_enrollment_retainer
+
     times = iter((_TRIGGER, _FINISH, _TRIGGER))
+    realization = _realization()
     return TechVaultNativeEvidenceOwner(
-        backend=backend or _Backend(),
-        realization=_realization(),
-        project_dir=tmp_path,
-        indexer_auth=("admin", "password"),
+        operations=AdmittedRuntimeOperations(backend or _Backend(), realization.nodes),
+        realization=realization,
+        retain_enrollment_ids=scenario_enrollment_retainer(tmp_path, establish=True),
+        may_prepare=may_prepare,
         dependencies=TechVaultNativeDependencies(
             now=lambda: next(times),
             sleep=lambda _seconds: None,
@@ -239,29 +252,20 @@ def test_sqli_owner_reads_wazuh_half_from_declared_manager_log_not_indexer(tmp_p
         call for call in backend.exec_calls if call[0] == "aptl-wazuh-manager"
     ]
     assert manager_reads == [
-        (
-            "aptl-wazuh-manager",
-            [
-                "tail",
-                "-c",
-                str(techvault_native.MAX_SOURCE_BYTES),
-                "/var/ossec/logs/alerts/alerts.json",
-            ],
-            30,
-        )
+        ("aptl-wazuh-manager", ["cat", "--", "/var/ossec/logs/alerts/alerts.json"])
     ]
 
 
 def test_wazuh_manager_log_discloses_loss_when_correlated_record_is_absent(tmp_path):
     backend = _Backend()
-    backend.container_exec = lambda name, cmd, *, timeout: subprocess.CompletedProcess(
-        cmd,
-        0,
-        "{partial\n"
-        if name == "aptl-wazuh-manager"
-        else _Backend().container_exec(name, cmd, timeout=timeout).stdout,
-        "",
-    )
+    original = backend.container_exec
+
+    def container_exec(name, cmd, *, timeout, record=True):
+        if name == "aptl-wazuh-manager":
+            return subprocess.CompletedProcess(cmd, 0, "{partial\n", "")
+        return original(name, cmd, timeout=timeout, record=record)
+
+    backend.container_exec = container_exec
 
     result = (
         _owner(tmp_path, backend)
@@ -272,25 +276,127 @@ def test_wazuh_manager_log_discloses_loss_when_correlated_record_is_absent(tmp_p
     assert result.status is CollectorStatus.MID_RUN_LOSS
 
 
-def test_suricata_query_reads_recent_events_from_a_large_native_log(tmp_path):
-    log = tmp_path / "eve.json"
-    event = {
+def _event(flow_id):
+    return {
         "timestamp": _FINISH,
         "src_ip": "172.20.1.40",
         "dest_ip": "172.20.1.20",
-        "flow_id": 42,
+        "flow_id": flow_id,
         "alert": {"signature_id": 1000010},
     }
-    # Exercise the real tail command, including a cut through an older line.
+
+
+def test_suricata_query_reads_every_event_of_a_large_native_log(tmp_path):
+    log = tmp_path / "eve.json"
+    first, last = _event(1), _event(2)
+    # The matching events sit at both ends of a log larger than the old
+    # 2 MiB transfer bound, so a tail or a prefix read loses one of them.
     log.write_text(
-        "x" * (techvault_native.MAX_SOURCE_BYTES + 100)
+        json.dumps(first)
         + "\n"
-        + json.dumps(event)
+        + ("x" * 3 * 1024 * 1024)
+        + "\n"
+        + "".join(json.dumps(_event(i)) + "\n" for i in range(3, 303))
+        + json.dumps(last)
         + "\n"
     )
     backend = _Backend()
-    backend.container_exec = lambda _name, argv, *, timeout: subprocess.run(
-        [*argv[:-1], str(log)], capture_output=True, text=True, timeout=timeout
+
+    def container_exec_stream(_name, argv, *, stdout, stderr):
+        assert argv[:2] == ["cat", "--"]
+        result = subprocess.run(["cat", "--", str(log)], capture_output=True)
+        stdout.write(result.stdout)
+        return StreamExit(result.returncode, False, False)
+
+    backend.container_exec_stream = container_exec_stream
+
+    events = _owner(tmp_path, backend).query_suricata(_START, _END)
+
+    assert events[0] == first
+    assert events[-1] == last
+    assert len(events) == 302
+
+
+def test_suricata_query_reports_a_failed_stream_as_unavailable(tmp_path):
+    backend = _Backend()
+    backend.container_exec_stream = lambda *_a, **_k: StreamExit(None, True, False)
+
+    assert _owner(tmp_path, backend).query_suricata(_START, _END) is None
+
+
+def test_measurement_owner_sends_no_sqli_probe_or_misp_write(tmp_path):
+    backend = _Backend()
+    owner = _owner(tmp_path, backend, may_prepare=False)
+
+    result = owner.sources()["aptl.collector.suricata-wazuh-sqli"].fetch(_START, _END)
+
+    assert result.status is CollectorStatus.SOURCE_UNAVAILABLE
+    assert result.observer_effect is None
+    assert backend.probe_payload == ""
+    assert backend.exec_calls == []
+    assert owner.misp_readiness_query(_START, _END) is None
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        subprocess.CompletedProcess(["curl"], 7, "", ""),
+        subprocess.TimeoutExpired("curl", 30),
+        OSError("transport-canary"),
+    ],
+)
+def test_a_started_sqli_request_that_fails_is_unconfirmed_not_absent(
+    tmp_path, outcome
+):
+    from aptl_techvault.evidence.techvault import SQLI_DELIVERY_UNCONFIRMED
+
+    backend = _Backend()
+
+    def execute(name, cmd, payload, *, timeout):
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    backend.container_exec_with_input = execute
+
+    assert _owner(tmp_path, backend).trigger_sqli() == SQLI_DELIVERY_UNCONFIRMED
+
+
+def test_a_refused_sqli_request_never_started(tmp_path):
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+    owner = _owner(tmp_path)
+    # The realization no longer admits the Kali container: core refuses first.
+    owner._operations = AdmittedRuntimeOperations(_Backend(), ())
+
+    assert owner.trigger_sqli() is None
+
+
+@pytest.mark.parametrize(
+    ("extra", "address"),
+    [
+        ({}, "172.20.0.135"),
+        ({"bad\nname": {"IPAddress": "10.0.0.2"}}, None),
+    ],
+)
+def test_misp_address_needs_one_whole_admitted_attachment(extra, address):
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+    from aptl_techvault.evidence.techvault_native_readiness import (
+        _owned_attachment_address,
     )
 
-    assert _owner(tmp_path, backend).query_suricata(_START, _END) == [event]
+    networks = {"range": {"IPAddress": "172.20.0.135", "Aliases": ["misp"]}, **extra}
+    backend = SimpleNamespace(
+        container_inspect=lambda _name: {"NetworkSettings": {"Networks": networks}}
+    )
+    node = SimpleNamespace(name="misp", container_name="aptl-misp", aliases=())
+    operations = AdmittedRuntimeOperations(backend, (node,))
+
+    assert _owned_attachment_address(operations, node, "misp") == address
+
+
+def test_owner_operations_refuse_a_container_the_realization_did_not_admit(tmp_path):
+    owner = _owner(tmp_path)
+
+    with pytest.raises(ValueError, match="^runtime-node-not-admitted$"):
+        owner._operations.container_exec("aptl-outside", ["true"], timeout=30)

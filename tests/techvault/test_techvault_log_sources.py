@@ -347,11 +347,17 @@ def test_samba_provider_rejects_a_failed_service_override_write(scenario):
 
 
 def test_domain_samba_config_is_idempotent_and_rejects_conflicting_log_authority():
-    original = "# Global parameters\n[global]\n\trealm = TECHVAULT.LOCAL\n\n[sysvol]\n\tpath = /var/lib/samba/sysvol\n"
+    # The provider's NT ACL store options (#976) must survive the audit edit.
+    acl_store = (
+        "\txattr_tdb:file  = /var/lib/samba/private/xattr.tdb\n"
+        "\tvfs objects = dfs_samba4 acl_xattr xattr_tdb\n"
+    )
+    original = f"# Global parameters\n[global]\n\trealm = TECHVAULT.LOCAL\n{acl_store}\n[sysvol]\n\tpath = /var/lib/samba/sysvol\n"
 
     configured = _samba_ad_config(original)
 
     assert configured is not None
+    assert acl_store in configured
     assert "\tlog file = /var/log/samba/log.samba\n" in configured
     assert "\tlog level = 1 auth_audit:5\n" in configured
     assert _samba_ad_config(configured) == configured

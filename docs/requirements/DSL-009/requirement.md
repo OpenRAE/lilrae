@@ -11,6 +11,13 @@ updated_at: 2026-10-11T00:00:00.000000Z
 
 # DSL-009: Simulated User Behavior Profiles in SDL
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/DSL-009/requirement.md).
+
+
 ## Statement
 
 The APTL backend shall drive RAES-declared user-behavior profiles in a realized range. These profiles cover browsing, email, login schedules, file access, and other baseline traffic. They make the range generate realistic background activity alongside adversarial and defensive activity. The RAES SDL owns how authors declare the profiles. The backend runs the declared profiles against the lab.

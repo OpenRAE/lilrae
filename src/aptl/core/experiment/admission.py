@@ -236,7 +236,7 @@ def _persist_plan(plan: TrialPlan, *, run_store: RunStorageBackend) -> Path:
     try:
         persisted_path = run_store.create_json_once("experiment-plans", plan.plan_id, payload)
     except (PathContainmentError, ValueError) as exc:
-        # SecretInvariantError / RunStoreConflictError are ValueError
+        # RunStoreConflictError is a ValueError
         # subclasses; caught here without restating them.
         raise _reject(
             _CODE_PERSISTENCE_FAILED,

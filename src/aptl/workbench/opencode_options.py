@@ -51,7 +51,7 @@ class OpenCodeOptions:
     executable: Path
     work_root: Path
     environment: Mapping[str, str] = field(default_factory=dict, repr=False)
-    max_output_bytes: int = 1_000_000
+    max_output_bytes: int | None = None
     max_output_tokens: int = 128
     runner: CancellableProcessRunner | None = None
     tools: OpenCodeToolProfile | None = None
@@ -67,6 +67,10 @@ class OpenCodeOptions:
     native_history_required: bool = False
     request_observation_required: bool = False
     capture: ParticipantCaptureArchive | None = field(default=None, repr=False)
+    #: Receives the participant's redacted native session after each invocation.
+    transcript_sink: Callable[[Mapping[str, object]], None] | None = field(
+        default=None, repr=False
+    )
     #: ``session`` requires a RAES tool session for tools. ``allowlist`` runs
     #: the verified profile tools under deny-by-default permissions (#1670).
     tool_governance: Literal["session", "allowlist"] = "session"

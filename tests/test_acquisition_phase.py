@@ -64,6 +64,7 @@ def _fake_request(tmp_path, runtime_adapter):
             contribution=SimpleNamespace(
                 runtime_adapter=runtime_adapter,
                 native_registration_ids=frozenset({"example.events"}),
+                measurement_registration_ids=frozenset(),
                 runtime_environment_keys=(),
                 generated_output_refs=(),
             ),
@@ -167,7 +168,9 @@ def test_preparation_source_prepares(tmp_path):
     assert result.observer_effect == "preparation stimulus sent"
 
 
-def _native_request(tmp_path, *, trial, runtime_adapter):
+def _native_request(
+    tmp_path, *, trial, runtime_adapter, native_ids=frozenset({"example.events"})
+):
     from aptl.backends.raes_evidence_acquisition import NativeEvidenceRequest
     from aptl.core.runstore import LocalRunStore
 
@@ -179,7 +182,8 @@ def _native_request(tmp_path, *, trial, runtime_adapter):
     selection = SimpleNamespace(
         contribution=SimpleNamespace(
             runtime_adapter=runtime_adapter,
-            native_registration_ids=frozenset(),
+            native_registration_ids=native_ids,
+            measurement_registration_ids=frozenset(),
             runtime_environment_keys=(),
             generated_output_refs=(),
         ),
@@ -205,6 +209,7 @@ def _record_phase(monkeypatch):
 
     def fake(request, *, establish_enrollment=False, phase):
         recorded["phase"] = phase
+        recorded["establish_enrollment"] = establish_enrollment
         return {}
 
     monkeypatch.setattr(sc, "family_capture_sources", fake)
@@ -218,11 +223,76 @@ def test_acquire_native_evidence_selects_preparation(tmp_path, monkeypatch):
     trial = SimpleNamespace(
         identity=lambda: {"run_id": "run-1", "plan_entry_id": "entry-1"}
     )
-    request = _native_request(tmp_path, trial=trial, runtime_adapter=object())
+    request = _native_request(tmp_path, trial=trial, runtime_adapter=_RecordingAdapter())
 
     acquisition.acquire_native_evidence(request)
 
     assert recorded["phase"] is AcquisitionPhase.PREPARATION
+    assert recorded["establish_enrollment"] is True
+
+
+def test_preparation_establishes_enrollment_after_the_plan_is_sealed(
+    tmp_path, monkeypatch
+):
+    """The transcript window seals the plan before the first native capture."""
+
+    from aptl.backends import raes_evidence_acquisition as acquisition
+    from aptl.backends._raes_native_evidence_acquisition import (
+        _persist_capture_plan,
+    )
+
+    recorded = _record_phase(monkeypatch)
+    trial = SimpleNamespace(
+        identity=lambda: {"run_id": "run-1", "plan_entry_id": "entry-1"}
+    )
+    request = _native_request(tmp_path, trial=trial, runtime_adapter=object())
+    _persist_capture_plan(request.plan, request.run_store, request.run_id)
+
+    acquisition.acquire_native_evidence(request)
+
+    assert recorded["establish_enrollment"] is True
+
+
+def test_acquire_native_evidence_selects_preparation_without_a_trial(
+    tmp_path, monkeypatch
+):
+    from aptl.backends import raes_evidence_acquisition as acquisition
+
+    recorded = _record_phase(monkeypatch)
+    request = _native_request(tmp_path, trial=None, runtime_adapter=_RecordingAdapter())
+
+    acquisition.acquire_native_evidence(request)
+
+    assert recorded["phase"] is AcquisitionPhase.PREPARATION
+
+
+@pytest.mark.parametrize(
+    "trial",
+    [
+        None,
+        SimpleNamespace(
+            identity=lambda: {"run_id": "run-1", "plan_entry_id": "entry-1"}
+        ),
+    ],
+)
+def test_an_adapter_without_declared_native_sources_is_not_invoked(
+    tmp_path, monkeypatch, trial
+):
+    from aptl.backends import raes_evidence_acquisition as acquisition
+
+    recorded = _record_phase(monkeypatch)
+    adapter = _RecordingAdapter()
+    request = _native_request(
+        tmp_path, trial=trial, runtime_adapter=adapter, native_ids=frozenset()
+    )
+
+    acquisition.acquire_native_evidence(request)
+    acquisition.acquire_trial_evidence(
+        request, attempt_id="attempt-1", trial_body=lambda: None
+    )
+
+    assert recorded == {}
+    assert adapter.seen_phase is None
 
 
 def test_acquire_trial_evidence_selects_measurement(tmp_path, monkeypatch):
@@ -471,8 +541,11 @@ def test_on_demand_collector_preserves_observer_effect_on_clock_skew():
         run_id="run-1",
         attempt_id="provisioning",
         binding=SimpleNamespace(registration_id="r"),
-        deadline_seconds=60,
-        clock=_Clock("2026-09-14T00:00:00Z", "2026-09-14T00:00:05Z"),
+        progress_timeout_seconds=60,
+        # Start, the on-demand window end, and the finish each read the clock.
+        clock=_Clock(
+            "2026-09-14T00:00:00Z", "2026-09-14T00:00:05Z", "2026-09-14T00:00:05Z"
+        ),
     )
     collector = _OnDemandNativeCollector("r", _Source())
     outcome = collector.stop(collector.start(context))

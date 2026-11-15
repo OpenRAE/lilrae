@@ -95,6 +95,7 @@ describe('generateAPIToolHandlers', () => {
       upload_rule_file: {
         url: 'https://wazuh.example:55000/rules/files/{filename}',
         method: 'PUT' as const,
+        content_type: 'application/octet-stream',
         path_param_patterns: { filename: '[A-Za-z0-9][A-Za-z0-9_.-]*\\.xml' },
         description: 'Upload a rules file',
       },

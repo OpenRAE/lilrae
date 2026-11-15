@@ -57,6 +57,10 @@ LAB_CA_PATH = os.getenv(
     "APTL_LAB_CA_PATH",
     os.path.join(PROJECT_ROOT, "config", "soc_certs", "lab-ca.pem"),
 )
+# SEC-009: live requests to the indexer verify against the lab Wazuh CA.
+WAZUH_CA_PATH = os.path.join(
+    PROJECT_ROOT, "config", "wazuh_indexer_ssl_certs", "root-ca.pem"
+)
 
 
 SHUFFLE_URL = os.getenv("SHUFFLE_URL", "https://localhost:3443")
@@ -378,7 +382,7 @@ def curl_indexer(path: str = "", body: dict | None = None) -> dict:
     url = f"{INDEXER_URL}/{path}" if path else INDEXER_URL
     return curl_json(
         url, auth_header=basic_auth_header(INDEXER_USER, INDEXER_PASS),
-        body=body, insecure=True, timeout=40,
+        body=body, ca_cert_path=WAZUH_CA_PATH, timeout=40,
     )
 
 

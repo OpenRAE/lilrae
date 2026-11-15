@@ -11,6 +11,13 @@ updated_at: 2026-07-11T02:30:28.880925Z
 
 # EXP-001: Durable Experiment Execution and Fault Recovery
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/EXP-001/requirement.md).
+
+
 ## Statement
 
 APTL shall execute an admitted trial plan through a durable, versioned campaign journal and explicit state machine. It shall classify failures as infrastructure, apparatus-readiness, participant, scenario, capture, operator-cancelled, or policy/budget failures; preserve all evidence available at interruption; and retry only configured retryable classes within bounded attempt and backoff budgets. Each attempt shall have a distinct archival run identity with lineage to the planned trial and prior attempt. Restart after process or host failure shall be idempotent and shall not duplicate completed trials or reuse contaminated range state.

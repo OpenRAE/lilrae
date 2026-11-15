@@ -1,5 +1,13 @@
 # Issue #1006 Container Base-Image Migration Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1006-container-base-images-preflight.md).
+Its last recorded file change before this rewrite was `41551db875b1`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 > **Dated preflight record.** Written on 2026-09-17 and kept as written. Since
 > then, #1100 (7a3382eb, 2026-09-17) removed `containers/ad/Dockerfile`,
 > `containers/wazuh-sidecar/Dockerfile` and

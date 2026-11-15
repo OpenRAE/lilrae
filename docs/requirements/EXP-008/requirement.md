@@ -11,6 +11,13 @@ updated_at: 2026-07-29T00:16:18.402084Z
 
 # EXP-008: Portable Research Evidence Bundle Export
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/EXP-008/requirement.md).
+
+
 ## Statement
 
 APTL shall export a sealed, self-describing evidence bundle containing canonical ACES task/spec/run/apparatus/capture/evidence artifacts, referenced raw observations, schema and contract versions, checksums, sensitivity and redaction disclosures, collection limitations, and a machine-readable inventory/data dictionary. JSONL and Parquet projections and OCSF-aligned event projections may be included only where the mapping is loss-accounted and source records remain referenced. Export shall be deterministic, path-contained, integrity-verifiable, and safe against formula/path injection. It shall not perform statistical analysis, select publication claims, or certify a dataset as publishable.

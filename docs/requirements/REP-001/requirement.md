@@ -11,6 +11,13 @@ updated_at: 2026-06-25T16:18:21.506620Z
 
 # REP-001: ACES-Aligned Run Reproducibility Record
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/REP-001/requirement.md).
+
+
 ## Statement
 
 The platform shall capture an ACES-aligned reproducibility record for every run, preserving scenario snapshot identity, ACES processor/backend manifest identity, runtime snapshot/provenance, apparatus and realization details, image and configuration digests, detection-content versions, tool versions, scenario parameters, seeds, and evidence references needed to reproduce or audit the run. APTL run-archive fields may store backend-specific evidence, but the canonical structure shall align with ACES task, run, apparatus, evidence, and provenance contracts where those contracts exist.

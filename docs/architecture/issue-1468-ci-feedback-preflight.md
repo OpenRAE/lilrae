@@ -1,5 +1,13 @@
 # Issue #1468 CI Feedback and Test Suite Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1468-ci-feedback-preflight.md).
+Its last recorded file change before this rewrite was `378f53086679`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Issue #1468 is the delivery contract; no GRC requirement is attached.
 This note sets implementation boundaries. It changes no runtime, test selection,
 CI behavior, or testing policy. The performance targets and substantial pruning

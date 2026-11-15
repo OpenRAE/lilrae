@@ -1,5 +1,13 @@
 # Issue #589 RAES Scenario-Pack Capture Workflow Ownership Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-589-scenario-pack-capture-ownership-preflight.md).
+Its last recorded file change before this rewrite was `e76f66f89881`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note records the APTL-side boundary for RAES scenario packs. RAES is the
 current project name; existing `raes_*` package, module, and CLI names remain
 technical compatibility identifiers. This is guidance, not an implementation

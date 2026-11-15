@@ -109,8 +109,9 @@ def capture_source_context(
 ) -> CaptureSourceContext:
     """Detach source inputs and expose only explicitly granted credential keys.
 
-    Only the provisioning capture passes ``establish_enrollment``; it may create
-    the trial's retained enrollment record once. Other contexts only read it.
+    Only the provisioning capture passes ``establish_enrollment``. It may create
+    the trial's retained enrollment record once, or, without a trial, create or
+    extend the scenario record. Other contexts only read the record.
     The caller selects ``phase``; preparation alone authorizes state-changing
     stimulus, and every other phase stays observational.
     """
@@ -125,7 +126,7 @@ def capture_source_context(
     )
 
     def read_output(artifact_name: str, output_name: str) -> bytes:
-        """Read one bounded generated output explicitly granted by the adapter."""
+        """Read one complete generated output explicitly granted by the adapter."""
 
         allowed = request.capture_selection.contribution.generated_output_refs
         if GeneratedOutputReference(artifact_name, output_name) not in allowed:
@@ -143,10 +144,7 @@ def capture_source_context(
         try:
             root = artifact_source_path(request.project_dir, artifacts[0])
             with open_contained_nofollow(root, outputs[0].path) as handle:
-                data = handle.read(2 * 1024 * 1024 + 1)
-            if len(data) > 2 * 1024 * 1024:
-                raise ValueError
-            return data
+                return handle.read()
         except Exception:
             raise ValueError("capture-output-unavailable") from None
 
@@ -157,31 +155,35 @@ def capture_source_context(
         environment,
         trial,
         read_output,
-        None
-        if trial is None
-        else _enrollment_retainer(request.project_dir, trial, establish_enrollment),
+        _enrollment_retainer(request.project_dir, trial, establish_enrollment),
         phase=phase,
     )
 
 
 def _enrollment_retainer(
-    project_dir: object, trial: AdmittedFamilyTrial, establish: bool
+    project_dir: object, trial: AdmittedFamilyTrial | None, establish: bool
 ) -> Callable[[Mapping[str, str]], Mapping[str, str] | None]:
-    """Bind core-retained enrollment ids to the admitted trial identity."""
+    """Bind core-retained enrollment ids to the trial, or to the scenario record."""
 
     import hashlib
     import json
     from pathlib import Path
 
-    from aptl.core.retained_enrollment import trial_enrollment_retainer
-
-    digest = hashlib.sha256(json.dumps(trial.identity(), sort_keys=True).encode())
-    retain = trial_enrollment_retainer(
-        Path(project_dir), f"sha256:{digest.hexdigest()}", establish=establish
+    from aptl.core.retained_enrollment import (
+        scenario_enrollment_retainer,
+        trial_enrollment_retainer,
     )
 
+    if trial is None:
+        retain = scenario_enrollment_retainer(Path(project_dir), establish=establish)
+    else:
+        digest = hashlib.sha256(json.dumps(trial.identity(), sort_keys=True).encode())
+        retain = trial_enrollment_retainer(
+            Path(project_dir), f"sha256:{digest.hexdigest()}", establish=establish
+        )
+
     def retain_ids(observed: Mapping[str, str]) -> Mapping[str, str] | None:
-        """Return node-to-agent ids this trial retained before this call."""
+        """Return node-to-agent ids that core retained before this call."""
 
         prior = retain(observed)
         return None if prior is None else MappingProxyType(prior)
@@ -207,7 +209,14 @@ def family_capture_sources(
     if (
         not isinstance(sources, Mapping)
         or len(sources) > 256
-        or not set(sources).issubset(contribution.native_registration_ids)
+        or not set(sources).issubset(
+            contribution.native_registration_ids
+            | (
+                contribution.measurement_registration_ids
+                if not context.may_prepare
+                else frozenset()
+            )
+        )
         or any(
             not isinstance(source, WindowedSource) or not callable(source.fetch)
             for source in sources.values()
@@ -309,6 +318,8 @@ class ScenarioCaptureContribution:
         default=None, repr=False, compare=False
     )
     generated_output_refs: tuple[GeneratedOutputReference, ...] = ()
+    #: Sources collected only during trial measurement, after startup preparation.
+    measurement_registration_ids: frozenset[str] = frozenset()
 
 
 class ScenarioCaptureProvider(Protocol):

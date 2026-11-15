@@ -1,4 +1,4 @@
-# ADR-066: Runtime Readback Reports Realized State
+# ADR-071: Runtime Readback Reports Realized State
 
 ## Status
 
@@ -7,6 +7,14 @@ accepted
 ## Date
 
 2026-10-31
+
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [realization Reference](../components/node-realization.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
 
 ## Context
 
@@ -53,6 +61,17 @@ The [design](../architecture/issue-1017-native-runtime-attestation-design.md) gi
    The family API keeps its version, because adapters now provide a superset of the requirement.
 
 ## Alternatives considered
+
+### Fixed image declarations (2026-11-12 amendment)
+
+An installed adapter may report a fixed image preset with the RAE `driver-reported` source.
+It must bind that preset to the observed image identity and the admitted source family.
+The backend must pin the immutable image used to create the worker.
+The report describes the known preset; it does not claim native configuration readback.
+Core readers retain their declared sources and cannot be overridden by a weaker adapter report.
+
+Live readiness, experimental measurements, and objective verdicts require their own native observations.
+This is distinct from the rejected bridge, which labelled release-table values as daemon observations.
 
 | Alternative | Reason for rejection |
 | --- | --- |

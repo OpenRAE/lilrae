@@ -254,6 +254,39 @@ def test_misp_probe_deletes_its_event_when_readback_fails(tmp_path):
     assert "events/delete/7" in calls
 
 
+@pytest.mark.parametrize(("delete_exit", "expected_exit"), [(0, 0), (22, 1)])
+def test_misp_probe_succeeds_only_when_its_event_delete_succeeds(
+    tmp_path, delete_exit, expected_exit
+):
+    """A zero exit is the only proof that the probe removed its event."""
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl = bin_dir / "curl"
+    curl.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        '  *events/add*) echo \'{"Event":{"id":"7"}}\';;\n'
+        '  *events/view*) echo \'{"Event":{"info":"M"}}\';;\n'
+        f"  *events/delete*) exit {delete_exit};;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    curl.chmod(0o755)
+
+    result = subprocess.run(
+        ["sh", "-s", "--", "M"],
+        input=_script("_MISP_API_SCRIPT"),
+        capture_output=True,
+        text=True,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "ADMIN_KEY": _SECRET},
+        cwd=tmp_path,
+    )
+
+    assert "api_write_read_ok=true" in result.stdout
+    assert result.returncode == expected_exit
+
+
 def test_misp_probe_rejects_header_injection_before_curl(tmp_path):
     recorded = _argv_recorder(tmp_path, "curl")
 

@@ -174,3 +174,96 @@ def test_exact_promotion_does_not_exempt_an_arbitrary_title(tmp_path: Path) -> N
 )
 def test_promotion_identity_rejects_malformed_event_shapes(event: object) -> None:
     assert not check_pr_title.is_trusted_promotion(event)
+
+
+_QUEUE_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def _merge_group_event(
+    *, number: int = 42, base: str = "dev", base_ref: str = "refs/heads/dev"
+) -> dict[str, object]:
+    return {
+        "merge_group": {
+            "head_ref": f"refs/heads/gh-readonly-queue/{base}/pr-{number}-{_QUEUE_SHA}",
+            "base_ref": base_ref,
+            "base_sha": _QUEUE_SHA,
+        }
+    }
+
+
+class _Response:
+    def __init__(self, payload: object) -> None:
+        self._body = json.dumps(payload).encode()
+
+    def __enter__(self):
+        import io
+
+        return io.BytesIO(self._body)
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+def _api(payload: object, seen: list[object] | None = None):
+    def opener(request, timeout):
+        if seen is not None:
+            seen.append(request)
+        return _Response(payload)
+
+    return opener
+
+
+def _run_merge_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event: dict[str, object], opener
+) -> int:
+    monkeypatch.setenv("GITHUB_REPOSITORY", "OpenRAE/lilrae")
+    monkeypatch.setenv("GITHUB_TOKEN", "job-token")
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    return check_pr_title.main(["--event-path", str(event_path)], opener)
+
+
+def test_merge_group_validates_the_queued_pull_request_title(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dev merge queue requires this context on each group (ADR-068)."""
+    seen: list[object] = []
+    opener = _api({"number": 42, "title": "ci: use the merge queue"}, seen)
+
+    assert _run_merge_group(tmp_path, monkeypatch, _merge_group_event(), opener) == 0
+    assert seen[0].full_url == "https://api.github.com/repos/OpenRAE/lilrae/pulls/42"
+    assert seen[0].get_header("Authorization") == "Bearer job-token"
+
+
+def test_merge_group_rejects_a_bad_queued_title(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opener = _api({"number": 42, "title": "[codex] Use the merge queue"})
+    assert _run_merge_group(tmp_path, monkeypatch, _merge_group_event(), opener) == 1
+
+
+@pytest.mark.parametrize(
+    ("event", "payload"),
+    [
+        (_merge_group_event(base="main"), {"number": 42, "title": "ci: ok"}),
+        (_merge_group_event(base_ref="refs/heads/main"), {"number": 42, "title": "ci: ok"}),
+        ({"merge_group": {"head_ref": "refs/heads/dev"}}, {"number": 42, "title": "ci: ok"}),
+        ({"merge_group": None}, {"number": 42, "title": "ci: ok"}),
+        (_merge_group_event(), {"number": 7, "title": "ci: ok"}),
+        (_merge_group_event(), ["not", "a", "pull request"]),
+        (_merge_group_event(), {"number": 42}),
+    ],
+)
+def test_merge_group_fails_closed_on_an_untrusted_ref_or_response(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event, payload
+) -> None:
+    assert _run_merge_group(tmp_path, monkeypatch, event, _api(payload)) == 2
+
+
+def test_merge_group_fails_closed_when_the_api_is_unreachable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def opener(request, timeout):
+        raise OSError("network down")
+
+    assert _run_merge_group(tmp_path, monkeypatch, _merge_group_event(), opener) == 2

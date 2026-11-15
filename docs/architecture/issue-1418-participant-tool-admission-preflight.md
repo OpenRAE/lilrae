@@ -1,5 +1,13 @@
 # Issue #1418: Participant MCP action admission
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1418-participant-tool-admission-preflight.md).
+Its last recorded file change before this rewrite was `f5848f013d91`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This preflight covers the supplied #1418 contract: admit and observe red and
 blue MCP tool calls through the RAES participant runtime. It is guidance, not
 an implementation plan. The supplied issue links DSL-010; the original
@@ -30,7 +38,7 @@ ADRs [003](../adrs/adr-003-mcp-common-library.md),
 [050](../adrs/adr-050-terminal-attempt-archival-and-atomic-seal.md) already own
 the relevant boundaries. This preflight adds no new ADR or policy engine.
 
-The concurrently added [proposed ADR-065](../adrs/adr-065-executable-participant-action-boundaries.md)
+The concurrently added [proposed ADR-070](../adrs/adr-070-executable-participant-action-boundaries.md)
 and [enforcement design](participant-action-enforcement.md) describe scoped
 tool sessions, local IPC and finite verification models. Their proposed
 status does not establish support or acceptance. Verification models must

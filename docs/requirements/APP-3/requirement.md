@@ -11,6 +11,13 @@ updated_at: 2026-07-26T04:44:22.303558Z
 
 # APP-3: Signed disposable appliance release envelope
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/APP-3/requirement.md).
+
+
 ## Statement
 
 APTL shall assemble and verify a signed, versioned appliance release envelope that binds an immutable golden guest disk to the exact APTL source revision and version, staged participant profile and asset-lock identities, accepted qualification evidence, appliance boundary policy and helper-image digests, supported delivery adapters, and explicit host prerequisites; release verification shall fail closed on unsafe references, unknown fields, duplicate artifacts, digest or signature mismatch, missing offline inputs, golden-state contamination, insufficient multi-machine qualification, or an attempted in-place upgrade.

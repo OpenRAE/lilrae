@@ -8,6 +8,12 @@ accepted
 
 2026-03-29
 
+## Applicability
+
+This record explains additions to the earlier local SDL.
+[ADR-035](adr-035-raes-sdl-adoption.md) later assigns the portable language to RAES.
+The [SDL guide](../sdl/index.md) links current authoring contracts.
+
 ## Context
 
 [ADR-014](adr-014-scenario-description-language.md) established the SDL as a backend-agnostic scenario specification language grounded in the Open Cyber Range (OCR) SDL. [ADR-015](adr-015-declarative-sdl-objectives.md) then restored declarative experiment objectives to the SDL itself.
@@ -15,8 +21,8 @@ accepted
 When the branch started authoring large, design-first SDL scenarios, three authoring gaps became clear:
 
 - Some scenario posture choices needed to be parameterized, but leaf enum-backed property fields still rejected `${var}` placeholders.
-- Objectives could target nodes, features, relationships, and content, but not directly target named service bindings or named ACL rules, which forced authors to introduce indirection for important control paths.
-- Stories/scripts/events gave a temporal layer, and `depends_on` gave partial ordering, but branchy and parallel experiment control still had to be flattened rather than expressed directly.
+- Objectives could target nodes, features, relationships, and content. Named service bindings and ACL rules required indirection because they were not direct targets.
+- Stories, scripts, and events supplied timing, while `depends_on` supplied partial order. Authors still needed direct branching and parallel experiment control.
 
 Precedent review suggested a coherent direction:
 

@@ -1,5 +1,13 @@
 # Web GUI Design Preflight Guardrails
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/specs/web-gui-design-preflight.md).
+Its last recorded file change before this rewrite was `82c26b34c84d`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 > **Dated preflight record.** Written on 2026-06-27 and kept as written. Since
 > then, UI-008a (684105ec, 2026-06-28) replaced `web/src/hooks.server.ts` with
 > the FastAPI BFF gate in `src/aptl/api/middleware/bff.py`, and UI-008d

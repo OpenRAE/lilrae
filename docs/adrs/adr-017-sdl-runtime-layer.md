@@ -9,6 +9,12 @@
 > removed after the RAES SDL cutover. The current runtime handoff uses RAES SDL
 > and RAES runtime planning.
 
+## Applicability
+
+This proposed record keeps its original status.
+Its local runtime modules describe an earlier design, not a second current semantic owner.
+[ADR-035](adr-035-raes-sdl-adoption.md) and [ADR-046](adr-046-dynamic-raes-scenario-realization.md) define the later RAES boundary.
+
 ## Context
 
 The SDL is now the authoritative scenario specification surface. The next layer
@@ -101,10 +107,7 @@ Capabilities are domain-specific rather than a single overloaded bag:
 - `OrchestratorCapabilities`
 - `EvaluatorCapabilities`
 
-The planner validates semantic requirements from the compiled model, including
-node types, OS families, scaling limits, ACL usage, content types, account
-features, orchestration usage, workflows, workflow predicate condition refs,
-scoring, and objectives. Capability-relevant variable refs consumed by the
+The planner validates requirements from the compiled model. These include node and OS types, scaling, ACLs, content, accounts, orchestration, workflows, predicate references, scoring, and objectives. Capability-relevant variable refs consumed by the
 planner must still resolve soundly even when SDL semantic cross-reference
 validation was skipped earlier:
 

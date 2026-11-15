@@ -12,8 +12,8 @@ lilrae <command> <subcommand> --help
 ```
 
 The `aptl` command is a deprecated alias of `lilrae`. It runs the same
-commands and writes one deprecation notice to stderr. LilRAE 10.0.0 removes
-it. See [Move from the aptl command](../getting-started/installation.md#move-from-the-aptl-command).
+commands and writes one deprecation notice to stderr.
+The candidate still registers it despite the planned 10.0.0 removal target. See [Move from the aptl command](../getting-started/installation.md#move-from-the-aptl-command).
 
 ## Command Groups
 
@@ -29,6 +29,7 @@ it. See [Move from the aptl command](../getting-started/installation.md#move-fro
 | `lilrae experiment` | Admit experiment inputs and persist an immutable trial plan. It does not execute the plan. |
 | `lilrae seat` | Run one disposable appliance seat from a published VM image. |
 | `lilrae mcp-access` | Materialize authorized MCP client access for a participant or appliance seat. |
+| `lilrae containment` | Run one command in the shared containment wrapper. See the [containment interface](containment-interface.md). |
 
 `lilrae --version` prints the installed CLI version. Hidden implementation flags
 and direct calls into Python modules are not supported interfaces.
@@ -112,8 +113,9 @@ as `[REDACTED]`.
 `Execution boundary:` line. It carries its own `schema_version`,
 `aptl.execution-boundary/v1`, and `transport`, `override_source`,
 `daemon_runtime`, `host_containment`, `observation_status`, `host_os`,
-`host_kernel`, `docker_version`, `containment_verified`, `profile_ref`, and
-`evidence_refs`.
+`host_kernel`, `docker_version`, `range_egress_policy`,
+`range_host_access_policy`, `range_policy_digest`, `containment_verified`,
+`profile_ref`, and `evidence_refs`.
 
 `published_ports` lists the host ports the text access summary reads. When the lab operates, they are the bindings Docker reports, and
 `published_ports_observed` is `true`. When Docker reports none, the list is

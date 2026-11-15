@@ -17,6 +17,14 @@ capture, signing, and qualification requirements remain binding.
 
 2026-09-17
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [host-access Reference](../reference/host-mcp-access.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 Issue #868 makes the packaged full TechVault deployment the shared input to
@@ -55,9 +63,7 @@ Delivery may add platform enforcement and ingress without rewriting the
 scenario. A role profile selects authority; it does not select a reduced lab.
 `guided-purple-v1` remains a distinct fixture, not the appliance input source.
 
-Evolve the existing participant reference/lock contracts to bind a validated
-pack identity rather than inventing another scenario manifest or copying the
-pack into a fake catalog entry. Preserve project-tree references for existing
+Existing participant references and locks should bind validated pack identity. Another scenario manifest or artificial copied catalog entry is not needed. Preserve project-tree references for existing
 fixtures through an explicit versioned source choice. Resolve content against
 the bundle root, never a coincidentally matching project-relative file.
 Preserve the single admission handoff in `core/lab.py`; consumers use that
@@ -109,19 +115,13 @@ The concrete transport contract is:
   environment forwarding. The launcher supplies the authenticated host-key
   fingerprint; a key discovered through the same untrusted endpoint is not a
   trust anchor. Key material never appears in argv, URLs, or client config.
-- Before spawning a backend, validate the key grant, role, current generation,
-  active scenario/run, guest daemon/project ownership, backend identities,
-  required capture readiness, and admitted boundary policy. Enforce the exact
-  role tool set on both listing and calls at the guest MCP dispatch boundary;
-  reject direct calls to hidden tools and unapproved protocol capabilities.
+- Before backend launch, validate grant/key, role, generation, active run, guest ownership, backend identity, capture readiness, and admitted boundary policy. Guest MCP dispatch must enforce role inventory on listing and calls. Hidden tools and unapproved protocol features must refuse direct invocation.
   Use the existing role inventory as the single authority definition.
 - Each connection owns its MCP process and sessions. Bound connections,
   messages, output, idle time, and operation duration. Associate all calls with
   the server-owned caller/seat/run binding; clients cannot choose capture paths
   or overwrite correlation identity. Keep stdout exclusively MCP protocol.
-- Revocation, expiry, role transition, instance replacement, or loss of required
-  identity/capture invalidates admission and terminates affected live sessions,
-  including descendants and SSH sessions opened by MCP. Removing a public key
+- Revocation, expiry, role changes, replacement, or required identity/capture loss invalidates admission. Affected live sessions, descendants, and MCP-opened SSH sessions must terminate. Removing a public key
   only prevents new SSH logins. Check authorization for each call and stop
   in-flight work on revocation. Record incomplete cleanup and block reuse.
   EOF, cancellation, and timeout follow the same bounded cleanup contract.
@@ -148,15 +148,17 @@ prompts differ. Preserve their normal trust/approval controls and user-owned
 provider login. See the [Claude MCP configuration reference](https://code.claude.com/docs/en/mcp)
 and [Codex MCP configuration reference](https://developers.openai.com/codex/mcp).
 
-Reuse `core.lab._sync_mcp_config_keys()` as the incumbent selective-update
-behavior, not as a host-seat credential exporter: it writes guest service
-secrets and is not safe to run on the outer host for this purpose. Extend the
+`core.lab._sync_mcp_config_keys()` supplies selective-update precedent only. It writes guest secrets and is not an outer-host seat credential exporter. Extend the
 existing rendering boundary with client-specific serializers and one common
-validated binding. Preserve unrelated settings and manual server entries,
+validated binding.
+
+Preserve unrelated settings and manual server entries,
 including edits to formerly generated entries. Update only provably owned,
 unchanged entries; report conflicts rather than overwriting. Reject malformed
 or ambiguous documents, duplicate keys, identity mismatch, and stale endpoint
-generations. Use private atomic writes with concurrent-edit detection; do not
+generations.
+
+Use private atomic writes with concurrent-edit detection; do not
 partially publish a new binding and old configuration. Generated state is
 ignored, not committed to the project or installed into global user config.
 
@@ -176,12 +178,16 @@ Use existing strict Pydantic, safe-path, atomic persistence, and canonical JSON
 patterns in `appliance/seat/{models,persistence}.py` and `utils/pathsafe.py`.
 Files and parent directories are owner-only from creation; refuse links,
 foreign ownership, unsafe paths, and replacement races. Record no credentials,
-raw inspect output, evidence, or provider state. #868 owns this schema and its
+raw inspect output, evidence, or provider state.
+
+#868 owns this schema and its
 producer/consumer validation; #1022 owns durable live observation and lifecycle
 publication. Discovery never substitutes for the guest's authorization check.
 Do not copy `ContainerSnapshot.image_id` into a full container identity field:
 the current snapshot populates it from the `docker ps` row ID, which can be
-truncated. Obtain and verify the full container ID through backend inspection;
+truncated.
+
+Obtain and verify the full container ID through backend inspection;
 keep container identity, OCI image identity, and archive digest distinct.
 
 ### Complete inputs without premature release qualification
@@ -206,10 +212,7 @@ guest OS, Node, SSH, Docker, and helper runtime prerequisites in the builder
 input contract. Resolve the existing first-boot `--scenario` catalog assumption
 through the canonical source seam, not an appliance-specific scenario alias.
 
-Full TechVault includes powerful SOC services and child workloads. Preserve
-the exact admitted orchestration-authority exception from the issue #949
-preflight; do not remove those services to make qualification pass or treat a
-read-only Docker socket mount as restricted authority. A sealed build remains
+Full TechVault includes powerful SOC services and child workloads. Preserve the exact admitted #949 orchestration exception. Qualification must not remove those services or misrepresent a read-only socket mount as restricted Docker authority. A sealed build remains
 ineligible until its real containment can be proved.
 
 ## Cross-cutting validation and reuse
@@ -247,26 +250,19 @@ and transport version. Ports and paths are instance inputs, not edits to
 TechVault. Future hosted delivery or another client consumes those bindings;
 it must not require another scenario, role registry, or lifecycle engine.
 
-Whole-repository reconciliation includes the owners in the tables, the
-participant profiles/readiness/qualification models, `appliance/guest/`,
-`appliance/seat/`, CLI adapters, Compose/container/config assets, build locks,
-`.github/workflows/`, `.ground-control.yaml` boundary path coverage, and the
-workbench, boundary, release, and seat-launcher documentation. On adoption,
+Reconciliation includes the named owners, participant models, appliance guest/seat, CLI, deployment/config assets, locks, workflows, GRC workflow platform path coverage, and affected operating documents. On adoption,
 reconcile ADR-049's conflicting policy through this partial supersession and
-update the #821/#823 preflight assumptions. ADR-052/055/057/058 are related
-proposals, not evidence that their enforcement already exists.
+update the #821/#823 preflight assumptions. ADR-052 is an accepted related decision.
+ADR-055, ADR-057, and ADR-058 remain related proposals.
+Decision status alone does not establish that enforcement exists.
 
-#868 must prove packaged full-TechVault rootful deployment, the real workbench,
-input completeness and hashes, both native client configurations, and actual
-client-driven MCP execution against real backends. Record client versions and
+Issue #868 requires packaged rootful TechVault, the real workbench, complete hashed inputs, both native client configurations, and actual MCP calls against native backends. Record client versions and
 separate provider-authenticated client runs from SDK/protocol/config checks.
 The controlled rootful integration environment supplies real deployment
 identity and enforces the transport contract without claiming a sealed seat.
 Appliance boundary admission still requires its authenticated host observation;
 do not fabricate that observation or add a production test-mode bypass.
-Test denied tools/roles, wrong owner/seat/daemon/container/host key, revoked and
-expired grants including live connections, changed endpoints, partial writes,
-manual config preservation, unsafe paths, capture loss, and cleanup failure.
+Negative cases cover denied tools/roles, identity/key errors, live revocation/expiry, endpoint changes, partial writes, configuration conflicts, unsafe paths, capture loss, and cleanup failure.
 Use existing `tests/test_participant_workbench*`, `test_mcp_config_example`,
 appliance/boundary/package tests, `validation/participant_mcp_smoke.py`, and
 `validation/mcp_protocol.py`; extend coverage without duplicating validators.
@@ -279,10 +275,7 @@ fixtures, a TCP connection, and synthetic qualification flags are not substitute
 for client/backend execution. Unavailable provider execution is a missing
 acceptance result, not a passed test.
 
-#1022 owns actual image construction, boot mounts/key wiring, allocated host
-ports, concurrent-seat lifecycle, offline VM boot, nested KVM, real boundary
-and telemetry probes, two users with both clients, signed independent-machine
-qualification, recovery, and publication. Keep `verify_release_directory()`
+Issue #1022 owns image construction, boot wiring, ports, concurrent lifecycle, offline/nested-KVM boot, native probes, two-user/client checks, signed independent-machine qualification, recovery, and publication. Keep `verify_release_directory()`
 and `ApplianceDrillReport` strict; do not add a bypass or fabricate a golden disk
 to let #868 close. It supplies validated inputs and implemented software
 contracts, while production release remains gated on #1022 evidence.

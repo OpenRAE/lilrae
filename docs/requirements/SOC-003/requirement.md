@@ -11,6 +11,13 @@ updated_at: 2026-10-31T00:00:00.000000Z
 
 # SOC-003: TheHive Case Management
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/SOC-003/requirement.md).
+
+
 ## Statement
 
 The system shall provide TheHive 5 for incident case management, supporting case creation from Wazuh alerts, observable tracking, timeline documentation, and investigation workflow via REST API.

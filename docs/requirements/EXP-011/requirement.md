@@ -11,6 +11,13 @@ updated_at: 2026-07-11T02:30:43.593978Z
 
 # EXP-011: Apparatus Readiness and Validity Gate
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/EXP-011/requirement.md).
+
+
 ## Statement
 
 Before a campaign and where configured before each trial, APTL shall run a recorded apparatus gate covering ACES backend conformance, clean-state/isolation, safety controls, required services, collector readiness, clock synchronization, storage headroom, resource budgets, artifact availability and digest verification, and declared measurement-channel health. Thresholds and fail/warn policy shall be strict, versioned AptlConfig settings. Required gate failures shall prevent execution; warnings and waivers shall be explicit evidence in every affected run. The gate shall be extensible through capability-declared checks and shall not execute arbitrary code from experiment inputs.

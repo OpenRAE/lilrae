@@ -748,6 +748,21 @@ def test_bounded_runner_terminates_output_overflow_and_timeout(
         )
 
 
+def test_bounded_runner_without_an_output_limit_keeps_all_output(
+    tmp_path: Path,
+) -> None:
+    """Evidence-bearing participants pass ``None`` so no output is cut."""
+    result = BoundedProcessRunner().run(
+        (sys.executable, "-c", "import sys; sys.stdout.write('x' * 3_000_000)"),
+        env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
+        cwd=tmp_path,
+        stdin=b"",
+        timeout_seconds=30,
+        max_output_bytes=None,
+    )
+    assert result.stdout == b"x" * 3_000_000
+
+
 def _poll_until_absent(pid: int, timeout: float = 30.0) -> bool:
     """Whether ``pid`` disappears within ``timeout`` seconds.
 
@@ -911,7 +926,7 @@ class _RecordingRunner:
         cwd: Path,
         stdin: bytes,
         timeout_seconds: float,
-        max_output_bytes: int,
+        max_output_bytes: int | None,
     ) -> ProcessResult:
         del cwd, timeout_seconds, max_output_bytes
         self.invocations.append(_Invocation(argv, env, stdin))
@@ -960,3 +975,17 @@ def _executable(path: Path) -> Path:
 
 def _option_value(argv: tuple[str, ...], option: str) -> str:
     return argv[argv.index(option) + 1]
+
+
+def test_a_lab_mcp_server_keeps_the_operator_home_and_resolves_its_credentials() -> None:
+    """The lab MCP configuration names ``~/.ssh/aptl_lab_key``; the agent's private home has no key."""
+    from aptl.workbench.agent import _server_environment
+
+    environment = _server_environment({"env": {"TOKEN": "${secret}", "MODE": "lab"}}, {"secret": "s3cr3t"})
+
+    assert environment == {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": str(Path.home()),
+        "TOKEN": "s3cr3t",
+        "MODE": "lab",
+    }

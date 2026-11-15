@@ -11,6 +11,13 @@ updated_at: 2026-07-29T00:16:58.337413Z
 
 # EXP-009: ACES Archival Run and Evidence Record Production
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/EXP-009/requirement.md).
+
+
 ## Statement
 
 For every terminal execution attempt, APTL shall atomically produce and seal a conformant ACES experiment-run-v1 record with task and scenario references, observed apparatus context, participant provenance, bound parameters, stochastic controls, clock context, status/outcome, deviations or invalidation, evidence artifacts, evaluator-supplied result summaries, traceability, and retry lineage. Raw captures shall be represented by experiment-evidence-record-v1 artifacts and content-addressed references. A local append-safe index may support discovery, but shall not become a competing portable run schema. Structured writes shall use the existing redaction and path-containment boundaries.

@@ -11,6 +11,13 @@ updated_at: 2026-10-05T07:51:12.874346Z
 
 # DEP-007: Experiment Resource Budgets and Enforcement
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/DEP-007/requirement.md).
+
+
 ## Statement
 
 APTL shall enforce configurable preflight and runtime budgets for campaign duration, per-trial timeout, concurrency, retries, host resources, archive growth, and standardized participant usage. The scheduler shall stop admitting new trials and, where policy requires, terminate active work through the existing safe control path before a hard limit is exceeded, recording the decision and terminal state. Monetary caps may be enforced only when usage and a pinned price source are available. APTL shall not implement cloud-provider billing estimation or account management.

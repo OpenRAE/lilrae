@@ -10,12 +10,19 @@ accepted
 
 2026-03-02
 
+## Applicability
+
+This record explains the retired pre-SDL runtime.
+Its schema, commands, collectors, and six-scenario inventory are historical.
+[ADR-035](adr-035-raes-sdl-adoption.md) assigns current scenario semantics to RAES.
+The [run reference](../reference/experiment-runs.md) describes current local records and exports.
+
 ## Context
 
 Before the scenario engine, APTL exercises were ad-hoc: a user read documentation, manually started the lab, ran commands, and inspected results. There was no structured way to:
 
-1. **Define exercises**: What containers are needed? What's the attack chain? What MITRE ATT&CK techniques are involved? What does success look like?
-2. **Reproduce runs**: Two runs of the "same" exercise could produce completely different data depending on which commands the operator ran, in what order, and what state the lab was in.
+1. **Define exercises**: What containers are needed? what is the attack chain? What MITRE ATT&CK techniques are involved? What does success look like?
+2. **Reproduce runs**: Repeated exercises could produce different data. Results depended on the selected commands, their order, and initial lab state.
 3. **Collect data**: After an exercise, SOC telemetry (Wazuh alerts, Suricata events, TheHive cases, MISP correlations, Shuffle execution logs) existed only in the running containers. Stopping the lab could lose ephemeral data.
 
 The research goal (comparing AI agent performance across different models, prompts, and configurations on identical scenarios) requires **repeatable runs** with **comparable data collection**. Without structured scenarios, every run is a unique snowflake.
@@ -102,7 +109,7 @@ Each SOC tool has a collector module that queries its API for data generated dur
 | MISP | MISP API via PyMISP | Events matching time window (with client-side post-filter for upper bound) |
 | Shuffle | Shuffle API | Workflow executions during run |
 
-Collector outputs are JSON files stored in the run directory alongside a range snapshot (`snapshot.json`) containing software versions, container state, Wazuh rules inventory, network configuration, and config file hashes.
+Collectors stored JSON in the run directory beside `snapshot.json`. The snapshot included software versions, container state, Wazuh rules, network configuration, and configuration hashes.
 
 ### Run Archives
 

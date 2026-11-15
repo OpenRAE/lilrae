@@ -1,5 +1,11 @@
 # APTL Web GUI Design Specification
 
+This Explanation records workbench design reasons and earlier UI-008 targets.
+The [original design cut](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/specs/web-gui-design.md) preserves the source context.
+The [web Reference](../reference/web.md) owns supported routes, delivery, and authentication facts.
+A design target or acceptance checklist is not proof of shipped support.
+
+
 ## Purpose
 
 This document is the UI-007 design specification for the APTL web GUI. It also
@@ -10,20 +16,14 @@ The implementation target is UI-008. This document is not an implementation
 ticket and does not add routes, components, or API endpoints by itself.
 
 Binding guardrails live in
-[Web GUI Design Preflight Guardrails](web-gui-design-preflight.md). In short:
-keep the ADR-011 workbench paradigm, keep ADR-039 web auth and loopback
-defaults, keep ADR-040 terminal trust gates, keep ADR-030 startup readiness
-semantics, and reuse the existing API, Svelte, endpoint, deployment, redaction,
-and logging owners.
+[Web GUI Design Preflight Guardrails](web-gui-design-preflight.md). The design keeps the ADR-011 workbench, ADR-039 authentication, ADR-040 terminal trust, and ADR-030 readiness. Existing API, frontend, deployment, redaction, and logging owners remain in use.
 
 ## Product Scope
 
 ### Target User
 
 The v1 GUI is for one local lab operator who is actively running and
-investigating an APTL exercise. That user may be a learner, instructor,
-developer, or evaluator, but the interaction model is the same: one operator at
-one workstation, against a local lab.
+investigating an APTL exercise. The target user can be a learner, instructor, developer, or evaluator. The design serves one operator at one workstation against a local lab.
 
 The GUI is not a shared SOC console, not a multi-user case system, and not the
 primary agent loop. The MCP loop and CLI remain the automation and scripting
@@ -86,13 +86,9 @@ V1 does not include:
 - multi-user accounts, RBAC, OAuth, OIDC, or password login;
 
 > **Amended (UI-008a):** an earlier draft of this Non-Goal also excluded "browser
-> sessions" outright. That was wrong for a local code-execution tool: loopback
-> binding is not a security boundary (any local process/user can reach the port),
-> and forgeable `Sec-Fetch-*`/`Origin` headers are a CSRF-isolation signal, not a
-> credential. Following the Jupyter model, V1 **does** use a single-user,
-> server-issued **session credential** (no accounts, no login form) bootstrapped
-> from a one-time launch token, so the browser holds a non-forgeable credential a
-> sibling process cannot obtain. The credential is two-factor (an HttpOnly cookie
+> sessions" outright. Loopback reachability does not authenticate a caller.
+> Origin and Fetch Metadata headers support browser isolation but remain forgeable by native clients. V1 uses a server-issued single-user session without accounts or a login form.
+> A one-time launch token bootstraps that session. The credential is two-factor (an HttpOnly cookie
 > plus a port-scoped header token) so it survives the cross-port cookie leak; see
 > "Shipped implementation (UI-008a)" above.
 - remote shared deployment as a default mode;
@@ -106,7 +102,7 @@ V1 does not include:
 
 ### Shipping Model
 
-The shipped operator surface is `aptl web serve` on a single loopback origin.
+The shipped operator surface is `lilrae web serve` on a single loopback origin.
 The implementation should mount built web assets through the FastAPI
 application and keep `/api/*` on the same origin. The current split
 `aptl-web-api` plus `aptl-web-ui` Compose profile remains useful for dev and
@@ -122,12 +118,10 @@ The implementation must preserve the security posture from ADR-039:
 - mutating requests have a CSRF/origin gate before the server adds or accepts
   control-plane authority.
 
-If static asset mounting removes the current SvelteKit server hook, UI-008 must
-replace it with an equivalent same-origin backend-for-frontend boundary in
-FastAPI rather than pushing bearer-token handling into page code.
+Removing a SvelteKit hook requires an equivalent FastAPI same-origin boundary. Bearer-token handling must not move into page code.
 
 **Shipped implementation (UI-008a).** The SvelteKit app builds to a static SPA
-(`adapter-static`, `fallback: index.html`) that `aptl web serve` mounts behind
+(`adapter-static`, `fallback: index.html`) that `lilrae web serve` mounts behind
 the FastAPI app. A single FastAPI-owned cross-cutting layer
 (`src/aptl/api/middleware/bff.py`) is the BFF boundary, with these concerns kept
 distinct (rather than conflated, which was the flaw in the original
@@ -136,7 +130,7 @@ SvelteKit-hook posture):
 - **Authentication** is a server-issued **two-factor session credential**, not a
   header bearer. Because loopback binding is not a security boundary and
   `Sec-Fetch-*`/`Origin` are client-forgeable, the operator bootstraps a session
-  via the Jupyter-style handshake: `aptl web serve` prints a one-time launch URL
+  via the Jupyter-style handshake: `lilrae web serve` prints a one-time launch URL
   (`GET /api/auth/login?token=…`, the only unauthenticated `/api` route) to the
   operator's terminal. Visiting it sets an `HttpOnly`, `SameSite=Strict`
   `aptl_session` cookie **and** hands the SPA a second factor: a port-scoped
@@ -146,10 +140,7 @@ SvelteKit-hook posture):
   browser never holds the API token. Two factors are required because cookies are
   scoped by host, not port: the `aptl_session` cookie is also sent to any other
   `127.0.0.1:<port>`, so a sibling local process that lures the browser to its
-  port could steal it. The header token lives in `sessionStorage` (scoped by
-  origin *including* port, never auto-sent on navigation), so a cross-port
-  attacker who steals the cookie still cannot forge the header, and an XSS payload
-  that reads the header token still cannot read the HttpOnly cookie. The two
+  port could steal it. `sessionStorage` separates the header token by origin, including port, and does not send it automatically. A stolen cross-port cookie alone cannot supply that header. HttpOnly prevents script reads of the cookie; it does not prevent malicious same-origin requests. The two
   values are independent HMAC tags of one per-process master secret, so neither
   reveals the other (`src/aptl/api/session.py`).
 - **CSRF defence** is a strict same-origin `Sec-Fetch-Site`/`Origin` gate on
@@ -160,65 +151,43 @@ SvelteKit-hook posture):
 - **DNS-rebinding defence** is a `Host` allow-list (loopback by default) on
   `/api/*`.
 - **XSS / clickjacking hardening** is a strict CSP plus frame/MIME headers.
-  Because the header-token factor lives in XSS-readable `sessionStorage`, the SPA
-  ships a strict CSP (`script-src 'self'` with SvelteKit-hashed bootstrap, no
-  `unsafe-inline` scripts; `default-src`/`connect-src 'self'`) delivered as a
-  `<meta>` tag so it applies behind both `aptl web serve` and the Caddy proxy.
+  The SPA supplies a meta-tag CSP for direct and Caddy delivery. Its policy uses self-only scripts with hashed bootstrap, no inline script allowance, and self-only default/connect sources.
   `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff` are sent as
   response headers (a `<meta>` CSP cannot carry `frame-ancestors`).
 
 `/api/*` routes (including an authenticated catch-all for unknown API paths)
 mount before the SPA fallback, which only serves files contained within the
-asset root. The terminal WebSocket carrier is server-side too: a same-origin
-`GET /api/terminal/ticket` (cookie-authenticated like any other `/api` call)
-returns a single-use, ~30 s ticket presented as the `aptl-token.<ticket>`
-subprotocol; the WS gate accepts a valid ticket (or a real token, for direct
-clients) and enforces the same strict same-origin check. The split `aptl-web-api` +
-`aptl-web-ui` Compose profile remains for dev/preview as a static SPA served
-behind a same-origin reverse proxy, with the control-plane token held only by
-the API container (which also mints the session secrets and logs the launch URL).
-In that profile the API runs `--api-only` behind the Caddy UI origin, so it is
-told the browser-facing origin via `APTL_WEB_PUBLIC_ORIGIN` (`--public-origin`)
-and prints the launch URL for the UI origin (`127.0.0.1:3000`) rather than its own
-bind address. The operator opens that URL so the session header token is stored
+asset root. The authenticated same-origin ticket endpoint returns a single-use ticket lasting about 30 seconds. WebSocket uses `aptl-token.<ticket>` or a direct-client token and checks origin separately. The split API/UI profile serves the static SPA behind a same-origin proxy. Only the API holds the control-plane token and creates session secrets and launch URLs.
+
+The split API uses `--api-only`. `APTL_WEB_PUBLIC_ORIGIN` or `--public-origin` supplies the browser origin, so launch output points at UI port 3000 rather than the API. The operator opens that URL so the session header token is stored
 for the origin the SPA actually runs on.
 
-**Asset delivery contract.** APTL ships as a cloned-and-run repository, not as a
-wheel that bundles a pre-built GUI, so there are two supported deliveries of the
-built SPA and `aptl web serve` fails hard (exit 1) rather than silently degrading
-when neither is present:
+**Asset delivery contract.** Asset discovery supports explicit, environment, packaged-resource, and repository build candidates. A candidate path does not prove bundled assets. Without a GUI and without `--api-only`, `lilrae web serve` exits 1:
 
-- **Docker (`aptl lab start`, web profile):** the `aptl-web-ui` image builds the
+- **Docker (`lilrae lab start`, web profile):** the `aptl-web-ui` image builds the
   SPA and serves it (Caddy) at the single origin, reverse-proxying `/api/*` to the
-  `aptl-web-api` container, which runs `aptl web serve --api-only` (deliberately
+  `aptl-web-api` container, which runs `lilrae web serve --api-only` (deliberately
   GUI-less behind the proxy).
-- **Local single-origin (`aptl web serve`):** the operator builds the frontend
+- **Local single-origin (`lilrae web serve`):** the operator builds the frontend
   (`cd web && npm run build`) and the server mounts the repo-relative `web/build`
-  output; `--web-root` or `APTL_WEB_ROOT` override the location. Run without a
+  output; `--web-root` or `APTL_WEB_ROOT` override the location. Without a
   build and without `--api-only`, the command exits 1 with build instructions
   rather than starting a browser-broken API-only server.
 
 `get_web_asset_root` resolves, in precedence order, `--web-root` → `APTL_WEB_ROOT`
 → the packaged `aptl/web_static` resource → repo-relative `web/build`. The
-`web_static` candidate is forward-compatible with a future combined-wheel delivery
-and resolves to nothing in the current clone-and-run / Docker models.
+`web_static` candidate is supported discovery, not proof of assets in every distribution.
+The installed package and selected asset root determine availability.
 
 **Remote access.** The default bind is `127.0.0.1`, and that loopback model is the
-intended path for almost all use. When an operator needs the GUI from another
-device (for example over a Tailscale tailnet), the recommended setup keeps the
-server on loopback and puts a same-host TLS proxy in front:
+intended path for almost all use. Remote use can keep the server on loopback behind a separately approved same-host TLS proxy.
 
-1. Run `tailscale serve --bg https / http://127.0.0.1:8400` (or a co-located
-   Caddy) so the proxy terminates TLS and forwards to the loopback server.
-2. Start the server with the browser-facing origin and host allow-list:
-   `APTL_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net aptl web serve
-   --public-origin https://<machine>.<tailnet>.ts.net`.
+The [web proxy guide](../reference/web-proxy.md) supplies the supported operating procedure.
+Remote access requires the operator's approved transport and the existing authentication boundary.
 
-The server trusts `X-Forwarded-Proto` only from a loopback proxy, so behind that
-TLS front `request.url.scheme` resolves to `https`: the session cookie is issued
-`Secure` and the CSRF origin gate matches the browser's `https` origin.
+The server trusts forwarded protocol only from its configured loopback proxy. HTTPS requests then receive a Secure session cookie and matching origin validation.
 
-A direct non-loopback bind without a TLS front (`aptl web serve --host
+A direct non-loopback bind without a TLS front (`lilrae web serve --host
 <address>`) also works for an environment whose transport is already encrypted,
 such as a tailnet. It still needs `APTL_ALLOWED_HOSTS` and `--public-origin`. The
 session cookie's `Secure` flag follows the request scheme, so over plain HTTP the
@@ -235,10 +204,7 @@ closer to a restrained developer/security tool than a marketing SaaS page.
 
 Use Tailwind v4 as the design-system foundation because the repo already ships
 Tailwind tokens in `web/src/app.css`. UI-008 should formalize those tokens into
-an APTL component kit rather than importing a wholesale admin template. Tailwind
-UI application-shell patterns are acceptable references for spacing, tables,
-forms, menus, dialogs, and responsive behavior, but the implementation must
-adapt them to APTL's content model and existing Svelte components.
+an APTL component kit rather than importing a wholesale admin template. Tailwind UI patterns can guide spacing, forms, tables, menus, dialogs, and responsiveness. Implementation must still use the local content model and component owners.
 
 If UI-008 adds a component primitive library, choose one for accessible
 headless behavior only, such as dialogs, menus, popovers, tabs, and tooltips.
@@ -343,9 +309,7 @@ Persist only non-secret UI preferences in a versioned browser key such as
 | Terminal scrollback | bounded choices | Must not persist terminal output. |
 | Legal notice acknowledgement | notice version and timestamp | Stores only that a local notice was acknowledged. |
 
-Do not persist API tokens, bearer headers, service credentials, terminal input,
-terminal output, raw SIEM custom queries, copied command history, scenario
-answers, hints viewed, or user notes in v1. If UI-008 introduces server-side
+V1 must not persist API/service credentials, terminal input/output, raw SIEM queries, copied commands, scenario answers, viewed hints, or user notes. If UI-008 introduces server-side
 preferences later, that is a new product and security scope decision.
 
 The settings store must be schema-versioned. Unknown keys are ignored or reset,
@@ -378,9 +342,7 @@ make that practical:
 - layouts must reflow at narrow widths without overlapping controls or hiding
   essential state.
 
-Accessibility acceptance for UI-008 should include keyboard-only route walks,
-automated accessibility checks in web tests where practical, and manual review
-of the terminal, modal, and SIEM table flows.
+UI-008 accessibility evidence should include keyboard route walks, practical automated web checks, and manual terminal, modal, and SIEM-table review.
 
 ## Language and Locale Readiness
 
@@ -419,12 +381,7 @@ V1 should include a concise local-use notice and privacy notice:
   timestamps, status codes, and redacted error categories;
 - no non-essential analytics, tracking pixels, or third-party scripts in v1.
 
-If future builds add analytics, crash reporting, third-party embeds, or
-non-essential cookies/local storage, then UI-008 or a follow-up issue must add a
-real consent manager with Accept, Reject, and Manage choices before collection
-starts. A consent banner is not required for strictly essential local storage
-such as the preference key above, but the privacy notice still has to disclose
-it.
+Future non-essential collection requires a consent design before collection starts. The original required choices are Accept, Reject, and Manage for analytics, crash reporting, embeds, or storage. The original V1 design uses essential preference storage without a banner. Its privacy notice must still disclose that storage.
 
 ## Information Architecture
 
@@ -654,9 +611,7 @@ Low-fidelity layout:
 
 Interaction details:
 
-- Show lab name, network subnet, enabled container families, run storage
-  backend, web serve bind mode, allowed origin summary, and links to published
-  service URLs where those URLs are non-secret.
+- Show lab identity, subnet, selected groups, storage backend, web bind mode, and allowed origins. Service links must use non-secret published URLs.
 - Do not show `APTL_API_TOKEN`, private key paths with sensitive context,
   service passwords, cookies, generated secrets, or raw `.env` content.
 - This page is read-only in v1.
@@ -840,7 +795,7 @@ Security invariants:
 
 The implementation issue can use this checklist:
 
-- `aptl web serve` serves the built GUI and API from a single loopback operator
+- `lilrae web serve` serves the built GUI and API from a single loopback operator
   origin.
 - `/` renders lab state, startup diagnostics, lifecycle controls, container
   summary, and scenario entry points.

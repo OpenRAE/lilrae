@@ -10,11 +10,12 @@ accepted
 
 ## Context
 
-As APTL grew from 5 containers (v2.0) to 13+ containers (v3.x and beyond), the lab's resource requirements became prohibitive for many development machines:
+APTL grew from five containers in v2.0 to more than 13 in later v3.x versions.
+The historical resource estimates below explain the need for selective deployment.
 
 - **Full stack**: 19 containers requiring ~20GB RAM
 - **Individual containers**: Wazuh Indexer alone needs 2GB (OpenSearch JVM heap); TheHive needs 1GB; MISP needs 1-2GB
-- **Not all containers are needed for every task**: A user practicing Kali reconnaissance doesn't need the SOC stack. A user testing Wazuh rules doesn't need the enterprise infrastructure.
+- **Not all containers are needed for every task**: A user practicing Kali reconnaissance does not need the SOC stack. A user testing Wazuh rules does not need the enterprise infrastructure.
 
 Additionally, different use cases required different lab configurations:
 
@@ -59,7 +60,11 @@ Each service in `docker-compose.yml` declares which profiles it belongs to:
 }
 ```
 
-The Python CLI (`aptl lab start`) reads this config and passes corresponding `--profile` flags to `docker compose up`.
+The original Python CLI read this configuration and passed `--profile` flags to Compose.
+This JSON example describes the historical boolean configuration.
+The current [configuration reference](../reference/project-configuration.md) defines supported profile selection.
+[ADR-046](adr-046-dynamic-raes-scenario-realization.md) defines the later RAES realization handoff.
+Root services include compatibility stubs; enabling a profile does not independently define an admitted scenario.
 
 ### Health Checks and Resource Limits
 
@@ -77,7 +82,9 @@ As part of this standardization, all services received:
 - Suricata: 1GB (rule loading and packet processing)
 - Most other containers: 256MB-512MB
 
-These limits prevent any single container from starving the others and provide predictable resource planning.
+These limits constrain individual memory use.
+They do not guarantee service readiness or prevent every host out-of-memory condition.
+The numbers above record the original design rather than the resource contract of every current pack.
 
 ## Consequences
 
@@ -92,7 +99,7 @@ These limits prevent any single container from starving the others and provide p
 
 - **Profile complexity**: Users must understand which profiles provide which capabilities. Enabling `soc` without `wazuh` is meaningless (SOC tools need SIEM data).
 - **Inter-profile dependencies**: Some containers in one profile depend on containers in another. Docker Compose handles this via `depends_on` but only within the active profile set.
-- **Start order constraints**: The Python CLI enforces an ordered orchestration sequence because `depends_on` alone doesn't handle cross-profile readiness (see [ADR-007](adr-007-python-cli-control-plane.md)).
+- **Start order constraints**: The Python CLI enforces an ordered orchestration sequence because `depends_on` alone does not handle cross-profile readiness (see [ADR-007](adr-007-python-cli-control-plane.md)).
 
 ### Risks
 

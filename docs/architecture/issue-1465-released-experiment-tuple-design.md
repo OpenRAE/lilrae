@@ -1,5 +1,11 @@
 # Issue #1465: Released structural factorial tuple design
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1465-released-experiment-tuple-design.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 This design adopts one released dependency tuple for structural factorial experiments.
 The [preflight note](issue-1465-released-experiment-tuple-preflight.md) states the ownership boundaries.
 The [family adapter contract](family-adapter-contract.md) describes the seam that this design extends.

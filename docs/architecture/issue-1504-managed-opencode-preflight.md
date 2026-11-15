@@ -1,5 +1,13 @@
 # Issue #1504: Managed OpenCode participant preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1504-managed-opencode-preflight.md).
+Its last recorded file change before this rewrite was `22e5638ecd79`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Status: architecture guidance before implementation; no installed OpenCode
 release or live qualification is asserted here. The supplied issue is the
 delivery contract. This note records boundaries, not an implementation plan.
@@ -15,7 +23,7 @@ Code observations below refer to the checked-in baseline `5b076560`.
 Extend the existing OpenCode executor and shared participant runtime. Do not
 add another provider framework, scheduler, MCP gateway, credential broker, or
 evidence store. ADR-025, ADR-029, ADR-033, ADR-044, ADR-050, ADR-052,
-ADR-057, ADR-064, and ADR-065 already assign the relevant responsibilities;
+ADR-057, ADR-064, and ADR-070 already assign the relevant responsibilities;
 no new ADR is necessary. The [action enforcement design](participant-action-enforcement.md)
 and its executable component/action models remain the integration boundary.
 

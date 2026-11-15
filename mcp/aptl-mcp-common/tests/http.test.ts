@@ -149,6 +149,61 @@ describe('HTTPClient', () => {
     );
   });
 
+  // An api_call endpoint or a predefined query URL may already carry a query
+  // string; params must join it with `&` instead of opening a second `?`.
+  it.each([
+    {
+      name: 'joins params onto an existing query string',
+      endpoint: '/_search?size=1',
+      params: { q: 'agent.name:kali' },
+      expected: 'https://api.example.com/_search?size=1&q=agent.name%3Akali',
+    },
+    {
+      name: 'keeps an existing key and appends the new value',
+      endpoint: '/alerts?limit=5',
+      params: { limit: 10, offset: 0 },
+      expected: 'https://api.example.com/alerts?limit=5&limit=10&offset=0',
+    },
+    {
+      name: 'keeps the endpoint query text as written',
+      endpoint: '/_search?q=a%20b',
+      params: { size: 1 },
+      expected: 'https://api.example.com/_search?q=a%20b&size=1',
+    },
+    {
+      name: 'treats a bare trailing ? as an empty query',
+      endpoint: '/search?',
+      params: { q: 'test' },
+      expected: 'https://api.example.com/search?q=test',
+    },
+    {
+      name: 'places params before a fragment',
+      endpoint: '/search#top',
+      params: { q: 'test' },
+      expected: 'https://api.example.com/search?q=test#top',
+    },
+    {
+      name: 'leaves the URL unchanged when every param is empty',
+      endpoint: '/_search?size=1',
+      params: { q: undefined, limit: null },
+      expected: 'https://api.example.com/_search?size=1',
+    },
+  ])('$name', async ({ endpoint, params, expected }) => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve('{"result": "success"}')
+    } as any);
+
+    const client = new HTTPClient({
+      baseUrl: 'https://api.example.com',
+      auth: { type: 'bearer' as const, token: 'abc123' }
+    });
+    await client.makeRequest(endpoint, 'GET', { params });
+
+    expect(mockFetch).toHaveBeenCalledWith(expected, expect.any(Object));
+  });
+
   it('throws error on HTTP failure', async () => {
     const config = {
       baseUrl: 'https://api.example.com',

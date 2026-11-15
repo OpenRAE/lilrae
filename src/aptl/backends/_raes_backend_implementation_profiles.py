@@ -87,15 +87,10 @@ def _active_directory_base(runtime: object) -> BackendBaseSelection | None:
     return BackendBaseSelection(
         image_ref=image_ref,
         use_image_command=True,
-        # Kept on measured necessity (issue #955), not inheritance. `samba-tool
-        # domain provision` stores the sysvol's NT ACLs in the `security.NTACL`
-        # extended attribute, and the kernel gates writes to the whole
-        # `security.*` xattr namespace behind CAP_SYS_ADMIN; no narrower
-        # capability grants it. Without it provisioning fails at `setsysvolacl`
-        # with NT_STATUS_ACCESS_DENIED before the domain exists.
-        # tests/test_compose_capability_necessity.py holds that measurement;
-        # issue #976 evaluates an ACL store that would make it unnecessary.
-        run_capabilities=("SYS_ADMIN",),
+        # No added capability (issue #976). The provider stores NT ACLs in a
+        # root-only xattr_tdb database, not in the kernel's `security.NTACL`
+        # xattr, whose writes need CAP_SYS_ADMIN. See provision-domain.sh and
+        # tests/test_compose_capability_necessity.py for the measurements.
         provider_kind="samba-active-directory",
         account_provider=SAMBA_AD,
         provider_parameters=(("domain", realm.partition(".")[0]), ("realm", realm)),

@@ -8,13 +8,18 @@ accepted
 
 2026-05-12
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [deployment guide](../deployment.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 Issue #214 asks for `icontract` preconditions, and optionally postconditions, on
-critical lab CLI and core lab functions. The bug class is invalid orchestration
-state reaching an operation that then fails open: collectors running before
-project `.env` has been loaded, or scenario/lab startup continuing without the
-profiles needed for the requested operation.
+critical lab CLI and core lab functions. Invalid orchestration context could allow work before its prerequisites. Examples included collectors without loaded environment and startup without required profiles.
 
 The repository already has the validating layers that define the state being
 guarded:
@@ -35,9 +40,7 @@ guarded:
 ## Decision
 
 Use `icontract` as a fail-fast guard over already-defined lab orchestration
-state. Contracts must make impossible call states explicit, but they must not
-become a second config schema, a second env parser, a second deployment layer,
-or a new exception/result envelope.
+state. Contracts must reject invalid call states. They must not duplicate configuration, environment parsing, deployment, exceptions, or result models.
 
 Contracts belong at stable core boundaries where a caller can otherwise bypass
 the normal ordered orchestration:
@@ -84,10 +87,7 @@ Contract failure handling must preserve the existing user-facing surfaces:
 - Route container and Docker state through `DeploymentBackend`; do not add raw
   `docker compose` probes to contract predicates.
 - Redact before messages cross logs, CLI output, API responses, telemetry, or
-  persistence. Contract messages may name missing variable names, profile
-  names, steps, and components, but never values from `.env`, generated config,
-  API headers, cookies, private keys, command lines with credentials, or raw
-  subprocess stderr. Do not forward raw `icontract` violation strings from
+  persistence. Contract diagnostics can name missing variables, profiles, steps, and components. They must exclude secret values, credential-bearing commands, private keys, headers, and raw subprocess errors. Do not forward raw `icontract` violation strings from
   predicates over secret-bearing objects.
 
 ## Security Layers
@@ -114,9 +114,7 @@ Contract failure handling must preserve the existing user-facing surfaces:
 
 The extensibility seam is a reusable, parameterized predicate for required
 profile sets and a small set of state predicates for initialized context
-fields. A future operation should supply its required profile set or required
-context fields to the same predicate rather than adding a new one-off validator
-or hardcoding scenario names.
+fields. Another operation should supply required profiles or context fields to the same predicate. It should not add a scenario-specific validator.
 
 ## Non-Goals
 

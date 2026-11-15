@@ -374,7 +374,7 @@ def test_hardware_or_budget_breach_fails() -> None:
     assert budgets.diagnostics == ("measured resource or lifecycle budget exceeded",)
 
 
-def test_persistence_uses_runstore_redaction(tmp_path: Path) -> None:
+def test_persistence_preserves_report_content(tmp_path: Path) -> None:
     profile = _profile()
     payload = _passing_report_payload()
     payload["checks"][0]["summary"] = "password=should-not-persist"
@@ -391,7 +391,7 @@ def test_persistence_uses_runstore_redaction(tmp_path: Path) -> None:
     )
 
     persisted = json.loads(path.read_text(encoding="utf-8"))
-    assert "should-not-persist" not in path.read_text(encoding="utf-8")
+    assert "password=should-not-persist" in path.read_text(encoding="utf-8")
     assert persisted["evaluation"]["conforming"] is True
     assert {item["outcome"] for item in persisted["evaluation"]["checks"]} == {"pass"}
 

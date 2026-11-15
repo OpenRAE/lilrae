@@ -1,5 +1,11 @@
 # Runtime Ownership During Evidence Refresh
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1447-runtime-owner-handoff.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 RAES 9.2.0 provides one runtime owner for each run.
 `RuntimeManager` and `RuntimeControlPlane` name the same class.
 LilRAE keeps that owner for apply, time, native evidence, participant delivery, and teardown.
@@ -10,9 +16,11 @@ The former private claim handoff is removed.
 The constructor binds the target, admitted run scope, protected archive, and participant policy.
 The owner retains the initialized clock, scheduler, operation ledger, and authoritative snapshot.
 Later native evidence enters the evaluator before the public `evaluate()` call.
+
 Each distinct evidence cut uses a distinct idempotency key.
 Replaying the same cut retains that key.
 RAES replans evaluation from the original compiled context against current committed state.
+
 It does not provision again or restart workflows.
 LilRAE reads the terminal operation before accepting refreshed truth.
 
@@ -28,9 +36,11 @@ The existing RAES drain and uncertain-effect rules govern closure and reuse.
 The RAES runtime remains the only writer during each phase.
 It validates backend results and publishes materialization references before accepting them.
 The configured target manifest remains the producer identity for every phase.
+
 Participant delivery retains its existing behavior, crossing, and evidence boundaries.
 A failed or pending operation never becomes successful merely because a receipt was accepted.
 A failed apply ends the start without an automatic backend retry.
+
 Closing that owner does not prove cleanup or permit a new target owner.
 The retained operation requires the existing explicit recovery and resolution path.
 

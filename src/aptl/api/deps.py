@@ -165,15 +165,13 @@ def get_web_asset_root(explicit: Optional[str] = None) -> Optional[Path]:
     3. Packaged location: ``importlib.resources.files("aptl") / "web_static"``
     4. Repo-relative fallback: ``<repo_root>/web/build``
 
-    Returns the resolved :class:`~pathlib.Path` when it exists and contains
-    ``index.html``; otherwise returns ``None``. A ``None`` result is fatal for
-    ``lilrae web serve`` unless ``--api-only`` is passed (see the CLI): APTL ships
-    clone-and-run, so the GUI is delivered either by the Docker ``aptl-web-ui``
-    (Caddy) image or by a local ``cd web && npm run build`` that populates the
-    repo-relative ``web/build``. Candidate 3 (``aptl/web_static``) is forward-
-    compatible with a future combined-wheel delivery and resolves to nothing in
-    the current models; see ``docs/specs/web-gui-design.md`` (asset delivery
-    contract).
+    Return the first existing candidate containing ``index.html``, or ``None``.
+    ``lilrae web serve`` requires assets unless ``--api-only`` is set.
+    The split Docker model serves the GUI through the ``aptl-web-ui`` Caddy image.
+    A source frontend build writes the repo-relative ``web/build`` directory.
+    The packaged ``aptl/web_static`` candidate supports combined-wheel delivery
+    when those assets are present; its presence is checked, never assumed.
+    See ``docs/specs/web-gui-design.md`` for the delivery contract.
     """
     candidates: list[Path] = []
 

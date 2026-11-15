@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from raes_contracts.runtime_state import RuntimeSnapshot
+from raes_contracts.contracts import ExperimentCaptureSpecModel
 
 from aptl.core.lab_types import LabResult
 from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
@@ -42,6 +43,7 @@ class ScenarioAdmissionRun:
 
     run_id: str | None = None
     trial: FamilyTrialInput | None = None
+    trial_capture_specs: tuple[ExperimentCaptureSpecModel, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,7 @@ class AdmittedScenarioStart:
     execution_plan: ExecutionPlan
     realization: AptlRealization | None
     capture_plan: CapturePlan = field(default_factory=empty_capture_plan)
+    trial_capture_plan: CapturePlan | None = None
     runtime_materialization_failure: LabResult | None = None
     startup_selection: ScenarioStartupSelection | None = None
     capture_selection: ResolvedScenarioCapture | None = None
@@ -75,6 +78,17 @@ class AcesRunTarget:
 
     run_store: RunStorageBackend
     run_id: str
+
+
+@dataclass(frozen=True)
+class StartedTrialRuntime:
+    """The startup owner's exact runtime and admitted inputs for its trial."""
+
+    admitted: AdmittedScenarioStart
+    runtime: RuntimeManager = field(repr=False)
+    backend: object = field(repr=False)
+    run_store: RunStorageBackend = field(repr=False)
+    initial_evidence: tuple[object, ...] = field(default=(), repr=False)
 
 
 @dataclass

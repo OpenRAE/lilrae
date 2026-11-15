@@ -158,6 +158,66 @@ def test_family_retry_operations_keep_admitted_aliases_and_hide_environment():
         operations.container_restart("outside")
 
 
+def test_inspection_projects_only_network_addresses_and_aliases():
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+    networks = {
+        "range": {
+            "IPAddress": "172.20.0.135",
+            "Aliases": ["misp", "x" * 300, 7],
+            "Gateway": "172.20.0.1",
+            "MacAddress": "02:42:ac:14:00:87",
+            "DriverOpts": {"secret": "driver-canary"},
+        },
+        "spoofed": {"IPAddress": "not-an-address", "Aliases": "misp"},
+    }
+    backend = SimpleNamespace(
+        container_inspect=lambda name: {
+            "State": {"Status": "running"},
+            "Config": {"Env": ["TOKEN=credential-canary"]},
+            "Mounts": [{"Source": "/host/mount-canary"}],
+            "NetworkSettings": {"Networks": networks, "Ports": {"80/tcp": []}},
+        }
+    )
+    node = SimpleNamespace(name="misp", container_name="aptl-misp", aliases=())
+    info = AdmittedRuntimeOperations(backend, (node,)).container_inspect("aptl-misp")
+
+    projected = info["NetworkSettings"]["Networks"]
+    assert projected["range"] == {"IPAddress": "172.20.0.135", "Aliases": ["misp"]}
+    # An invalid address or alias list is dropped, not repaired.
+    assert projected["spoofed"] == {}
+    assert set(info["NetworkSettings"]) == {"Networks"}
+    text = str(info)
+    for canary in ("credential-canary", "mount-canary", "driver-canary", "02:42"):
+        assert canary not in text
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"bad\nname": {"IPAddress": "10.0.0.2"}},
+        {7: {"IPAddress": "10.0.0.2"}},
+        {f"extra-{index}": {"IPAddress": "10.0.0.2"} for index in range(16)},
+    ],
+)
+def test_an_attachment_set_that_cannot_be_shown_whole_is_withheld(extra):
+    """A partial set could turn two attachments into one unique attachment."""
+
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+
+    networks = {
+        "range": {"IPAddress": "172.20.0.135", "Aliases": ["misp"]},
+        **extra,
+    }
+    backend = SimpleNamespace(
+        container_inspect=lambda name: {"NetworkSettings": {"Networks": networks}}
+    )
+    node = SimpleNamespace(name="misp", container_name="aptl-misp", aliases=())
+    operations = AdmittedRuntimeOperations(backend, (node,))
+
+    assert "NetworkSettings" not in operations.container_inspect("aptl-misp")
+
+
 def test_family_native_capture_uses_trial_entry_identity(
     monkeypatch, family_input, tmp_path
 ):
@@ -661,8 +721,8 @@ def test_capture_source_context_hides_store_and_ungranted_credentials():
         context.environment["OTHER_KEY"] = "value"
 
 
-@pytest.mark.parametrize("failure", [None, "symlink", "oversized", "missing"])
-def test_capture_generated_output_is_granted_contained_and_bounded(tmp_path, failure):
+@pytest.mark.parametrize("failure", [None, "large", "symlink", "missing"])
+def test_capture_generated_output_is_granted_contained_and_complete(tmp_path, failure):
     from aptl.backends.scenario_capture import (
         GeneratedOutputReference,
         capture_source_context,
@@ -682,8 +742,9 @@ def test_capture_generated_output_is_granted_contained_and_bounded(tmp_path, fai
         outside = tmp_path / "private-canary"
         outside.write_bytes(b"credential-canary")
         output.symlink_to(outside)
-    elif failure != "missing":
-        output.write_bytes(b"x" * (2 * 1024 * 1024 + 1) if failure else b"admitted")
+    expected = b"x" * (2 * 1024 * 1024 + 1) if failure == "large" else b"admitted"
+    if failure not in {"symlink", "missing"}:
+        output.write_bytes(expected)
     request = SimpleNamespace(
         backend=object(), project_dir=tmp_path, environment={},
         realization=SimpleNamespace(nodes=(), generated_artifacts=(artifact,)),
@@ -696,11 +757,12 @@ def test_capture_generated_output_is_granted_contained_and_bounded(tmp_path, fai
         ),
     )
     context = capture_source_context(request)
-    if failure:
+    if failure in {"symlink", "missing"}:
         with pytest.raises(ValueError, match="^capture-output-unavailable$"):
             context.read_generated_output("keys", "private")
     else:
-        assert context.read_generated_output("keys", "private") == b"admitted"
+        # Output larger than the removed 2 MiB bound is returned complete.
+        assert context.read_generated_output("keys", "private") == expected
     with pytest.raises(ValueError, match="^capture-output-not-granted$"):
         context.read_generated_output("keys", "other")
     request.realization.generated_artifacts = ()
@@ -1181,6 +1243,7 @@ def test_family_capture_sources_contain_callback_failures():
             contribution=SimpleNamespace(
                 runtime_environment_keys=(),
                 native_registration_ids=frozenset({"example.events"}),
+                measurement_registration_ids=frozenset(),
             ),
         ),
     )
@@ -1217,7 +1280,6 @@ def test_family_discovery_contains_metadata_failures(monkeypatch):
 def test_retained_payload_validator_uses_recorded_family_installation(tmp_path):
     import json
     from aptl.core.evidence_bundle._collect import _validate_adapter_blob
-    from aptl.core.evidence_bundle.limits import DEFAULT_LIMITS
 
     manifest = {
         "backend_evidence": {
@@ -1246,12 +1308,12 @@ def test_retained_payload_validator_uses_recorded_family_installation(tmp_path):
         load=lambda: lambda payload: pytest.fail("must not use bundled validator"),
     )
     assert _validate_adapter_blob(
-        [expected, bundled], tmp_path, "payload.json", DEFAULT_LIMITS
+        [expected, bundled], tmp_path, "payload.json"
     )
     assert calls == ["expected"]
     expected.dist.version = "2.0"
     assert not _validate_adapter_blob(
-        [expected], tmp_path, "payload.json", DEFAULT_LIMITS
+        [expected], tmp_path, "payload.json"
     )
     assert calls == ["expected"]
 
@@ -1416,3 +1478,46 @@ def test_independent_wheels_use_only_public_contract(
             adapter_version,
         ]
     )
+
+
+def test_a_trial_input_file_admits_only_its_exact_plan_entry(family_input, tmp_path):
+    """``lab start --trial-input`` reads one plan entry and binds it to the installed family."""
+    import json
+    from datetime import UTC, datetime
+
+    from raes_contracts.canonical import canonical_json_bytes
+    from raes_processor.trial_realization import instantiate_admitted_trial_entry
+
+    from aptl.backends._raes_admission_helpers import family_trial_input
+    from aptl.backends.scenario_family import admit_family_trial
+    from aptl.core.trial_attempt import TrialAttempt, load_trial_unit
+
+    bundle, family, plan = family_input()
+    from raes import canonical_instantiated_sdl_bytes
+
+    from aptl.backends.scenario_family import admit_family_source
+
+    scenario = instantiate_admitted_trial_entry(
+        plan=plan, plan_entry_id="entry-a", family=admit_family_source(bundle.sdl_path)
+    )
+    snapshot = json.loads(canonical_instantiated_sdl_bytes(scenario))
+    document = {"plan": plan.model_dump(mode="json"), "plan_entry_id": "entry-a", "snapshot": snapshot}
+    path = tmp_path / "trial-input.json"
+    path.write_bytes(canonical_json_bytes(document))
+    attempt = TrialAttempt("run-a", "attempt-a", datetime.now(UTC), unit=load_trial_unit(path))
+    admitted = admit_family_trial(bundle, BACKEND, family_trial_input(bundle, attempt))
+    assert admitted.snapshot == canonical_json_bytes(snapshot)
+
+    # A substituted snapshot is refused; so are extra keys and an unknown entry.
+    snapshot["scenario"]["name"] = "other"
+    path.write_bytes(canonical_json_bytes(document))
+    with pytest.raises(ValueError, match="family-trial-invalid"):
+        admit_family_trial(
+            bundle,
+            BACKEND,
+            family_trial_input(bundle, replace(attempt, unit=load_trial_unit(path))),
+        )
+    for changed in ({**document, "family": {}}, {**document, "plan_entry_id": "entry-z"}):
+        path.write_bytes(canonical_json_bytes(changed))
+        with pytest.raises(ValueError):
+            load_trial_unit(path)

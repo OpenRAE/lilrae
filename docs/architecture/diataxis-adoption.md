@@ -4,16 +4,12 @@
 
 [Issue #1662](https://github.com/OpenRAE/lilrae/issues/1662) defines this design.
 The [milestone](https://github.com/OpenRAE/lilrae/milestone/45) holds the
-implementation issues. This design does not perform the documentation rewrite.
+implementation issues. The original design and delivery scopes remain in Git history.
+The [documentation inventory](documentation-assignments.md) records the reconciled candidate paths and source checks.
 
 Apply Diataxis to all repository-owned documentation. Include the published
 site, root policies, nested READMEs, agent guidance, and documentation in source
 files. Include the maintained sources of generated documentation.
-
-The current tree has 516 tracked Markdown files. Most are under `docs/`.
-The architecture, ADR, and requirement directories contain 364 files.
-This count describes the design revision; it is not a completion threshold.
-Check the full tracked tree again when each implementation issue starts.
 
 ## Reader needs
 
@@ -41,9 +37,8 @@ keep their standard names. They can link to the relevant reader route.
 ## Writing and verification
 
 Keep the existing Vale installation and Google error checks.
-Add the MIT-licensed [ste-cli v0.10.1](https://github.com/TudorAndrei/ste-cli/tree/v0.10.1).
-Pin release checksums in `tools/install-ste.sh`. Use its upstream sentence-length,
-paragraph-length, and contraction rules. Disable Google contraction suggestions.
+Use the pinned shared package described in the [toolchain Reference](../reference/documentation-toolchain.md).
+Its selected STE rules cover sentence length, paragraph length, and contractions. Disable Google contraction suggestions.
 Do not add write-good or another passive-voice gate.
 
 Use one shared user-level `documentation` skill for Claude Code and Codex.
@@ -74,14 +69,14 @@ Reuse the existing publishing, navigation, and interface correspondence tests.
 Update them when the documented behavior or routes change. Do not add tests
 that only repeat a sentence from a document.
 
-Report legacy STE findings in CI during migration. Require rewritten sections
-to pass the selected rules. `tools/ste-lint.sh` uses explicit paths and
+Keep the corpus STE report informational because it includes preserved source records.
+Require rewritten maintained prose to pass the selected rules. `tools/ste-lint.sh` uses explicit paths and
 `--fail-over 0`. Add finished pages to `.ste-required.txt` as each rewrite ships.
 Check partial rewrites through standard input.
 
 Use [the documentation guide](../contributing-documentation.md) for editing commands.
 [ADR-038](../adrs/adr-038-docs-style-lint-and-published-site.md) records the local
-and CI boundaries. The final issue checks the full corpus and assignment register.
+and CI boundaries. The documentation inventory links final page routes and source checks.
 
 ## Records and generated material
 
@@ -99,58 +94,22 @@ STE descriptions. Change maintained generator prose at its source. Do not
 change `CHANGELOG.md` or release versions by hand.
 
 No maintained prose is excluded because it is hidden, old, or outside `docs/`.
-The tooling issue assigns each page and each mixed section. The final issue
-checks those assignments against the then-current tracked tree.
+The [inventory](documentation-assignments.md) covers pages, mixed sections, source declarations, and preserved records.
+Root policies keep their standard paths.
+Agent guidance uses existing prose rules with a narrow exception for precise tool names.
+The original delivery breakdown and dependency readback remain in the [design issue](https://github.com/OpenRAE/lilrae/issues/1662).
 
 ## Implementation issues
 
-Each row produces one complete delivery PR. A row owns any pages it creates
-when it splits its source material, even when those pages use another form.
-The tooling PR records exact page assignments within these scopes. The final
-PR checks for omissions and documentation added during the migration.
-
-The [assignment register](documentation-assignments.md) lists exact page and
-mixed-section ownership, source documentation, and generated sources.
-
-| Issue | Owned content | Result |
-| --- | --- | --- |
-| [#1664](https://github.com/OpenRAE/lilrae/issues/1664) | Vale setup, authoring guidance, reader routes, and page assignments | Add proven tools first; amend ADR-038 |
-| [#1665](https://github.com/OpenRAE/lilrae/issues/1665) | `docs/getting-started/`, deployment, troubleshooting, workshop, and workshop tool READMEs | Separate learning exercises from operating tasks |
-| [#1666](https://github.com/OpenRAE/lilrae/issues/1666) | `docs/reference/`, components, containers, SDL, RAES, taxonomy, image catalog; READMEs under `containers/`, `mcp/`, and `src/`; scenario Markdown | Separate lookup facts, authoring tasks, and explanations |
-| [#1667](https://github.com/OpenRAE/lilrae/issues/1667) | `docs/architecture/`, `docs/adrs/`, `docs/requirements/`, `docs/specs/`, and `docs/reviews/` | Separate current explanations from historical records |
-| [#1668](https://github.com/OpenRAE/lilrae/issues/1668) | Root and hidden guidance; docs home, coding, release, testing, and security pages; other tool docs; source documentation and generated sources | Rewrite contributor content and verify complete coverage |
-
-Original fixtures and upstream material remain exact under the source-material
-rule above. Issue #1668 checks their descriptions and classification too.
-Remove temporary migration notes after coverage is complete. Keep the short
-authoring guidance and existing checks.
-
-The GitHub blocking API records these dependencies:
-
-- #1664 blocks #1665, #1666, #1667, and #1668.
-- #1665, #1666, and #1667 also block #1668, which performs the final audit.
-
-The three middle issues can proceed independently after the tooling issue.
-Issue #1662 needs the design and backlog only; their later delivery does not
-block this design PR. No new hosting or external text processing is required.
+The [inventory](documentation-assignments.md) records delivery provenance and final reader routes.
+The current contributor workflow is [Write documentation](../contributing-documentation.md).
 
 ### Backlog verification
 
-GitHub API readback on 2026-11-04 confirmed that issues #1664 through #1668
-belong to milestone 45. Each issue body contains the STE rewrite criterion,
-the section-by-section code check, and the existing-tools rule.
-
-| Issue | Blocked by, from the GitHub API |
-| --- | --- |
-| #1664 | None |
-| #1665 | #1664 |
-| #1666 | #1664 |
-| #1667 | #1664 |
-| #1668 | #1664, #1665, #1666, #1667 |
-
-The relationships were set through `gh api` with the issue IDs. Repeat the
-readback from `repos/OpenRAE/lilrae/issues/{number}/dependencies/blocked_by`.
-Read each issue's `milestone` and `body` fields from the issue API too.
+The final delivery checked GitHub's blocking API: #1664, #1665, #1666, and #1667 were closed.
+Their four blocking edges on #1668 remained present.
+The original migration backlog remains in the issue history; it does not define new work.
+No new hosting or external text processing is required.
 
 ## Sources
 

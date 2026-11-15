@@ -10,75 +10,87 @@ accepted
 
 ## Context
 
-APTL v1.x deployed entirely to AWS using Terraform:
+APTL v1.x used AWS and Terraform for the whole lab.
+The SIEM used qRadar on a c5.4xlarge EC2 instance.
+Kali used a t3.micro instance, and the victim used RHEL 9.6.
+A VPC, public subnet, security groups, and bastion supplied network access.
+S3 and DynamoDB stored Terraform state; UUID-based bucket names reduced enumeration.
 
-- **EC2 instances** for the SIEM (qRadar on a c5.4xlarge), Kali Linux (t3.micro), and a victim RHEL 9.6 machine
-- **VPC** with public subnet, security groups, and bastion host SSH access
-- **S3 + DynamoDB** for Terraform state management with UUID-based bucket names (to prevent enumeration)
-- **Cost**: ~$280/month if left running continuously—the c5.4xlarge for qRadar alone was ~$250/month
-- **qRadar Community Edition** required a 5GB ISO manual transfer, 1-2 hour installation, 5,000 EPS limit, and a 30-day trial license
-- **Setup time**: Even with full Terraform automation, deploying from scratch took 30-60 minutes for infrastructure + 1-2 hours for qRadar installation
-- **Network complexity**: VPC networking, security group rules, bastion host, inter-instance connectivity debugging
+The recorded continuous cost was about $280 per month.
+The qRadar instance accounted for about $250 per month.
+qRadar Community Edition needed a manually transferred 5 GB ISO and 1–2 hours of installation.
+Its limits were 5,000 events per second and a 30-day trial license.
 
-The barrier to entry was too high for a personal training lab. Every session meant either leaving expensive infrastructure running or spending an hour redeploying. The target audience (security practitioners wanting to practice purple team operations) would often abandon setup before reaching the first exercise.
+Infrastructure preparation took 30–60 minutes before the qRadar installation.
 
-Additionally, the AWS dependency created a hard coupling to a specific cloud provider and required AWS credentials, IAM permissions, and billing oversight that complicated sharing the project.
+These are historical costs and timings from the migration decision.
+They are not current AWS prices or deployment guarantees.
+Repeated setup and billing made the lab difficult to use for personal training.
+AWS credentials, IAM permissions, and billing administration also made sharing harder.
 
 ### Alternatives Considered
 
-1. **Multi-cloud Terraform** (AWS, GCP, Azure modules): Would lower per-provider cost but not eliminate it. Increased maintenance burden across providers.
-2. **Vagrant + VirtualBox**: Local deployment but heavyweight VMs. Slow provisioning, large disk footprint, no native container orchestration.
-3. **Kubernetes (kind/minikube)**: Over-engineered for this scale. The lab needs ~5-15 containers, not a cluster orchestrator. Would add significant operational complexity.
-4. **Docker Compose**: Native container orchestration, declarative configuration, instant startup, zero cloud costs, works offline.
+1. Multi-cloud Terraform could reduce some costs but would keep cloud billing and increase maintenance across providers.
+2. Vagrant and VirtualBox would provide local VMs but increase disk use and provisioning time.
+3. Kubernetes through kind or minikube would add cluster administration for a lab that then needed about 5–15 containers.
+4. Docker Compose offered local declarative deployment without cloud billing and supported offline use after image acquisition.
 
 ## Decision
 
-Replace the entire AWS/Terraform deployment model with Docker Compose running on the developer's local machine.
+Replace the AWS and Terraform deployment with local Docker Compose.
+The original decision defined lab containers in one `docker-compose.yml`.
+Startup used `docker compose up`, followed later by the historical `aptl lab start` interface.
+Profiles selected subsets of containers under [ADR-005](adr-005-docker-compose-profiles.md).
+Wazuh replaced qRadar under [ADR-002](adr-002-wazuh-siem.md).
+Docker bridges replaced VPC networking under [ADR-006](adr-006-four-network-segmentation.md).
 
-- All lab components run as Docker containers defined in a single `docker-compose.yml`
-- No cloud infrastructure required—zero ongoing costs
-- Single-command startup: `docker compose up` (later `aptl lab start`)
-- Profiles enable selective deployment of container subsets (see [ADR-005](adr-005-docker-compose-profiles.md))
-- Wazuh replaces qRadar as the SIEM (see [ADR-002](adr-002-wazuh-siem.md))
-- Docker bridge networks replace VPC networking (see [ADR-006](adr-006-four-network-segmentation.md))
+The initial v2.0.0 deployment had five containers.
+They were Wazuh Manager, Wazuh Indexer, Wazuh Dashboard, a Rocky Linux victim, and Kali.
+A later version of this record reported 19 containers across four networks.
+That count is historical and does not describe every current Scenario Pack.
 
-The initial v2.0.0 deployment included 5 containers: Wazuh Manager, Wazuh Indexer, Wazuh Dashboard, a Rocky Linux victim, and Kali Linux. This has since grown to 19 containers across 4 Docker networks.
+[ADR-046](adr-046-dynamic-raes-scenario-realization.md) and [ADR-051](adr-051-component-level-raes-realization.md) define later scenario realization.
+The admitted plan now supplies scenario topology and content.
+The [root topology reference](../reference/compose-topology.md) identifies compatibility declarations and stubs.
+The supported current startup procedure belongs to the [deployment guide](../deployment.md).
 
 ### What Was Removed
 
-- All Terraform infrastructure code (`infra/`, `vms/`)
-- AWS-specific configuration (VPC, security groups, S3 state)
-- qRadar Community Edition integration
-- Bastion host SSH access pattern
-- Cloud cost management overhead
+The migration removed Terraform code under `infra/` and `vms/`.
+It removed AWS VPC, security-group, and S3 state configuration.
+It also removed qRadar integration, bastion access, and cloud-cost administration from the local deployment path.
 
 ### What Was Preserved
 
-- The core purple team lab concept: SIEM + attacker + victims
-- MCP server integration for AI agent control
-- SSH-based access to lab containers
-- Documentation structure (migrated from VitePress to MkDocs)
+The lab still combined a SIEM, an attacker, and victim systems.
+MCP continued to provide agent access, and SSH continued to provide container access.
+The documentation retained its structure while moving from VitePress to MkDocs.
 
 ## Consequences
 
 ### Positive
 
-- **Zero cost**: No cloud billing. Lab can stay running indefinitely.
-- **Instant startup**: Containers start in seconds vs. 30-60 minutes for Terraform + EC2
-- **Offline capable**: Works without internet after initial image pulls
-- **Reproducible**: `docker-compose.yml` is the complete deployment spec. No Terraform state, no cloud drift.
-- **Lower barrier**: `git clone && aptl lab start` vs. AWS credentials + Terraform init + multi-step deployment
-- **Portable**: Works on any machine with Docker—Linux, macOS, WSL2
+- Local deployment removed recurring cloud billing.
+- The decision expected container startup in seconds instead of 30–60 minutes for infrastructure preparation.
+- Previously acquired images supported offline use.
+- Declarative deployment removed Terraform state and cloud drift from the local path.
+- The original `git clone && aptl lab start` example represented a simpler setup than the AWS workflow.
+- Docker support made local deployment possible on Linux, macOS, and WSL2, subject to each supported backend's limits.
 
 ### Negative
 
-- **Single machine**: All containers compete for host resources. No horizontal scaling. ~20GB RAM needed for full stack.
-- **No real network latency**: Docker bridge networking is near-zero latency, unlike real enterprise networks
-- **No Windows containers**: Docker on Linux can't run Windows containers natively. Windows endpoints require a separate VM (see enterprise infrastructure docs).
-- **Container escape risk**: Lab containers running on the developer's machine share the kernel. A container escape in a deliberately vulnerable container could affect the host. Mitigated by resource limits and non-root execution where possible.
+- Containers compete for one host's resources and do not provide horizontal scaling.
+- The record estimated about 20 GB RAM for the then-current full stack.
+- Docker bridge latency differs from enterprise networks.
+- Linux Docker cannot run Windows containers natively; Windows endpoints need a separate VM.
+- Vulnerable containers share the host kernel, so escape can affect the host.
+- Resource limits and non-root execution reduce some risks but do not provide a VM boundary.
+
+[ADR-060](adr-060-vm-only-seat-containment.md) defines the later disposable-seat containment decision.
+The original local-container decision does not supersede that requirement.
 
 ### Risks
 
-- Resource contention on machines with <16GB RAM. Mitigated by Docker Compose profiles allowing partial deployment.
-- Docker Desktop licensing changes could affect commercial users (mitigated by supporting Docker Engine directly on Linux)
-- Docker Compose v1 to v2 migration required updating all `docker-compose` commands to `docker compose` (space instead of hyphen)
+- The record identified resource contention below 16 GB RAM; profiles allowed smaller deployments.
+- Docker Desktop license changes could affect commercial use; Linux Docker Engine remained an alternative.
+- The Compose v1-to-v2 migration required `docker compose` instead of `docker-compose` commands.

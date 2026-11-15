@@ -1,5 +1,11 @@
 # Native Docker range network policy
 
+Reader purpose: Explanation.
+The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-968-native-network-policy.md) preserves the original design cut.
+Version-specific examples and qualification statements keep their original scope.
+This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
+
+
 The native Docker deployment boundary owns a separate `native-range` nftables
 policy. Scenario ACLs remain independent. Every admitted bridge is covered before
 workloads start; network topology and internal flags remain authored.
@@ -14,9 +20,7 @@ flowchart LR
   Evidence --> Startup
 ```
 
-The policy blocks host input on every range bridge, preserves replies to host
-initiated connections, allows forwarding between admitted bridges, and permits
-external forwarding only to exact operator destinations and transport ports.
+Policy blocks host input on range bridges while preserving host-initiated replies. It permits admitted inter-bridge traffic and exact approved external destinations and ports.
 IPv6 is subject to the same default deny. A separate authority prevents authored
 ACL accepts from overriding the floor. Native Docker must bind direct nodes to
 admitted networks at creation, including during provisioning. Builds and image
@@ -97,6 +101,4 @@ policy before the relay starts. A relay receives no credential or Docker socket.
 Publication evidence checks the live relay image, process state, target address,
 shared network, forwarding configuration and effective Docker port bindings.
 Labels alone cannot prove a target. The boot gate also connects through the
-exact loopback binding and reads the target service's greeting. Teardown uses
-resource receipts to remove relays and their network before removing the owned
-policy; it does not rely on a list of scenario container names.
+exact loopback binding and reads the target service's greeting. Teardown uses ownership receipts for relays, their network, and policy removal. Scenario container-name lists do not supply cleanup authority.

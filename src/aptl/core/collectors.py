@@ -53,8 +53,8 @@ _COLLECTOR_HTTP_TIMEOUT = 120
 #      process happens to consider its CWD — explicitly the last
 #      resort so a library caller invoked from outside the repo root
 #      doesn't silently miss the bundle.
-# Wazuh collectors deliberately do NOT consult this — they stay under
-# SEC-004's rejectUnauthorized:false allowance.
+# Wazuh clients do not consult this: they verify against the lab Wazuh CA
+# (``aptl.core.certs.wazuh_root_ca``, SEC-009).
 _DEFAULT_LAB_CA_RELPATH = "config/soc_certs/lab-ca.pem"
 
 
