@@ -9,6 +9,44 @@ This file is maintained by [release-please](https://github.com/googleapis/releas
 from Conventional Commit messages; release sections are generated on release,
 not hand-edited in PRs.
 
+## [10.2.0](https://github.com/OpenRAE/lilrae/compare/v10.1.0...v10.2.0) (2026-11-15)
+
+
+### Features
+
+* add the shared containment wrapper with an in-house Bubblewrap engine ([#1734](https://github.com/OpenRAE/lilrae/issues/1734)) ([809daca](https://github.com/OpenRAE/lilrae/commit/809dacad67aa0d77dcd2c62506de4f02ac236576))
+
+
+### Bug Fixes
+
+* bind realized tool configuration and retain trial observations ([#1776](https://github.com/OpenRAE/lilrae/issues/1776)) ([a2ef90b](https://github.com/OpenRAE/lilrae/commit/a2ef90bc34aaa0d2cc63f6be1c4db19b69076b21))
+* deliver TechVault native sources through the capture source context ([8949643](https://github.com/OpenRAE/lilrae/commit/8949643c2fedd3172177a172eacd22c6fcf59cae))
+* deliver TechVault native sources through the capture source context ([dc60fcd](https://github.com/OpenRAE/lilrae/commit/dc60fcd828b46ccd48761dc35cd9bb76e1c1cb88))
+* **deps:** upgrade the OpenTelemetry modules of the Caddy build ([#1788](https://github.com/OpenRAE/lilrae/issues/1788)) ([fea7cad](https://github.com/OpenRAE/lilrae/commit/fea7cad0bd6e15357f450cfc80db6ca1539c5eff))
+* keep operator secrets out of the root build context ([#1753](https://github.com/OpenRAE/lilrae/issues/1753)) ([22d187b](https://github.com/OpenRAE/lilrae/commit/22d187b17ce418372e09bb3ec967cef5bda16bb0))
+* mask credentials that the redactors leave visible ([#1755](https://github.com/OpenRAE/lilrae/issues/1755)) ([4b794b3](https://github.com/OpenRAE/lilrae/commit/4b794b32f32ee84a331530a4ffc0059dcb6a41fe))
+* mask quoted keys and quoted values in the redactors ([#1760](https://github.com/OpenRAE/lilrae/issues/1760)) ([ae1d9f8](https://github.com/OpenRAE/lilrae/commit/ae1d9f886e7aa9e242ee32cb4d38299b46db0bb0))
+* **mcp:** append api_call params with an ampersand when the endpoint already has a query string ([eca813b](https://github.com/OpenRAE/lilrae/commit/eca813b608593847bf74e1919e3821a37a959feb))
+* **mcp:** generate default session IDs with crypto.randomBytes ([#1766](https://github.com/OpenRAE/lilrae/issues/1766)) ([0603b1a](https://github.com/OpenRAE/lilrae/commit/0603b1a6c3ce640c43725c28fe1ccf8814d4f1d3))
+* **mcp:** update hono and @hono/node-server in the MCP lockfiles ([#1772](https://github.com/OpenRAE/lilrae/issues/1772)) ([d7be5de](https://github.com/OpenRAE/lilrae/commit/d7be5deb9853db529aa3871f16a710f24ba93263))
+* preserve original scenario content in native trial records ([#1773](https://github.com/OpenRAE/lilrae/issues/1773)) ([631cb50](https://github.com/OpenRAE/lilrae/commit/631cb50ce4b367083191379d2a140ffc4747fc30))
+* report only the boundary state that nft confirms ([#1754](https://github.com/OpenRAE/lilrae/issues/1754)) ([f9c1e7a](https://github.com/OpenRAE/lilrae/commit/f9c1e7a4b9e64ad93fca091cf38cdab6a18ce7ec))
+* run the Samba AD provider without SYS_ADMIN ([07c9aa7](https://github.com/OpenRAE/lilrae/commit/07c9aa7eb647db62681469f55776ab3b34395871))
+* run the Samba AD provider without SYS_ADMIN ([4982370](https://github.com/OpenRAE/lilrae/commit/4982370d4c65cfc43f79c588ff62ecdb91177026))
+* **trial:** run and seal admitted trials through the native runtime ([#1740](https://github.com/OpenRAE/lilrae/issues/1740)) ([2e9c573](https://github.com/OpenRAE/lilrae/commit/2e9c573906331cebb60bb49699ab4e242632d94d))
+* update OpenTelemetry in the Caddy build and remove a trial deadline test race ([#1783](https://github.com/OpenRAE/lilrae/issues/1783)) ([7fd91f2](https://github.com/OpenRAE/lilrae/commit/7fd91f243195f605dff30d17783e24acbb5b19dc))
+* verify TLS for the Wazuh indexer and manager API clients ([#1768](https://github.com/OpenRAE/lilrae/issues/1768)) ([c31a9e6](https://github.com/OpenRAE/lilrae/commit/c31a9e6a7fa3c124c40af5eadb023dd165832984))
+
+
+### Documentation
+
+* complete contributor guides and documentation inventory ([#1756](https://github.com/OpenRAE/lilrae/issues/1756)) ([a12ed91](https://github.com/OpenRAE/lilrae/commit/a12ed917b5173ef8a56b6f7754f26d8d38f04a4f))
+* list the range policy fields of the execution boundary ([#1770](https://github.com/OpenRAE/lilrae/issues/1770)) ([747b0ca](https://github.com/OpenRAE/lilrae/commit/747b0ca85b8f19a73c5acfd13611d274e0b05ca5))
+* remove the backend retry from the runtime architecture note ([404aa15](https://github.com/OpenRAE/lilrae/commit/404aa15ba0f77a8b64d9be744f7f2d0bf9843c5f))
+* remove the backend retry from the runtime architecture note ([ed4d7a1](https://github.com/OpenRAE/lilrae/commit/ed4d7a14588c925dec26f12789ded9bce8cc8666)), closes [#1731](https://github.com/OpenRAE/lilrae/issues/1731)
+* renumber the dev ADR-065 and ADR-066 to ADR-070 and ADR-071 ([#1762](https://github.com/OpenRAE/lilrae/issues/1762)) ([57e9efc](https://github.com/OpenRAE/lilrae/commit/57e9efcebb11b599a6b91e42614105762fc64a33))
+* show revision dates without unreliable creation dates ([47e767e](https://github.com/OpenRAE/lilrae/commit/47e767efef7f69b0f01c2ea1a744ab176f2039ef))
+
 ## [10.1.0](https://github.com/OpenRAE/lilrae/compare/v10.0.0...v10.1.0) (2026-11-07)
 
 
