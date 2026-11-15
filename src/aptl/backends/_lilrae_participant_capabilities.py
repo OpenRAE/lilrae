@@ -27,6 +27,10 @@ from aptl.backends.participant_tools.session import (
     MAX_CONCURRENT_TOOLS,
 )
 
+# The RAES runtime enforces this declared per-invocation total. One autonomous
+# invocation can span many model turns within its declared duration.
+MAX_INVOCATION_TOOL_ACTIONS = 4096
+
 
 def autonomous_manifest_options(
     contracts: frozenset[str],
@@ -109,7 +113,7 @@ def autonomous_manifest_options(
             ),
             invocation_tool_actions=ParticipantInvocationToolActionCapabilitiesModel(
                 semantic_versions=["participant-invocation-tool-actions/v1"],
-                max_tool_actions_per_invocation=None,
+                max_tool_actions_per_invocation=MAX_INVOCATION_TOOL_ACTIONS,
                 max_concurrent_tool_actions_per_invocation=MAX_CONCURRENT_TOOLS,
             ),
         )
