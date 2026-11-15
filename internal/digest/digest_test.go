@@ -42,7 +42,7 @@ func TestSHA256HexVectors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.ID, err)
 		}
-		if got := digest.SHA256Hex(input); got != tc.Expect.Text {
+		if digest.SHA256Hex(input) != tc.Expect.Text {
 			t.Errorf("%s: the digest differs from the vector", tc.ID)
 		}
 	}
