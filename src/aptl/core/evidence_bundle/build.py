@@ -99,9 +99,7 @@ def _load_records(
     for entry in closure.entries:
         if entry.logical_role != "evidence-record":
             continue
-        _, _, body = _io.read_source(
-            run_dir, entry.source_run_relpath, max_bytes=limits.max_member_bytes
-        )
+        _, _, body = _io.read_source(run_dir, entry.source_run_relpath)
         record = json.loads(body)
         records.append(record)
         content_uri = record.get("raw_content", {}).get("content_uri")

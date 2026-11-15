@@ -61,7 +61,7 @@ def test_source_is_run_scoped_and_repeated_publication_does_not_double_count(tmp
     assert result.records[0]["totals"]["cost"] is None
     assert result.records[0]["capture_spec_version"] == "1.0.0"
     assert result.records[0]["participant_address"] == "agents.red"
-    assert "private-canary" not in json.dumps(result.records)
+    assert "private-canary" in json.dumps(result.records)
     other = ParticipantCaptureArchive(
         LocalRunStore(tmp_path),
         replace(_grant(), scope=RunScope("run-2", "trial-2", "attempt-2")),

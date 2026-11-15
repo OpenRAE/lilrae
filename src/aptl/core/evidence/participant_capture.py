@@ -3,7 +3,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 import hashlib
-import json
 from pathlib import Path
 import re
 
@@ -16,7 +15,6 @@ from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.protocol import RunScope
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
 )
@@ -37,24 +35,9 @@ _JSON_SUFFIX = ".json"
 _CAPTURE_SCHEMA = "lilrae.participant-capture/v1"
 
 
-def _capture_limits_supported(limits: CaptureLimits) -> bool:
-    """Check the implemented byte, artifact, and duration bounds without coercion."""
-    bounded = (
-        (limits.max_bytes, 4096, 64 * 1024 * 1024),
-        (limits.max_artifact_count, 1, 4096),
-    )
-    return (
-        all(type(value) is int and low <= value <= high for value, low, high in bounded)
-        and type(limits.max_duration_s) is int
-        and limits.max_duration_s >= 1
-    )
-
-
 def participant_capture_registration(
     registration_id: str,
     offer: ObservationCaptureOffer,
-    *,
-    limits: CaptureLimits = CaptureLimits(8 * 1024 * 1024, 4096, 3600),
 ) -> CollectorRegistration:
     """Declare the participant source this backend actually implements.
 
@@ -79,7 +62,6 @@ def participant_capture_registration(
         offer.sensitivity in {"plain", "internal", "restricted", "redacted"},
         offer.integrity_modes <= {"none", "checksum", "sha256-digest"},
         offer.retention_policy_refs <= {"run_lifetime"},
-        _capture_limits_supported(limits),
     )
     if not all(supported):
         raise ValueError("participant capture offer is unsupported")
@@ -100,7 +82,6 @@ def participant_capture_registration(
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
-        limits=limits,
         redaction_policies=frozenset(),
         retention_policies=offer.retention_policy_refs,
         capture_offer=offer,
@@ -196,11 +177,6 @@ class ParticipantCaptureArchive:
             **self.grant.identity(),
             "schema": "lilrae.participant-tool-capture/v1",
         }
-        if (
-            len(json.dumps(record, allow_nan=False).encode())
-            > self.grant.binding.limits.max_bytes
-        ):
-            raise BufferError("tool capture exceeds its admitted bound")
         self.store.create_run_json_once(
             self.grant.scope.run_id,
             (self._tools_relative / f"{identity}.json").as_posix(),
@@ -231,11 +207,7 @@ class ParticipantCaptureArchive:
             "schema": _CAPTURE_SCHEMA,
             "tool_observation_write_failed": self._tool_write_failed,
         }
-        encoded = json.dumps(record, allow_nan=False).encode()
-        if len(encoded) > self.grant.binding.limits.max_bytes:
-            raise BufferError("participant capture exceeds its admitted byte limit")
         name = hashlib.sha256(invocation.encode()).hexdigest() + _JSON_SUFFIX
-
         self.store.create_run_json_once(
             self.grant.scope.run_id, (self._relative / name).as_posix(), record
         )
@@ -253,12 +225,12 @@ class ParticipantCaptureArchive:
             missing = not optional or not absent
         return names, missing
 
-    def _read_bytes(self, root: Path, name: str, remaining: int) -> bytes:
-        """Refuse unexpected filenames and read within the remaining archive quota."""
+    def _read_bytes(self, root: Path, name: str) -> bytes:
+        """Refuse unexpected filenames and read one complete archive row."""
         if not _FILE.fullmatch(name):
             raise ValueError("participant capture filename is invalid")
         with open_contained_nofollow(self.store.base_dir, root / name) as stream:
-            return stream.read(remaining + 1)
+            return stream.read()
 
     @staticmethod
     def _validate_payload(record: dict[str, object], tool: bool) -> None:
@@ -299,20 +271,14 @@ class ParticipantCaptureArchive:
     def _read(
         self, relative: Path, *, optional: bool = False, intent: bool = False
     ) -> tuple[list[dict[str, object]], bool]:
-        """Retain independent valid rows while enforcing the cumulative source bounds."""
+        """Retain every independent valid row of one archive directory."""
         root = Path(self.grant.scope.run_id) / relative
         names, missing = self._read_names(root, optional)
-        maximum = self.grant.binding.limits.max_artifact_count
-        missing |= len(names) > maximum or (not names and not optional)
-        remaining = self.grant.binding.limits.max_bytes
+        missing |= not names and not optional
         records = []
-        for name in sorted(names)[:maximum]:
+        for name in sorted(names):
             try:
-                data = self._read_bytes(root, name, remaining)
-                remaining -= len(data)
-                if remaining < 0:
-                    missing = True
-                    break
+                data = self._read_bytes(root, name)
                 records.append(self._validate_record(data, name, optional, intent))
             except (
                 OSError,
@@ -367,7 +333,7 @@ class ParticipantCaptureArchive:
         return counts, missing
 
     def _collect(self) -> SourceResult:
-        """Build the bounded participant artifact from this attempt's accepted sources."""
+        """Build the participant artifact from this attempt's accepted sources."""
         invocations, missing = self._read(self._relative)
         expected, intent_missing = self._read(
             self._intents_relative, optional=True, intent=True
@@ -380,11 +346,9 @@ class ParticipantCaptureArchive:
             return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)
         totals = self._invocation_totals(invocations, missing)
         counts, tools_missing = self._action_counts(invocations, tools, tools_missing)
-        truncated = any(row.get("truncated") is True for row in invocations)
         complete = all(
             (
                 not missing,
-                not truncated,
                 not tools_missing,
                 totals["membership_complete"],
                 totals["required_usage_complete"],
@@ -402,14 +366,7 @@ class ParticipantCaptureArchive:
                 "action_counts": counts,
             }
         ]
-        if (
-            len(json.dumps(records, separators=(",", ":")).encode())
-            > self.grant.binding.limits.max_bytes
-        ):
-            raise BufferError("participant capture exceeds its admitted byte limit")
         status = CollectorStatus.OK if complete else CollectorStatus.MID_RUN_LOSS
-        if truncated:
-            status = CollectorStatus.TRUNCATION
         return SourceResult(
             status=status,
             records=records,
@@ -421,7 +378,5 @@ class ParticipantCaptureArchive:
         del start_iso, end_iso
         try:
             return self._collect()
-        except BufferError:
-            return SourceResult(status=CollectorStatus.TRUNCATION)
         except OSError, ValueError, KeyError, TypeError, PathContainmentError:
             return SourceResult(status=CollectorStatus.SOURCE_UNAVAILABLE)

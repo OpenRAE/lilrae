@@ -46,6 +46,7 @@ dependencies = [
     # Imported by aptl.core.host_keys on every CLI start; raes 7 supplied it
     # only transitively.
     "asyncssh>=2.17.0",
+    "ijson>=3.3,<4",
 ]
 
 [project.urls]

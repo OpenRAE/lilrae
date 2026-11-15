@@ -323,14 +323,13 @@ def reduce_provider_capture(
     *,
     invocation_id: str,
     secrets: tuple[str, ...],
-    max_bytes: int,
 ) -> ProviderCapture:
-    """Preserve accepted prefixes, never treating missing membership as empty success."""
+    """Reduce the complete journal, never treating missing membership as empty success."""
     records: list[dict[str, object]] = []
     requests: dict[str, list[dict[str, object]]] = {}
-    complete = bool(data) and len(data) <= max_bytes
+    complete = bool(data)
     try:
-        _read_capture_rows(data[:max_bytes], invocation_id, records, requests)
+        _read_capture_rows(data, invocation_id, records, requests)
     except ValueError, KeyError, TypeError, RecursionError:
         complete = False
     calls, calls_complete = _reduce_calls(requests)

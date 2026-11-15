@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence, Mapping
 from subprocess import CompletedProcess, TimeoutExpired
-from typing import TYPE_CHECKING, Protocol
+from typing import IO, TYPE_CHECKING, Protocol
 
 from aptl.core.scenario_bundle import PackIdentity
 from aptl.utils.logging import get_logger
 from aptl.core.lab_types import LabResult
 from aptl.core.deployment.errors import BackendTimeoutError
-from aptl.core.evidence.adapters.sources import capture_read_timeout
+from aptl.core.deployment._compose_log_capture import StreamExit
 
 log = get_logger("scenario-runtime-hooks")
 
@@ -151,8 +151,19 @@ class ScenarioRuntimeOperations(Protocol):
         since: str | None = None,
         until: str | None = None,
         timeout: int = 30,
-        max_bytes: int | None = None,
     ) -> CompletedProcess[str]: ...
+    def container_logs_stream(
+        self,
+        name: str,
+        *,
+        since: str | None,
+        until: str | None,
+        stdout: IO[bytes],
+        stderr: IO[bytes],
+    ) -> StreamExit: ...
+    def container_exec_stream(
+        self, name: str, cmd: list[str], *, stdout: IO[bytes], stderr: IO[bytes]
+    ) -> StreamExit: ...
     def container_restart(self, name: str) -> LabResult: ...
 
 
@@ -189,7 +200,7 @@ class AdmittedRuntimeOperations:
         self._validate(name, cmd, timeout)
         try:
             return self.__backend.container_exec(
-                name, list(cmd), timeout=capture_read_timeout(timeout)
+                name, list(cmd), timeout=timeout
             )
         except BackendTimeoutError as exc:
             cause = exc.__cause__
@@ -209,7 +220,7 @@ class AdmittedRuntimeOperations:
             raise ValueError("runtime-operation-invalid")
         try:
             return self.__backend.container_exec_with_input(
-                name, list(cmd), payload, timeout=capture_read_timeout(timeout)
+                name, list(cmd), payload, timeout=timeout
             )
         except Exception:
             raise ValueError("runtime-operation-failed") from None
@@ -228,7 +239,6 @@ class AdmittedRuntimeOperations:
         since: str | None = None,
         until: str | None = None,
         timeout: int = 30,
-        max_bytes: int | None = None,
     ) -> CompletedProcess[str]:
         """Read the existing log interface for an admitted scenario container."""
         self._validate(name, ["logs"], timeout)
@@ -236,14 +246,42 @@ class AdmittedRuntimeOperations:
             _validate_log_timestamp(value)
         try:
             return self.__backend.container_logs_capture(
-                name,
-                since=since,
-                until=until,
-                timeout=capture_read_timeout(timeout),
-                **({"max_bytes": max_bytes} if max_bytes is not None else {}),
+                name, since=since, until=until, timeout=timeout
             )
         except (TimeoutExpired, InterruptedError) as exc:
             _raise_partial_read(exc, timeout)
+        except Exception:
+            raise ValueError("runtime-operation-failed") from None
+
+    def container_logs_stream(
+        self,
+        name: str,
+        *,
+        since: str | None,
+        until: str | None,
+        stdout: IO[bytes],
+        stderr: IO[bytes],
+    ) -> StreamExit:
+        """Stream the complete log window of an admitted scenario container."""
+        self._validate(name, ["logs"], 30)
+        for value in (since, until):
+            _validate_log_timestamp(value)
+        try:
+            return self.__backend.container_logs_stream(
+                name, since=since, until=until, stdout=stdout, stderr=stderr
+            )
+        except Exception:
+            raise ValueError("runtime-operation-failed") from None
+
+    def container_exec_stream(
+        self, name: str, cmd: list[str], *, stdout: IO[bytes], stderr: IO[bytes]
+    ) -> StreamExit:
+        """Run a read-only command in an admitted container, streaming output."""
+        self._validate(name, cmd, 30)
+        try:
+            return self.__backend.container_exec_stream(
+                name, list(cmd), stdout=stdout, stderr=stderr
+            )
         except Exception:
             raise ValueError("runtime-operation-failed") from None
 

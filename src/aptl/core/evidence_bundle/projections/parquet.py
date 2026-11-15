@@ -26,7 +26,6 @@ from aptl.core.evidence_bundle import codes
 from aptl.core.evidence_bundle.archive import BundleMember
 from aptl.core.evidence_bundle.closure import ClosureLimitation
 from aptl.core.evidence_bundle.envelope import ProjectionDescriptor, ProjectionFieldMap
-from aptl.core.evidence_bundle.errors import BundleError
 from aptl.core.evidence_bundle.projections.registry import (
     ProjectionContext,
     ProjectionResult,
@@ -247,10 +246,6 @@ class ParquetProjection:
         sink = pa.BufferOutputStream()
         pq.write_table(table, sink, compression="none", write_statistics=False)
         body = sink.getvalue().to_pybytes()
-        if len(body) > ctx.limits.max_member_bytes:
-            raise BundleError(
-                codes.REJECTED_SOURCE, "parquet projection exceeds member byte limit"
-            )
 
         member = BundleMember(
             bundle_path=_BUNDLE_PATH,

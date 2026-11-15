@@ -23,7 +23,6 @@ from aptl.core.evidence_bundle._io import (
     hash_source,
     read_source,
 )
-from aptl.core.evidence_bundle.errors import BundleError
 from aptl.core.evidence_bundle.limits import BundleLimits
 from aptl.core.evidence_bundle.models import (
     ClosureEntry,
@@ -84,9 +83,7 @@ def collect_backend_evidence(
     """Add each known backend-evidence root that belongs to this run, disclosing gaps."""
     for relpath, bundle_path, role, contract_id, expected in _BACKEND_ROOTS:
         try:
-            digest, size, body = read_source(
-                run_dir, relpath, max_bytes=limits.max_member_bytes
-            )
+            digest, size, body = read_source(run_dir, relpath)
         except SourceMissing:
             if expected:
                 limitations.append(
@@ -154,11 +151,6 @@ def collect_evidence(
             )
         )
         return
-    if len(record_names) > limits.max_entries:
-        raise BundleError(
-            codes.REJECTED_SOURCE, "evidence ledger exceeds the entry limit"
-        )
-
     for name in record_names:
         _collect_one_record(run_dir, run_id, name, entries, limitations, limits)
 
@@ -171,9 +163,7 @@ def _read_and_validate_record(
     """Read and RAES-validate one ledger record, or return a disclosing limitation."""
     error: ClosureLimitation | None = None
     try:
-        digest, size, body = read_source(
-            run_dir, relpath, max_bytes=limits.max_member_bytes
-        )
+        digest, size, body = read_source(run_dir, relpath)
         record = ExperimentEvidenceRecordModel.model_validate_json(body)
     except SourceMissing:
         error = ClosureLimitation(
@@ -318,7 +308,7 @@ def _hash_referenced_blob(
     """Hash a referenced blob and disclose bounded-read failures."""
     result: tuple[str, int] | None = None
     try:
-        result = hash_source(run_dir, blob_uri, max_bytes=limits.max_member_bytes)
+        result = hash_source(run_dir, blob_uri)
     except SourceMissing:
         limitations.append(
             ClosureLimitation(codes.MISSING_SOURCE, "referenced blob absent", blob_uri)
@@ -336,9 +326,7 @@ def _archive_validators(
     """Select validators from the capture installation retained in the manifest."""
 
     try:
-        _, _, manifest_body = read_source(
-            run_dir, "manifest.json", max_bytes=limits.max_member_bytes
-        )
+        _, _, manifest_body = read_source(run_dir, "manifest.json")
     except SourceMissing:
         # Legacy archives did not retain family provider qualification.
         return validators
@@ -378,7 +366,7 @@ def _validate_adapter_blob(
         validator = validators[0].load()
         if not callable(validator):
             raise TypeError("adapter validator is not callable")
-        _, _, body = read_source(run_dir, blob_uri, max_bytes=limits.max_member_bytes)
+        _, _, body = read_source(run_dir, blob_uri)
         validator(json.loads(body))
     except Exception:
         # Installed adapter failures cannot turn qualification into success.
@@ -392,13 +380,9 @@ def _pinned_registration(
     """Resolve the record's registration from its admitted capture plan."""
     plan_id = record.capture_spec_ref.ref_id
     try:
-        _, _, body = read_source(
-            run_dir,
-            f"evidence/capture-plans/{plan_id}.json",
-            max_bytes=limits.max_member_bytes,
-        )
+        _, _, body = read_source(run_dir, f"evidence/capture-plans/{plan_id}.json")
         plan = json.loads(body)
-    except (SourceMissing, SourceRejected, ValueError):
+    except SourceMissing, SourceRejected, ValueError:
         return None
     if (
         not isinstance(plan, dict)

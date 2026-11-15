@@ -23,6 +23,7 @@ except ModuleNotFoundError:
     # Windows has no POSIX flock; the per-run lock becomes in-process only.
     fcntl = None
 
+from aptl.core.evidence.deadline import DEFAULT_PROGRESS_TIMEOUT_SECONDS
 from aptl.core.runstore_internals import (
     _LOCK_REGISTRY,
     _LOCK_REGISTRY_GUARD,
@@ -119,8 +120,30 @@ class LocalRunStore:
     at the root of each run directory.
     """
 
-    def __init__(self, base_dir: Path) -> None:
+    def __init__(
+        self,
+        base_dir: Path,
+        *,
+        free_space_reserve: float = 0.10,
+        progress_timeout_seconds: float = DEFAULT_PROGRESS_TIMEOUT_SECONDS,
+    ) -> None:
+        if not 0.0 <= free_space_reserve < 1.0:
+            raise ValueError("free_space_reserve must be in [0, 1)")
+        if progress_timeout_seconds <= 0:
+            raise ValueError("progress_timeout_seconds must be positive")
         self._base_dir = base_dir.resolve()
+        self._free_space_reserve = free_space_reserve
+        self._progress_timeout_seconds = progress_timeout_seconds
+
+    @property
+    def free_space_reserve(self) -> float:
+        """Fraction of the filesystem that evidence writes must leave free."""
+        return self._free_space_reserve
+
+    @property
+    def progress_timeout_seconds(self) -> float:
+        """Seconds an evidence read for this store may go without new data."""
+        return self._progress_timeout_seconds
 
     @property
     def base_dir(self) -> Path:

@@ -33,7 +33,6 @@ from aptl.core.provenance.identity import (
 from aptl.core.provenance.outcomes import (
     DETAIL_ABSENT,
     DETAIL_DEADLINE,
-    DETAIL_ENTRY_LIMIT,
     DETAIL_OWNER_FAILURE,
     DETAIL_UNSUPPORTED,
     SUCCESS_STATUSES,
@@ -65,17 +64,10 @@ _AGGREGATE_DOMAIN = "collection"
 #: Schema identity of the collection projection shape.
 COLLECTION_SCHEMA_VERSION = "aptl-run-provenance-collection/v1"
 
-#: Hard ceilings applied to a payload regardless of what a provider declares,
-#: so a bug in one registration cannot admit unbounded record content.
-_MAX_PAYLOAD_KEYS = 64
-_MAX_PAYLOAD_DEPTH = 6
-_MAX_PAYLOAD_STRING = 4096
-
 #: Placeholder limits used only to satisfy the registration invariant while an
 #: UNSUPPORTED section is built for a provider that has no registration. Such a
-#: provider is never invoked, so these bounds are never enforced against real
-#: collection.
-_UNREGISTERED_LIMITS = ProvenanceLimits(max_bytes=1, max_entries=1, timeout_s=1)
+#: provider is never invoked, so this bound is never enforced.
+_UNREGISTERED_LIMITS = ProvenanceLimits(timeout_s=1)
 
 
 @dataclass(frozen=True)
@@ -129,51 +121,13 @@ class ProvenanceCollection:
         }
 
 
-def _mapping_is_bounded(value: Mapping[object, object], depth: int) -> bool:
-    """Return whether a mapping's size, keys, and values are all within bounds."""
-    keys_bounded = all(
-        isinstance(key, str) and len(key) <= _MAX_PAYLOAD_STRING for key in value
-    )
-    return (
-        len(value) <= _MAX_PAYLOAD_KEYS
-        and keys_bounded
-        and all(_payload_is_bounded(item, depth + 1) for item in value.values())
-    )
-
-
-def _sequence_is_bounded(value: list | tuple, depth: int) -> bool:
-    """Return whether a sequence's length and every item are within bounds."""
-    return len(value) <= _MAX_PAYLOAD_KEYS and all(
-        _payload_is_bounded(item, depth + 1) for item in value
-    )
-
-
-def _payload_is_bounded(value: object, depth: int = 0) -> bool:
-    """Return whether ``value`` is within the hard structural ceilings."""
-    if depth > _MAX_PAYLOAD_DEPTH:
-        bounded = False
-    elif isinstance(value, str):
-        bounded = len(value) <= _MAX_PAYLOAD_STRING
-    elif isinstance(value, Mapping):
-        bounded = _mapping_is_bounded(value, depth)
-    elif isinstance(value, (list, tuple)):
-        bounded = _sequence_is_bounded(value, depth)
-    else:
-        bounded = isinstance(value, (int, float, bool)) or value is None
-    return bounded
-
-
 def _payload_is_safe(payload: Mapping[str, object]) -> bool:
-    """Return whether supplied provenance is bounded and canonical."""
-    if not _payload_is_bounded(payload):
-        return False
+    """Return whether supplied provenance is canonical JSON."""
     try:
-        snapshot = dict(payload)
-        safe = True
-        derive_identity(_SECTION_DOMAIN, {"payload": snapshot})
+        derive_identity(_SECTION_DOMAIN, {"payload": dict(payload)})
     except (TypeError, ValueError, RecursionError):
-        safe = False
-    return safe
+        return False
+    return True
 
 
 def _degraded(
@@ -232,11 +186,6 @@ def _rejection(
         (impersonating, ProvenanceStatus.FAILED, DETAIL_OWNER_FAILURE),
         (elapsed >= float(registration.limits.timeout_s), ProvenanceStatus.TIMED_OUT, DETAIL_DEADLINE),
         (result.status not in SUCCESS_STATUSES, result.status, result.detail),
-        (
-            len(result.leaves) > registration.limits.max_entries,
-            ProvenanceStatus.TRUNCATED,
-            DETAIL_ENTRY_LIMIT,
-        ),
         (unsafe_payload, ProvenanceStatus.FAILED, DETAIL_OWNER_FAILURE),
     )
     for failed, status, detail in checks:

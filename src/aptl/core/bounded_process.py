@@ -22,6 +22,7 @@ class ProcessRequest:
     cwd: Path
     stdin: bytes = field(repr=False)
     timeout_seconds: float
-    max_output_bytes: int
+    #: ``None`` captures all output; evidence-bearing participants use it.
+    max_output_bytes: int | None
     cancel_event: Event | None = None
     pass_fds: tuple[int, ...] = ()

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
+from collections.abc import Iterator
 from datetime import datetime, timezone
+from typing import IO
 
+from aptl.core.evidence.spool import iter_spool, new_spool
 
-MAX_SOURCE_BYTES = 2 * 1024 * 1024
 UTC_OFFSET = "+00:00"
 
 
@@ -16,14 +17,48 @@ def utc_iso_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace(UTC_OFFSET, "Z")
 
 
-def bounded(value: object) -> bool:
-    """Return whether a JSON-compatible value fits the source byte limit."""
+def stream_container_file(
+    operations: object, container: str, path: str
+) -> tuple[IO[bytes] | None, str | None]:
+    """Stream one complete container file into a spool; return it or a loss code.
 
+    The caller closes the returned spool.
+    """
+    stream = getattr(operations, "container_exec_stream", None)
+    if not callable(stream):
+        return None, "source-exec-failed"
+    spool, stderr = new_spool(), new_spool()
     try:
-        encoded = json.dumps(value, separators=(",", ":"), default=str).encode()
-    except (TypeError, ValueError, RecursionError):
-        return False
-    return len(encoded) <= MAX_SOURCE_BYTES
+        exit = stream(container, ["cat", "--", path], stdout=spool, stderr=stderr)
+    # broad-except: backend transports expose implementation-specific failures.
+    except Exception:
+        spool.close()
+        return None, "source-exec-failed"
+    finally:
+        stderr.close()
+    loss = None
+    if exit.timed_out:
+        loss = "source-read-timed-out"
+    elif exit.failed_pipe:
+        loss = "source-read-interrupted"
+    elif exit.returncode != 0:
+        loss = "source-command-failed"
+    if loss is not None:
+        spool.close()
+        return None, loss
+    return spool, None
+
+
+def spool_lines(spool: IO[bytes]) -> Iterator[tuple[bytes, bool]]:
+    """Yield each line of ``spool`` and whether it ended with a newline."""
+    pending = b""
+    for chunk in iter_spool(spool):
+        pending += chunk
+        *complete, pending = pending.split(b"\n")
+        for line in complete:
+            yield line, True
+    if pending:
+        yield pending, False
 
 
 def find_node(realization: object, name: str) -> object | None:
@@ -105,11 +140,11 @@ def inside_window(value: object, start_iso: str, end_iso: str) -> bool:
 
 
 __all__ = (
-    "MAX_SOURCE_BYTES",
-    "bounded",
     "content_identities",
     "find_node",
     "inside_window",
+    "spool_lines",
+    "stream_container_file",
     "utc_iso_now",
     "webapp_address",
     "webapp_endpoint",

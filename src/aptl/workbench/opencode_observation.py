@@ -30,7 +30,6 @@ from aptl.utils.strict_json import loads_strict
 
 OBSERVER_SHA256 = "f9c7924367684be08ac42685936ee0f30026ef1820a77fa3ca9e27598fd3d96e"
 OBSERVER_CREDENTIAL = "LILRAE_OPENCODE_PROVIDER_KEY"
-MAX_OBSERVATION_BYTES = 16 * 1024 * 1024
 OBSERVER_MODULE = "request_observer.mjs"
 
 
@@ -176,7 +175,6 @@ def read_request_observations(
     work: Path,
     *,
     observer_sha256: str = OBSERVER_SHA256,
-    max_bytes: int = MAX_OBSERVATION_BYTES,
     expected_controls: ObservedRequestControls | None = None,
     expected_prompt_sha256: str | None = None,
 ) -> RequestObservation:
@@ -184,11 +182,7 @@ def read_request_observations(
     status = "invalid"
     try:
         with open_contained_nofollow(work, "provider-observations.jsonl") as source:
-            payload = source.read(max_bytes + 1)
-        if len(payload) > max_bytes:
-            return RequestObservation(
-                status="oversized", observer_sha256=observer_sha256
-            )
+            payload = source.read()
         truncated = not payload.endswith(b"\n")
         if truncated:
             payload = payload.rsplit(b"\n", 1)[0] if b"\n" in payload else b""

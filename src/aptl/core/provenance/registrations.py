@@ -73,11 +73,9 @@ def _registration(
     provenance_kind: str,
     owner_adapter: str,
     *,
-    max_bytes: int,
-    max_entries: int,
     timeout_s: int,
 ) -> ProvenanceProviderRegistration:
-    """Build one built-in registration with its declared bounds."""
+    """Build one built-in registration with its declared time bound."""
     return ProvenanceProviderRegistration(
         provider_id=provider_id,
         implementation_version=_IMPLEMENTATION_VERSION,
@@ -85,50 +83,38 @@ def _registration(
         owner_adapter=owner_adapter,
         seal_point=SealPoint.RUN_READY_TO_SEAL,
         requiredness_policy_key=f"{provider_id}-required",
-        limits=ProvenanceLimits(
-            max_bytes=max_bytes, max_entries=max_entries, timeout_s=timeout_s
-        ),
+        limits=ProvenanceLimits(timeout_s=timeout_s),
     )
 
 
 #: The detection-content registration, named so callers that need only this
-#: provider's declared limits (for example the snapshot adapter) can reference
+#: provider's declaration (for example the snapshot adapter) can reference
 #: it directly instead of looking it up and handling an impossible miss.
 DETECTION_REGISTRATION = _registration(
     DETECTION_PROVIDER_ID,
     "detection-content",
     "provenance.providers.detection",
-    max_bytes=64_000_000,
-    max_entries=1024,
     timeout_s=60,
 )
 
-#: The declared built-in fleet. Limits are sized to the real surfaces: the
-#: detection roots hold on the order of a dozen small text artifacts, while a
-#: trial plan can carry many planned trials.
+#: The declared built-in fleet.
 BUILTIN_REGISTRATIONS: tuple[ProvenanceProviderRegistration, ...] = (
     _registration(
         APPARATUS_PROVIDER_ID,
         "apparatus-manifest",
         "raes_manifest/raes_processor",
-        max_bytes=4_000_000,
-        max_entries=8,
         timeout_s=30,
     ),
     _registration(
         EXPERIMENT_PROVIDER_ID,
         "admitted-experiment",
         "experiment.trial_plan",
-        max_bytes=4_000_000,
-        max_entries=1024,
         timeout_s=30,
     ),
     _registration(
         PARTICIPANT_PROVIDER_ID,
         "participant-apparatus",
         "raes_participant_apparatus",
-        max_bytes=1_000_000,
-        max_entries=64,
         timeout_s=30,
     ),
     DETECTION_REGISTRATION,
@@ -136,24 +122,18 @@ BUILTIN_REGISTRATIONS: tuple[ProvenanceProviderRegistration, ...] = (
         CONFIG_PROVIDER_ID,
         "effective-config",
         "core.config",
-        max_bytes=1_000_000,
-        max_entries=8,
         timeout_s=15,
     ),
     _registration(
         RUNTIME_PROVIDER_ID,
         "runtime-facts",
         "core.snapshot",
-        max_bytes=8_000_000,
-        max_entries=256,
         timeout_s=30,
     ),
     _registration(
         ARTIFACTS_PROVIDER_ID,
         "dependency-artifacts",
         "provenance.providers.artifacts",
-        max_bytes=32_000_000,
-        max_entries=128,
         timeout_s=30,
     ),
 )
