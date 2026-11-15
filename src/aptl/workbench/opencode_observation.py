@@ -45,11 +45,11 @@ class Request(SafeObservation):
     """Safe request controls and context commitments for a new call."""
 
     kind: Literal["request"]
-    call_id: Annotated[int, Field(ge=1, le=10_000)]
+    call_id: Annotated[int, Field(ge=1)]
     timestamp_ms: Count
     controls: ObservedRequestControls
     context: Annotated[
-        tuple[ObservedContext, ...], Field(min_length=1, max_length=4096)
+        tuple[ObservedContext, ...], Field(min_length=1)
     ]
 
 
@@ -57,7 +57,7 @@ class Response(SafeObservation):
     """Allowlisted response metadata for a previously dispatched call."""
 
     kind: Literal["response"]
-    call_id: Annotated[int, Field(ge=1, le=10_000)]
+    call_id: Annotated[int, Field(ge=1)]
     timestamp_ms: Count
     http_status: Annotated[int, Field(ge=100, le=599)]
     response: ProviderResponseObservation
@@ -67,7 +67,7 @@ class End(SafeObservation):
     """One terminal state for a dispatched call."""
 
     kind: Literal["end"]
-    call_id: Annotated[int, Field(ge=1, le=10_000)]
+    call_id: Annotated[int, Field(ge=1)]
     timestamp_ms: Count
     state: Literal["completed", "failed", "cancelled"]
 
@@ -128,8 +128,8 @@ def _journal_calls(
     expected_controls: ObservedRequestControls | None,
     expected_prompt_sha256: str | None,
 ) -> tuple[Ready, tuple[ProviderCallObservation, ...]]:
-    """Validate bounded event order and reduce it to safe call records."""
-    if not lines or len(lines) > 50_000 or any(len(line) > 131_072 for line in lines):
+    """Validate event order and reduce it to safe call records."""
+    if not lines:
         raise ValueError("invalid observation journal")
     loads_strict(lines[0])
     ready = _EVENT.validate_json(lines[0])
