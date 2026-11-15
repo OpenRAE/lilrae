@@ -1280,7 +1280,6 @@ def test_family_discovery_contains_metadata_failures(monkeypatch):
 def test_retained_payload_validator_uses_recorded_family_installation(tmp_path):
     import json
     from aptl.core.evidence_bundle._collect import _validate_adapter_blob
-    from aptl.core.evidence_bundle.limits import DEFAULT_LIMITS
 
     manifest = {
         "backend_evidence": {
@@ -1309,12 +1308,12 @@ def test_retained_payload_validator_uses_recorded_family_installation(tmp_path):
         load=lambda: lambda payload: pytest.fail("must not use bundled validator"),
     )
     assert _validate_adapter_blob(
-        [expected, bundled], tmp_path, "payload.json", DEFAULT_LIMITS
+        [expected, bundled], tmp_path, "payload.json"
     )
     assert calls == ["expected"]
     expected.dist.version = "2.0"
     assert not _validate_adapter_blob(
-        [expected], tmp_path, "payload.json", DEFAULT_LIMITS
+        [expected], tmp_path, "payload.json"
     )
     assert calls == ["expected"]
 
