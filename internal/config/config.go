@@ -137,7 +137,7 @@ type RunStorage struct {
 }
 
 // PythonFloat is a float member. It marshals as the Python json module writes
-// a float, so an integral value keeps its ".0", as in model_dump.
+// a float. Thus an integral value keeps the fraction `.0`, as in model_dump.
 type PythonFloat float64
 
 // MarshalJSONTo writes the text of the Python json module for f.
@@ -146,7 +146,10 @@ func (f PythonFloat) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if err != nil {
 		return fmt.Errorf("python float: %w", err)
 	}
-	return enc.WriteValue(jsontext.Value(text))
+	if err := enc.WriteValue(jsontext.Value(text)); err != nil {
+		return fmt.Errorf("python float: %w", err)
+	}
+	return nil
 }
 
 // LifecyclePolicy is the ephemeral lifecycle policy of the range (DEP-003).
