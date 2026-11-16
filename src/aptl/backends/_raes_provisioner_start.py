@@ -23,7 +23,7 @@ from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 from raes_processor.planner import realization_authority_disclosure
 
 from aptl.backends._raes_apply_reporting import (
-    bounded_apply_details as _bounded_apply_details,
+    conformant_apply_details as _conformant_apply_details,
     capture_apparatus_observations,
 )
 from aptl.backends._lilrae_catalog_image_observation import catalog_images_unverified
@@ -363,7 +363,7 @@ class ProvisionerStartMixin(object):
     ) -> dict[str, object]:
         """Project verified deployment and apparatus evidence into bounded details."""
 
-        return _bounded_apply_details(
+        return _conformant_apply_details(
             {
                 "profiles": self.selected_profiles(realization),
                 "realization": realization.details(),
@@ -396,7 +396,7 @@ def _unverified_catalog_image_result(
         success=False,
         snapshot=snapshot,
         diagnostics=diagnostics,
-        details=_bounded_apply_details(
+        details=_conformant_apply_details(
             {
                 "profiles": selected_profiles,
                 "realization": realization.details(),

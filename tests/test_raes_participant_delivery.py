@@ -41,7 +41,6 @@ from aptl.core.evidence.coordinator import acquire_evidence
 from aptl.core.evidence.protocol import RunScope
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 from aptl.core.runstore import LocalRunStore
@@ -323,11 +322,6 @@ def _binding(role: str, phase: str) -> CaptureBinding:
         retention_policy="run_lifetime",
         loss_disclosure_required=True,
         visibility_class=CaptureVisibility.APPARATUS_ONLY,
-        limits=CaptureLimits(
-            max_bytes=2 * 1024 * 1024,
-            max_artifact_count=1,
-            max_duration_s=600,
-        ),
     )
 
 
@@ -427,10 +421,12 @@ class _Runner:
     def __init__(self) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.environments: list[dict[str, str]] = []
+        self.output_limits: list[object] = []
 
     def run(self, argv: tuple[str, ...], **kwargs: object) -> ProcessResult:
         self.calls.append(argv)
         self.environments.append(dict(kwargs["env"]))
+        self.output_limits.append(kwargs.get("max_output_bytes"))
         return ProcessResult(
             returncode=0,
             stdout=json.dumps(
@@ -518,6 +514,8 @@ def test_host_adapter_uses_authenticated_cli_and_strict_profile_tools(
     assert "XDG_CONFIG_HOME" not in runner.environments[0]
     assert "CLAUDE_CONFIG_DIR" not in runner.environments[0]
     assert "PYTHONPATH" not in runner.environments[0]
+    # The default adapter captures the complete participant output.
+    assert runner.output_limits == [None, None]
 
 
 @pytest.mark.parametrize(
@@ -785,8 +783,12 @@ def test_delivery_collector_reports_why_the_provider_turn_failed(
     config = tmp_path / "profile.json"
     config.write_text('{"mcpServers": {}}\n', encoding="utf-8")
     config.chmod(0o600)
+    # An explicit output cap still maps a runner overflow to TRUNCATION.
     adapter = ClaudeCodeHostParticipantAdapter(
-        _admitted_fixture_executable(tmp_path), tmp_path, runner=_FailingRunner(reason)
+        _admitted_fixture_executable(tmp_path),
+        tmp_path,
+        runner=_FailingRunner(reason),
+        max_output_bytes=4096 if reason == REASON_OVERFLOW else None,
     )
     collector = _ParticipantDeliveryCollector(
         turn.capture_binding.registration_id  # type: ignore[union-attr]

@@ -98,8 +98,11 @@ class TrialSupervision:
 
 def native_participant_address(binding: LilraeParticipantBinding) -> str:
     """Return the SDL agent address of one installed native participant binding."""
-    return "agents." + binding.implementation_selection.participant_address.removeprefix(
-        "participant.behavior."
+    return (
+        "agents."
+        + binding.implementation_selection.participant_address.removeprefix(
+            "participant.behavior."
+        )
     )
 
 
@@ -126,6 +129,11 @@ class _RecordedInvocation:
     def tool_inventory(self) -> frozenset[tuple[str, str]]:
         """Return the wrapped executor's tool inventory, or no tools."""
         return getattr(self.invocation, "tool_inventory", frozenset())
+
+    @property
+    def tool_evidence_sink(self) -> Callable[[Mapping[str, object]], None] | None:
+        """Preserve native tool observations through the recording wrapper."""
+        return getattr(self.invocation, "tool_evidence_sink", None)
 
     @property
     def timeout_seconds(self) -> int:
@@ -155,9 +163,7 @@ class _RecordedInvocation:
     ) -> str:
         """Invoke the wrapped executor with the scheduler-issued tool port."""
         return self._call(
-            lambda: self.invocation.invoke_with_tools(
-                action_id, cancellation, tools
-            )
+            lambda: self.invocation.invoke_with_tools(action_id, cancellation, tools)
         )
 
 
@@ -298,9 +304,7 @@ def _stop_reason(
     return next((reason for reason, hit in reached if hit), None)
 
 
-def _terminal_cause(
-    cause: str, records: tuple[TrialParticipantRecord, ...]
-) -> str:
+def _terminal_cause(cause: str, records: tuple[TrialParticipantRecord, ...]) -> str:
     """Map the supervisor's cause and participant results to the trial's end."""
     terminal = "completed" if cause == _EPISODE_END else cause
     if terminal == "completed" and any(item.status == "failed" for item in records):

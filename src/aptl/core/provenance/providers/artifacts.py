@@ -33,7 +33,6 @@ log = logging.getLogger(__name__)
 ARTIFACTS_PROVIDER_ID = "dependency-artifacts"
 
 #: Maximum participant profiles scanned for an asset lock.
-_MAX_PROFILES = 64
 
 
 @dataclass(frozen=True)
@@ -75,7 +74,7 @@ def _participant_asset_locks(project_dir: Path) -> list[DependencyArtifact]:
     except OSError:
         return []
 
-    for profile in profiles[:_MAX_PROFILES]:
+    for profile in profiles:
         candidate = root / profile / _ASSET_LOCK_NAME
         if candidate.is_file() and not candidate.is_symlink():
             artifacts.append(
@@ -112,16 +111,12 @@ class DependencyArtifactProvider:
         """Build a leaf per present lock, or declare a degradation."""
         artifacts = list(DEPENDENCY_ARTIFACTS) + _participant_asset_locks(self._project_dir)
         leaves: list[ProvenanceLeaf] = []
-        consumed = 0
         for artifact in artifacts:
             if context.expired():
                 raise _degraded.deadline()
-            if len(leaves) >= context.max_entries:
-                raise _degraded.entry_limit()
-            data = self._read(artifact.relative_path, context.max_bytes - consumed)
+            data = self._read(artifact.relative_path)
             if data is None:
                 continue
-            consumed += len(data)
             leaves.append(
                 ProvenanceLeaf(
                     logical_id=validate_logical_id(artifact.logical_id),
@@ -132,18 +127,16 @@ class DependencyArtifactProvider:
             raise _degraded.absent({"artifact_count": 0})
         return tuple(sorted(leaves))
 
-    def _read(self, relative: str, remaining: int) -> bytes | None:
+    def _read(self, relative: str) -> bytes | None:
         """Read one lock no-follow; ``None`` when it is simply not an artifact here.
 
         A :class:`PathContainmentError` means the lock is absent, symlinked, or
         not a regular file. None of those is an admitted artifact, so the entry
         contributes nothing rather than degrading the whole provider.
         """
-        if remaining <= 0:
-            raise _degraded.byte_limit()
         try:
             with open_contained_nofollow(self._project_dir, relative) as handle:
-                data = handle.read(remaining + 1)
+                return handle.read()
         except PermissionError as exc:
             raise _degraded.denied() from exc
         except PathContainmentError:
@@ -151,6 +144,3 @@ class DependencyArtifactProvider:
         except OSError as exc:
             log.warning("run-provenance: a dependency artifact could not be read")
             raise _degraded.owner_failure() from exc
-        if len(data) > remaining:
-            raise _degraded.byte_limit()
-        return data

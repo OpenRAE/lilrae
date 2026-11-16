@@ -14,13 +14,12 @@ from raes_processor.capture_admission import (
 from aptl.core.experiment.capture_registry import (
     DEFAULT_COLLECTOR_REGISTRY,
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistry,
 )
 from aptl.core.experiment.errors import AdmissionRejection, diagnostic
 
-_CAPTURE_PLAN_SCHEMA = "aptl-capture-plan/v2"
+_CAPTURE_PLAN_SCHEMA = "aptl-capture-plan/v3"
 
 
 @dataclass(frozen=True)
@@ -65,7 +64,6 @@ class AdmittedCaptureDemand:
     contract_version: str
     effective_config_digest: str
     visibility_class: CaptureVisibility
-    limits: CaptureLimits
     selected_output_contract: str
     selected_channel_kind: str
     selected_capture_scope: str
@@ -86,11 +84,6 @@ class AdmittedCaptureDemand:
             "selected_channel_kind": self.selected_channel_kind,
             "selected_capture_scope": self.selected_capture_scope,
             "clock_accuracy_ms": self.clock_accuracy_ms,
-            "limits": {
-                "max_bytes": self.limits.max_bytes,
-                "max_artifact_count": self.limits.max_artifact_count,
-                "max_duration_s": self.limits.max_duration_s,
-            },
         }
 
     def runtime_binding(self, capture_plan_id: str) -> CaptureBinding:
@@ -127,7 +120,6 @@ class AdmittedCaptureDemand:
             ),
             loss_disclosure_required=True,
             visibility_class=self.visibility_class,
-            limits=self.limits,
             redaction_policy=demand.redaction_policy,
         )
 
@@ -182,7 +174,6 @@ def admit_capture_demands(
                 contract_version=registration.contract_version,
                 effective_config_digest=registration.effective_config_digest(),
                 visibility_class=registration.visibility_class,
-                limits=registration.limits,
                 selected_output_contract=offer.output_contract,
                 selected_channel_kind=registration.channel_kind,
                 selected_capture_scope=registration.capture_scope,

@@ -17,6 +17,7 @@ import secrets
 import tarfile
 from dataclasses import dataclass
 from io import BytesIO
+from typing import BinaryIO
 from pathlib import Path
 
 from aptl.core.evidence_bundle import _io, codes
@@ -73,13 +74,8 @@ def _validate_bundle_path(path: str, limits: BundleLimits) -> None:
 
 
 def _validate_members(members: list[BundleMember], limits: BundleLimits) -> None:
-    """Reject members that break count, uniqueness, source-shape, or byte bounds."""
-    if len(members) > limits.max_entries:
-        raise BundleError(
-            codes.REJECTED_SOURCE, "bundle exceeds the member entry limit"
-        )
+    """Reject members that break path, uniqueness, or source-shape rules."""
     seen: set[str] = set()
-    total = 0
     for member in members:
         _validate_bundle_path(member.bundle_path, limits)
         if member.bundle_path in seen:
@@ -92,11 +88,6 @@ def _validate_members(members: list[BundleMember], limits: BundleLimits) -> None
                 codes.REJECTED_SOURCE,
                 "member must have exactly one of a source path or generated content",
             )
-        total += member.size
-        if member.size > limits.max_member_bytes:
-            raise BundleError(codes.REJECTED_SOURCE, "member exceeds the byte limit")
-    if total > limits.max_total_bytes:
-        raise BundleError(codes.REJECTED_SOURCE, "bundle exceeds the total byte limit")
 
 
 def _prepare_parent(parent: Path) -> None:
@@ -147,37 +138,57 @@ def _resolve_output(run_dir: Path, output_path: Path) -> Path:
     return resolved
 
 
-def _member_bytes(run_dir: Path, member: BundleMember, limits: BundleLimits) -> bytes:
-    """Return the member's bytes (generated content or a re-read source), verified."""
+class _VerifiedReader:
+    """Stream one member while hashing it for comparison with its sealed digest."""
+
+    def __init__(self, source: BinaryIO) -> None:
+        self._source = source
+        self._hasher = hashlib.sha256()
+        self.size = 0
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._source.read(size)
+        self._hasher.update(data)
+        self.size += len(data)
+        return data
+
+    @property
+    def digest(self) -> str:
+        return f"sha256:{self._hasher.hexdigest()}"
+
+
+def _open_member(run_dir: Path, member: BundleMember) -> BinaryIO:
+    """Open the member's generated content or its source without following links."""
     if member.content is not None:
-        data = member.content
-    else:
-        try:
-            _, _, data = _io.read_source(
-                run_dir,
-                member.source_run_relpath or "",
-                max_bytes=limits.max_member_bytes,
-            )
-        except _io.SourceMissing as exc:
-            raise BundleError(
-                codes.MISSING_SOURCE, f"member source absent: {member.bundle_path}"
-            ) from exc
-        except _io.SourceRejected as exc:
-            raise BundleError(
-                codes.REJECTED_SOURCE, f"member source rejected: {exc.detail}"
-            ) from exc
-    actual = f"sha256:{hashlib.sha256(data).hexdigest()}"
-    if actual != member.digest or len(data) != member.size:
+        return BytesIO(member.content)
+    try:
+        return _io._open(run_dir, member.source_run_relpath or "")
+    except _io.SourceMissing as exc:
         raise BundleError(
-            codes.REJECTED_SOURCE,
-            f"member disagrees with its sealed digest/size: {member.bundle_path}",
-        )
-    return data
+            codes.MISSING_SOURCE, f"member source absent: {member.bundle_path}"
+        ) from exc
+    except _io.SourceRejected as exc:
+        raise BundleError(
+            codes.REJECTED_SOURCE, f"member source rejected: {exc.detail}"
+        ) from exc
 
 
-def _write_tar(
-    run_dir: Path, members: list[BundleMember], candidate: Path, limits: BundleLimits
-) -> None:
+def _add_member(archive: tarfile.TarFile, run_dir: Path, member: BundleMember) -> None:
+    """Stream one member into the archive and require its sealed digest/size."""
+    info = deterministic_tarinfo(
+        member.bundle_path, is_dir=False, size=member.size, mode=_MEMBER_MODE
+    )
+    with _open_member(run_dir, member) as source:
+        reader = _VerifiedReader(source)
+        archive.addfile(info, reader)
+        if reader.read(1) or reader.digest != member.digest or reader.size != member.size:
+            raise BundleError(
+                codes.REJECTED_SOURCE,
+                f"member disagrees with its sealed digest/size: {member.bundle_path}",
+            )
+
+
+def _write_tar(run_dir: Path, members: list[BundleMember], candidate: Path) -> None:
     """Assemble the sorted members into the candidate USTAR file."""
     # Create the candidate through an exclusive, no-follow, mode-0600 descriptor
     # so its bytes are never exposed to other accounts under a permissive umask
@@ -195,11 +206,7 @@ def _write_tar(
             tarfile.open(fileobj=raw, mode="w", format=tarfile.USTAR_FORMAT) as archive,
         ):
             for member in members:
-                data = _member_bytes(run_dir, member, limits)
-                info = deterministic_tarinfo(
-                    member.bundle_path, is_dir=False, size=len(data), mode=_MEMBER_MODE
-                )
-                archive.addfile(info, BytesIO(data))
+                _add_member(archive, run_dir, member)
     except (OSError, tarfile.TarError) as exc:
         raise BundleError(
             codes.REJECTED_SOURCE, "bundle archive could not be assembled"
@@ -225,7 +232,7 @@ def write_bundle_archive(
     out = _resolve_output(run_dir, output_path)
     candidate = out.with_name(f".{out.name}.candidate-{secrets.token_hex(8)}")
     try:
-        _write_tar(run_dir, ordered, candidate, limits)
+        _write_tar(run_dir, ordered, candidate)
         candidate.chmod(_FINAL_MODE)
         try:
             os.link(candidate, out, follow_symlinks=False)

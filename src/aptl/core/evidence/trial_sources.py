@@ -9,15 +9,14 @@ from raes_backend_protocols.capabilities import ObservationCaptureOffer
 
 from aptl.core.evidence.adapters.sources import CallableWindowedSource, SourceResult
 from aptl.core.evidence.outcomes import CollectorStatus
+from aptl.core.evidence.spool import JsonArrayWriter, new_spool
 from aptl.core.experiment.capture_registry import (
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
 )
 
 SESSION_REGISTRATION = "lilrae.collector.participant-sessions"
 AUDIT_REGISTRATION = "lilrae.collector.host-audit"
-_MAX_BYTES = 64 * 1024 * 1024
 _AUDIT_TIME = re.compile(rb"msg=audit\((\d+)\.\d+:\d+\)")
 
 
@@ -37,7 +36,7 @@ def trial_capture_registrations(
 def _registration(
     name: str, role: str, source_refs: frozenset[str]
 ) -> CollectorRegistration:
-    """Describe one redacted, run-scoped log source and its capture offer."""
+    """Describe one raw, run-scoped log source and its capture offer."""
     offer = ObservationCaptureOffer(
         offer_id=name,
         offer_version="1.0.0",
@@ -54,13 +53,13 @@ def _registration(
         channel_refs=frozenset({role}),
         window_kinds=frozenset({"run", "apparatus"}),
         integrity_modes=frozenset({"checksum"}),
-        sensitivity="redacted",
+        sensitivity="plain",
         availability="available",
         fidelity="complete",
-        disclosure="redacted",
+        disclosure="full",
         retention_policy_refs=frozenset({"run_lifetime"}),
         export_policy="not-required",
-        redaction_policy="redact_secrets",
+        redaction_policy=None,
     )
     return CollectorRegistration(
         registration_id=name,
@@ -72,15 +71,14 @@ def _registration(
         window_kinds=offer.window_kinds,
         media_types=offer.media_types,
         required_artifact_roles=offer.artifact_roles,
-        supported_sensitivities=frozenset({"redacted"}),
-        supports_redaction=True,
+        supported_sensitivities=frozenset({"plain"}),
+        supports_redaction=False,
         integrity_modes=offer.integrity_modes,
         sealing_modes=frozenset({"digest"}),
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
-        limits=CaptureLimits(_MAX_BYTES, 2 if name == SESSION_REGISTRATION else 1, 900),
-        redaction_policies=frozenset({"redact_secrets"}),
+        redaction_policies=frozenset(),
         retention_policies=offer.retention_policy_refs,
         capture_offer=offer,
     )
@@ -119,20 +117,19 @@ def host_audit_source(log_dir: Path = Path("/var/log/audit")) -> CallableWindowe
 
 
 def _read_audit_window(files: list[Path], window: tuple[int, int]) -> SourceResult:
-    """Collect the in-window lines of each rotated file, within the size limit."""
-    lines: list[str] = []
-    size = 0
-    for path in files:
-        if path.is_symlink() or not path.is_file():
-            return SourceResult(status=CollectorStatus.MID_RUN_LOSS)
-        for line in _window_lines(path, window):
-            size += len(line)
-            if size > _MAX_BYTES:
-                return SourceResult(status=CollectorStatus.TRUNCATION, dropped_count=1)
-            lines.append(line.decode("utf-8", errors="strict"))
+    """Stream the in-window lines of each rotated file into one record."""
+    with new_spool() as selected:
+        for path in files:
+            if path.is_symlink() or not path.is_file():
+                return SourceResult(status=CollectorStatus.MID_RUN_LOSS)
+            for line in _window_lines(path, window):
+                selected.write(line)
+        writer = JsonArrayWriter()
+        if selected.tell():
+            writer.add({}, {"audit_log": selected})
     return SourceResult(
-        status=CollectorStatus.OK if lines else CollectorStatus.EMPTY_OK,
-        records=[{"audit_log": "".join(lines)}] if lines else [],
+        status=CollectorStatus.OK if writer.count else CollectorStatus.EMPTY_OK,
+        chunks=writer.finish() if writer.count else (),
     )
 
 

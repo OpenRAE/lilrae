@@ -156,7 +156,7 @@ def validate_invocation_inputs(
     model: str,
     prompt: str,
     timeout_seconds: float,
-    max_output_bytes: int,
+    max_output_bytes: int | None,
     max_output_tokens: int,
 ) -> None:
     """Bound participant inputs before any process or tool probe starts."""
@@ -166,7 +166,7 @@ def validate_invocation_inputs(
     if (
         not math.isfinite(timeout_seconds)
         or not 0 < timeout_seconds <= 3600
-        or not 0 < max_output_bytes <= 1_000_000
+        or (max_output_bytes is not None and max_output_bytes <= 0)
         or type(max_output_tokens) is not int
         or not 1 <= max_output_tokens <= 32768
     ):

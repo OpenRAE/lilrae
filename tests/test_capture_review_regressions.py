@@ -1,8 +1,7 @@
 """Regression evidence for the four required capture review fixes."""
 
-from dataclasses import replace
 import json
-from subprocess import CompletedProcess, TimeoutExpired
+from subprocess import CompletedProcess
 from types import SimpleNamespace
 
 import pytest
@@ -14,7 +13,6 @@ from aptl.core.evidence.adapters.sources import (
 )
 from aptl.core.evidence.coordinator import acquire_evidence
 from aptl.core.evidence.outcomes import CollectorStatus
-from aptl.core.experiment.capture_registry import CaptureLimits
 from aptl.core.runstore import LocalRunStore
 from tests.test_evidence_coordinator import _CLOCK, _SCOPE, _binding
 from tests.test_participant_capture import _grant, _payload
@@ -100,7 +98,6 @@ def test_split_stream_credentials_cannot_be_reconstructed(interrupted):
         b"\n".join(json.dumps(row).encode() for row in rows),
         invocation_id="outer-red",
         secrets=("granted-private-canary",),
-        max_bytes=65536,
     )
     retained = json.dumps(result.records)
     assert "granted-" not in retained
@@ -110,7 +107,7 @@ def test_split_stream_credentials_cannot_be_reconstructed(interrupted):
 
 
 @pytest.mark.parametrize("operation", ["logs", "file"])
-@pytest.mark.parametrize("failure", ["overflow", "timeout", "interrupted"])
+@pytest.mark.parametrize("failure", [None, "timeout", "interrupted"])
 def test_incomplete_native_secret_blocks_are_withheld_in_artifacts(
     tmp_path, operation, failure
 ):
@@ -118,29 +115,23 @@ def test_incomplete_native_secret_blocks_are_withheld_in_artifacts(
         ContainerFileSource,
         ContainerLogSource,
     )
-    from aptl.core.deployment._compose_log_capture import LogCapture
+    from aptl.core.deployment._compose_log_capture import StreamExit
 
-    payload = "public record\n-----BEGIN PRIVATE KEY-----\n" + "QUJDREVGR0g=\n" * 20
+    payload = b"public record\n-----BEGIN PRIVATE KEY-----\n" + b"QUJDREVGR0g=\n" * 20
 
-    def read(*args, **kwargs):
-        if failure == "timeout":
-            raise TimeoutExpired("read", 30, output=payload, stderr="")
-        if failure == "interrupted":
-            error = InterruptedError("read")
-            error.stdout, error.stderr = payload, ""
-            raise error
-        result = LogCapture([], 0, payload, "")
-        result.truncated = True
-        return result
+    def stream(*args, stdout, stderr, **kwargs):
+        stdout.write(payload)
+        return StreamExit(
+            None if failure else 0, failure == "timeout", failure == "interrupted"
+        )
 
-    ops = SimpleNamespace(container_exec=read, container_logs_capture=read)
+    ops = SimpleNamespace(container_exec_stream=stream, container_logs_stream=stream)
     source = (
         ContainerLogSource(ops, ["soc"])
         if operation == "logs"
         else ContainerFileSource(
             ops,
             [("soc", "/var/log/events")],
-            max_bytes=100,
             timestamp_of=lambda line: "2026-07-20T00:00:00Z",
         )
     )
@@ -162,60 +153,46 @@ def test_incomplete_native_secret_blocks_are_withheld_in_artifacts(
     ).read_bytes()
     assert b"public record" in retained
     assert b"QUJDREVGR0g=" not in retained
-    assert result.reports[0].status is not CollectorStatus.OK
+    if failure is not None:
+        assert result.reports[0].status is not CollectorStatus.OK
 
 
 @pytest.mark.parametrize("operation", ["logs", "exec", "input"])
-@pytest.mark.parametrize("inspection_timeout", [False, True])
-def test_capture_budget_covers_ownership_inspection_and_final_command(
-    tmp_path, monkeypatch, operation, inspection_timeout
+def test_capture_keeps_native_operation_timeouts_and_store_progress_timeout(
+    tmp_path, monkeypatch, operation
 ):
-    from aptl.core.deployment.docker_compose import DockerComposeBackend
-    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
-    import aptl.core.evidence.adapters.sources as source_owner
-    import aptl.core.deployment._compose_resource_resolution as resolution
-    import aptl.core.deployment._compose_log_capture as log_owner
+    import io
 
-    elapsed = [0.0]
-    monkeypatch.setattr(source_owner, "monotonic", lambda: elapsed[0])
-    monkeypatch.setattr(
-        resolution.time,
-        "sleep",
-        lambda seconds: elapsed.__setitem__(0, elapsed[0] + seconds),
-    )
+    from aptl.core.deployment.docker_compose import DockerComposeBackend
+    from aptl.core.deployment._compose_log_capture import StreamExit
+    from aptl.backends.scenario_runtime_hooks import AdmittedRuntimeOperations
+    import aptl.core.deployment._compose_queries as queries
+
     backend = DockerComposeBackend(project_dir=tmp_path, project_name="test")
     receipt = SimpleNamespace(native_id="owned-soc")
     ownership = SimpleNamespace(candidates=lambda *a, **k: (receipt,))
     monkeypatch.setattr(backend, "_ensure_resource_ownership", lambda: ownership)
     monkeypatch.setattr(backend, "_ownership_daemon_id", lambda: "daemon")
-
-    def current(owner, item):
-        backend._raw_container_inspect(item.native_id)
-        return True
-
-    monkeypatch.setattr(backend, "_container_receipt_is_current", current)
+    monkeypatch.setattr(backend, "_container_receipt_is_current", lambda *a: True)
     seen = []
 
     def run(command, **kwargs):
         seen.append((command[:2], kwargs["timeout"]))
-        if command[:2] == ["docker", "inspect"]:
-            elapsed[0] += 1.1 if inspection_timeout else 0.4
-            if inspection_timeout:
-                raise TimeoutExpired(command, kwargs["timeout"])
         return CompletedProcess(command, 0, '{"Id":"owned-soc"}', "")
 
+    def stream(command, **kwargs):
+        seen.append((command[:2], kwargs["progress_timeout"]))
+        return StreamExit(0, False, False)
+
     monkeypatch.setattr("subprocess.run", run)
-
-    def logs(command, **kwargs):
-        seen.append((command[:2], kwargs["timeout"]))
-        return log_owner.LogCapture(command, 0, "accepted\n", "")
-
-    monkeypatch.setattr(log_owner, "capture_logs", logs)
+    monkeypatch.setattr(queries, "stream_command", stream)
     operations = AdmittedRuntimeOperations(backend, [SimpleNamespace(name="soc")])
 
     def fetch(*args):
         if operation == "logs":
-            operations.container_logs_capture("soc", timeout=30, max_bytes=4096)
+            operations.container_logs_stream(
+                "soc", since=None, until=None, stdout=io.BytesIO(), stderr=io.BytesIO()
+            )
         elif operation == "exec":
             operations.container_exec("soc", ["true"], timeout=30)
         else:
@@ -224,7 +201,7 @@ def test_capture_budget_covers_ownership_inspection_and_final_command(
             status=CollectorStatus.OK, records=[{"message": "accepted"}]
         )
 
-    binding = replace(_binding(), limits=CaptureLimits(4096, 10, 1))
+    binding = _binding()
     result = acquire_evidence(
         bindings=[binding],
         collectors={
@@ -232,18 +209,15 @@ def test_capture_budget_covers_ownership_inspection_and_final_command(
                 binding.registration_id, CallableWindowedSource(fetch)
             )
         },
-        run_store=LocalRunStore(tmp_path / "runs"),
+        run_store=LocalRunStore(tmp_path / "runs", progress_timeout_seconds=42.0),
         scope=_SCOPE,
         clock=_CLOCK,
     )
-    assert seen[0][0] == ["docker", "inspect"]
-    assert seen[0][1] == pytest.approx(1.0)
-    if inspection_timeout:
-        assert len(seen) == 1
-        assert result.reports[0].status is CollectorStatus.TIMEOUT
-    else:
-        assert seen[-1][1] == pytest.approx(0.6)
-        assert result.reports[0].status is CollectorStatus.OK
+    assert result.reports[0].status is CollectorStatus.OK
+    expected = (["docker", "logs"], 42.0) if operation == "logs" else (
+        ["docker", "exec"], 30
+    )
+    assert seen[-1] == expected
 
 
 @pytest.mark.parametrize("complete", [False, True])

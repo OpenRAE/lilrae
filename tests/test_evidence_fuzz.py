@@ -1,10 +1,12 @@
 """Property-based tests for evidence acquisition (EXP-010 / issue #752 PR 2).
 
-Run with ``pytest -m fuzz`` (skipped by the default run). Covers the streaming
-byte-quota invariant and evidence-record identity determinism.
+Run with ``pytest -m fuzz`` (skipped by the default run). Covers the complete
+streaming retention invariant and evidence-record identity determinism.
 """
 
 from __future__ import annotations
+
+import hashlib
 
 import pytest
 from hypothesis import given, settings
@@ -12,7 +14,7 @@ from hypothesis import strategies as st
 
 from aptl.core.evidence.content_store import create_content_addressed
 from aptl.core.evidence.records import derive_evidence_record_id
-from aptl.core.experiment.capture_registry import CaptureBinding, CaptureLimits, CaptureVisibility
+from aptl.core.experiment.capture_registry import CaptureBinding, CaptureVisibility
 from aptl.core.runstore import LocalRunStore
 
 
@@ -26,23 +28,23 @@ def _binding() -> CaptureBinding:
         required_artifact_roles=("observation",), sensitivity="internal", redaction_required=False,
         integrity_requirements=("sha256-digest",), retention_policy="retain", loss_disclosure_required=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
-        limits=CaptureLimits(max_bytes=1024, max_artifact_count=10, max_duration_s=60),
     )
 
 
 @pytest.mark.fuzz
-class TestQuotaInvariant:
+class TestRetentionInvariant:
     @given(
         chunks=st.lists(st.binary(min_size=0, max_size=64), min_size=0, max_size=32),
-        max_bytes=st.integers(min_value=1, max_value=512),
     )
     @settings(max_examples=120, deadline=2000)
-    def test_stored_size_and_truncation_are_correct(self, tmp_path_factory, chunks, max_bytes):
+    def test_stored_bytes_are_the_complete_stream(self, tmp_path_factory, chunks):
         store = LocalRunStore(tmp_path_factory.mktemp("runs"))
-        total = sum(len(c) for c in chunks)
-        result = create_content_addressed(store, "run-1", chunks, subdir="evidence", max_bytes=max_bytes)
-        assert result.size == min(total, max_bytes)
-        assert result.truncated == (total > max_bytes)
+        joined = b"".join(chunks)
+        result = create_content_addressed(store, "run-1", iter(chunks), subdir="evidence")
+        assert result.size == len(joined)
+        assert result.digest == "sha256:" + hashlib.sha256(joined).hexdigest()
+        stored = (store.get_run_path("run-1") / result.relative_path).read_bytes()
+        assert stored == joined
 
 
 @pytest.mark.fuzz

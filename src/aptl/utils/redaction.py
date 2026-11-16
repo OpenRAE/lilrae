@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
 from ._redaction_patterns import (
@@ -351,7 +351,7 @@ def _credential_pair(value: str, _modes: dict[str, bool]) -> bool:
 # that the following value element must pass to be masked. Each entry
 # gives an argv ``[flag, value]`` pair the result that the string-mode
 # redactor gives ``flag value`` in a segment of the leading tool. Keeping
-# this as data keeps ``_argv_short_flag_skip_indices`` under the
+# this as data keeps ``iter_redact_list`` under the
 # cognitive-complexity ceiling.
 _ARGV_SHORT_FLAG_RULES: tuple[
     tuple[frozenset[str], str | None, Callable[[str, dict[str, bool]], bool]], ...
@@ -375,20 +375,6 @@ def _is_argv_short_flag_target(flag: str, value: str, modes: dict[str, bool]) ->
     return False
 
 
-def _argv_short_flag_skip_indices(items: list, modes: dict[str, bool]) -> set[int]:
-    """Indices in ``items`` whose value should be redacted as a flag
-    credential, given the modes derived from the argv leading token."""
-    skip: set[int] = set()
-    for i in range(len(items) - 1):
-        flag = items[i]
-        value = items[i + 1]
-        if not isinstance(flag, str) or not isinstance(value, str):
-            continue
-        if _is_argv_short_flag_target(flag, value, modes):
-            skip.add(i + 1)
-    return skip
-
-
 def _argv_leading_modes(items_list: list[Any]) -> dict[str, bool]:
     """Credential-flag modes implied by the argv's leading token.
 
@@ -401,49 +387,79 @@ def _argv_leading_modes(items_list: list[Any]) -> dict[str, bool]:
     return _argv_credential_modes(leading)
 
 
-def _is_long_flag_value_pair(item: object, idx: int, items_list: list[Any]) -> bool:
-    """True when ``item`` is a sensitive long flag (``--password``) whose
-    following element is a string value that should be redacted as its value."""
-    return (
-        isinstance(item, str)
-        and bool(_CLI_FLAG_TOKEN_RE.match(item))
-        and idx + 1 < len(items_list)
-        and isinstance(items_list[idx + 1], str)
-    )
+def iter_redact_list(items: Iterable[Any], depth: int = 0) -> Iterator[Any]:
+    """Redact list elements one at a time, with argv-aware flag handling.
 
-
-def _redact_list(items: list[Any] | tuple[Any, ...], depth: int = 0) -> list[Any]:
-    """Redact each element of a list/tuple, with argv-aware short-flag handling."""
+    Each decision needs at most the previous element, so a caller can stream
+    a long list through the canonical policy. ``list(iter_redact_list(x))``
+    is the redaction of the list ``x``.
+    """
     # Argv-shape detection: a structured ``args = ["hydra", "-p", "hunter2"]``
     # payload must get the result of the scalar command string (ADR-029 /
     # codex review cycle 3, finding 2). Flag and value pairs use the rule
     # table; each later string element is scanned in the shell context of
     # the leading token, which catches attached forms, ``=`` forms, and
     # impacket targets.
-    out: list[Any] = []
-    skip_next = False
-    items_list = list(items)
-    modes = _argv_leading_modes(items_list)
-    short_flag_skip = _argv_short_flag_skip_indices(items_list, modes)
-    context = items_list[0] if items_list and isinstance(items_list[0], str) else ""
-    for idx, item in enumerate(items_list):
-        if skip_next:
-            out.append(REDACTED)
-            skip_next = False
-            continue
-        if idx in short_flag_skip:
-            out.append(REDACTED)
-            continue
-        if idx > 0 and isinstance(item, str) and depth + 1 < _MAX_DEPTH:
-            out.append(_redact_string(item, depth + 1, context))
-        else:
-            out.append(_redact(item, depth + 1))
-        # Pair-form CLI args: ["--password", "hunter2"]. If this string is a
-        # long-flag whose name is sensitive AND the next element is a plain
-        # string, redact the next element as the value-of-flag.
-        if _is_long_flag_value_pair(item, idx, items_list):
-            skip_next = True
-    return out
+    modes: dict[str, bool] = {}
+    context = ""
+    previous: object = None
+    pending_flag = False
+    for idx, item in enumerate(items):
+        if idx == 0:
+            modes = _argv_leading_modes([item])
+            context = item if isinstance(item, str) else ""
+        masked = isinstance(item, str) and (
+            pending_flag or _short_flag_value(previous, item, idx, modes)
+        )
+        previous = item
+        # Pair-form CLI args: ["--password", "hunter2"]. A sensitive long
+        # flag masks the next element when that element is a plain string.
+        pending_flag = not masked and _is_sensitive_long_flag(item)
+        yield REDACTED if masked else _redact_list_item(item, idx, depth, context)
+
+
+def _short_flag_value(
+    previous: object, item: str, idx: int, modes: dict[str, bool]
+) -> bool:
+    """Return whether ``item`` is the credential value of a short flag."""
+    return (
+        idx > 0
+        and isinstance(previous, str)
+        and _is_argv_short_flag_target(previous, item, modes)
+    )
+
+
+def _is_sensitive_long_flag(item: object) -> bool:
+    """Return whether ``item`` is a sensitive long flag such as ``--password``."""
+    return isinstance(item, str) and bool(_CLI_FLAG_TOKEN_RE.match(item))
+
+
+def _redact_list_item(item: object, idx: int, depth: int, context: str) -> object:
+    """Redact one list element in the shell context of the leading token."""
+    if idx > 0 and isinstance(item, str) and depth + 1 < _MAX_DEPTH:
+        return _redact_string(item, depth + 1, context)
+    return _redact(item, depth + 1)
+
+
+def _redact_list(items: list[Any] | tuple[Any, ...], depth: int = 0) -> list[Any]:
+    """Redact each element of a list/tuple, with argv-aware short-flag handling."""
+    return list(iter_redact_list(items, depth))
+
+
+def redact_mapping_item(key: object, value: object, depth: int = 0) -> object:
+    """Return the redaction of ``value`` stored under ``key`` in a mapping.
+
+    The redaction of a mapping is the mapping of these results, so a caller
+    can stream a large object one member at a time.
+    """
+    name = str(key)
+    if (
+        _is_sensitive_key(name)
+        and not _safe_model_count(name, value)
+        and not _safe_authorization_scope(name, value)
+    ):
+        return REDACTED
+    return _redact(value, depth + 1)
 
 
 def redact(value: Any) -> Any:
@@ -529,14 +545,7 @@ def _redact(value: object, depth: int) -> object:
     if depth >= _MAX_DEPTH:
         return REDACTED
     if isinstance(value, dict):
-        return {
-            k: REDACTED
-            if _is_sensitive_key(str(k))
-            and not _safe_model_count(str(k), v)
-            and not _safe_authorization_scope(str(k), v)
-            else _redact(v, depth + 1)
-            for k, v in value.items()
-        }
+        return {k: redact_mapping_item(k, v, depth) for k, v in value.items()}
     return (
         _redact_list(value, depth)
         if isinstance(value, (list, tuple))

@@ -748,6 +748,21 @@ def test_bounded_runner_terminates_output_overflow_and_timeout(
         )
 
 
+def test_bounded_runner_without_an_output_limit_keeps_all_output(
+    tmp_path: Path,
+) -> None:
+    """Evidence-bearing participants pass ``None`` so no output is cut."""
+    result = BoundedProcessRunner().run(
+        (sys.executable, "-c", "import sys; sys.stdout.write('x' * 3_000_000)"),
+        env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
+        cwd=tmp_path,
+        stdin=b"",
+        timeout_seconds=30,
+        max_output_bytes=None,
+    )
+    assert result.stdout == b"x" * 3_000_000
+
+
 def _poll_until_absent(pid: int, timeout: float = 30.0) -> bool:
     """Whether ``pid`` disappears within ``timeout`` seconds.
 
@@ -911,7 +926,7 @@ class _RecordingRunner:
         cwd: Path,
         stdin: bytes,
         timeout_seconds: float,
-        max_output_bytes: int,
+        max_output_bytes: int | None,
     ) -> ProcessResult:
         del cwd, timeout_seconds, max_output_bytes
         self.invocations.append(_Invocation(argv, env, stdin))
