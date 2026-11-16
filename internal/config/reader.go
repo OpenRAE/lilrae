@@ -37,6 +37,7 @@ const (
 	ruleNull     = "must not be null"
 	ruleString   = "must be a string"
 	ruleInteger  = "must be an integer"
+	ruleNumber   = "must be a number"
 	ruleBoolean  = "must be a boolean"
 	ruleArray    = "must be an array"
 	ruleObject   = "must be an object"
@@ -182,6 +183,23 @@ func (o *object) integer(name string, def int64) (int64, bool) {
 		return def, false
 	}
 	return o.asInteger(name, v)
+}
+
+// number reads a number member with a default. It accepts a JSON integer in
+// the 64-bit range or a fraction, and it rejects a string or a boolean.
+func (o *object) number(name string, def float64) (float64, bool) {
+	v, ok := o.value(name, false)
+	if !ok {
+		return def, false
+	}
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int64:
+		return float64(n), true
+	}
+	o.fail(name, ruleNumber)
+	return def, false
 }
 
 func (o *object) optInteger(name string) (*int64, bool) {

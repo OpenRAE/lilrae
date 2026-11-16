@@ -61,6 +61,7 @@ give the guardrails.
    | `NaN` or `Infinity` | Accepted | Rejected |
    | A file larger than 1 MiB | Accepted | Rejected |
    | `22.0`, `"22"`, or `true` for an integer member | Converted | Rejected |
+   | `"10"` or `true` for `run_storage.free_space_reserve_percent` | Converted | Rejected |
    | `"yes"`, `1`, or `0.0` for a boolean member, also a legacy container flag | Converted | Rejected |
    | A final line feed in `lab.name` or `schedule[].at` | Accepted, because `$` matches before it | Rejected |
    | An integer outside the 64-bit range | Accepted | Rejected |
@@ -95,7 +96,11 @@ give the guardrails.
     their Python checks. `MCPServerIDs` copies the server order of the MCP
     catalog, and a test compares the two. The merge of #1740 adds
     `deployment.dedicated_vm` and `experiment.trial_episode_seconds`, and the
-    port keeps their Python checks.
+    port keeps their Python checks. The merge of #1773 and #1776 adds
+    `run_storage.free_space_reserve_percent` and
+    `run_storage.capture_progress_timeout_seconds`, and the port keeps their
+    Python checks. Go writes the default reserve as `10`, and Python writes
+    `10.0`. The two JSON values are equal.
 11. **Other owners.** Go port 09 checks the deployment backend members. The
     scenario admission of Go port 17 checks the profiles against the admitted
     scenario. Go port 11 computes the descriptor digest.

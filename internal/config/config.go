@@ -122,11 +122,16 @@ type ScenarioSource struct {
 }
 
 // RunStorage configures the experiment run storage.
+// FreeSpaceReservePercent is the percent of the run-store filesystem that
+// evidence writes leave free. CaptureProgressTimeoutSeconds is the time that
+// an evidence read can go without new data before it fails.
 type RunStorage struct {
-	Backend   string  `json:"backend"`
-	LocalPath string  `json:"local_path"`
-	S3Bucket  *string `json:"s3_bucket"`
-	S3Prefix  string  `json:"s3_prefix"`
+	Backend                       string  `json:"backend"`
+	LocalPath                     string  `json:"local_path"`
+	S3Bucket                      *string `json:"s3_bucket"`
+	S3Prefix                      string  `json:"s3_prefix"`
+	FreeSpaceReservePercent       float64 `json:"free_space_reserve_percent"`
+	CaptureProgressTimeoutSeconds int64   `json:"capture_progress_timeout_seconds"`
 }
 
 // LifecyclePolicy is the ephemeral lifecycle policy of the range (DEP-003).
@@ -227,7 +232,10 @@ func Default() Config {
 		Lab:        defaultLab(),
 		Deployment: defaultDeployment(),
 		Scenario:   ScenarioSource{Source: "env-pack"},
-		RunStorage: RunStorage{Backend: "local", LocalPath: "./runs", S3Prefix: "runs/"},
+		RunStorage: RunStorage{
+			Backend: "local", LocalPath: "./runs", S3Prefix: "runs/",
+			FreeSpaceReservePercent: 10, CaptureProgressTimeoutSeconds: 1800,
+		},
 		Experiment: Experiment{ParticipantActionTimeoutSeconds: 120, ParticipantServingProviders: ServingProviders{}},
 		MCP:        defaultMCPPolicy(),
 	}

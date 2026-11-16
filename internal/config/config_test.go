@@ -130,7 +130,8 @@ func TestResolvedForm(t *testing.T) {
 		`"deployment":{"range_egress_allowances":[],"provider":"docker-compose","project_name":"aptl","ssh_host":null,` +
 		`"ssh_user":null,"ssh_key":null,"ssh_port":22,"remote_dir":null,"environment_grants":[],"dedicated_vm":false},` +
 		`"scenario":{"identity":null,"root":null,"pack_directory":null,"source":"env-pack"},` +
-		`"run_storage":{"backend":"local","local_path":"./runs","s3_bucket":null,"s3_prefix":"runs/"},` +
+		`"run_storage":{"backend":"local","local_path":"./runs","s3_bucket":null,"s3_prefix":"runs/",` +
+		`"free_space_reserve_percent":10,"capture_progress_timeout_seconds":1800},` +
 		`"lifecycle_policy":null,` +
 		`"experiment":{"participant_action_timeout_seconds":120,` +
 		`"participant_models":{"claude":null,"codex":null,"opencode":null},` +
