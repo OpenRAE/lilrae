@@ -29,7 +29,7 @@ class PipeExchange:
         self,
         selector: selectors.BaseSelector,
         stdin: bytes,
-        limit: int,
+        limit: int | None,
     ) -> None:
         self._selector = selector
         self._pending = memoryview(stdin)
@@ -155,8 +155,11 @@ class PipeExchange:
         return True
 
     def _admit(self, captured: bytearray, chunk: bytes) -> bool:
-        """Admit bytes within the remaining combined-output budget."""
+        """Admit bytes within the remaining combined-output budget, if any."""
 
+        if self._remaining is None:
+            captured.extend(chunk)
+            return True
         admitted = chunk[: self._remaining]
         self._remaining -= len(admitted)
         captured.extend(admitted)

@@ -3,7 +3,7 @@
 
 A collector receives ONLY an immutable :class:`CollectorContext` — the
 planned-trial / run / attempt IDs, its pinned :class:`~aptl.core.experiment.
-capture_registry.CaptureBinding` and window, a deadline and limits, and a
+capture_registry.CaptureBinding` and window, the read progress timeout, and a
 :class:`~aptl.core.correlation.clock.ClockProvider`. It NEVER receives the
 ``ExperimentController``, the RAES runtime target, ``LocalRunStore``, raw
 filesystem paths, ``EnvVars``, the full application config, or a generic
@@ -20,7 +20,7 @@ is never selected by experiment input.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -51,15 +51,16 @@ class RunScope:
 class CollectorContext:
     """The immutable admitted context a collector is given at start.
 
-    Deliberately narrow (preflight): identity + the pinned binding + a
-    deadline + a clock. No store, no paths, no config, no backend handle.
+    Deliberately narrow (preflight): identity + the pinned binding + the read
+    progress timeout + a clock. No store, no paths, no config, no backend
+    handle.
     """
 
     planned_trial_id: str
     run_id: str
     attempt_id: str
     binding: CaptureBinding
-    deadline_seconds: float
+    progress_timeout_seconds: float
     clock: ClockProvider
 
 
@@ -67,8 +68,8 @@ class CollectorContext:
 class CollectorOutcome:
     """The typed result a collector reports from :meth:`Collector.stop`.
 
-    ``chunks`` are the raw source bytes the coordinator will hash, redact
-    (structured payloads only), quota, and content-address — the collector
+    ``chunks`` are the raw source bytes the coordinator will stream, hash,
+    redact (only when the binding asks), and content-address — the collector
     never persists them itself. ``status`` distinguishes success / legitimate
     emptiness from each failure mode (never empty-on-error == success).
     ``source_min_time`` / ``source_max_time`` are the source's own event
@@ -80,7 +81,7 @@ class CollectorOutcome:
     status: CollectorStatus
     started_at: str
     finished_at: str
-    chunks: Sequence[bytes] = ()
+    chunks: Iterable[bytes] = ()
     media_type: str | None = None
     event_count: int = 0
     dropped_count: int = 0

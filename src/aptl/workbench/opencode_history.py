@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
 import hashlib
-import os
 from pathlib import Path
 import re
 import shutil
@@ -26,8 +25,6 @@ from aptl.utils.strict_json import loads_strict
 from aptl.workbench.opencode_events import PARTICIPANT_END_REASONS
 
 _DATABASE = "data/opencode/opencode.db"
-_MAX_ROWS = 4096
-_MAX_VALUE_BYTES = 1_000_000
 _FINISH_REASONS = frozenset(
     {"stop", "tool-calls", "length", "content-filter", "error", "other", "unknown"}
 )
@@ -43,8 +40,8 @@ def _identifier(value: object, prefix: str) -> str:
 
 
 def _object(raw: object) -> dict[str, object]:
-    """Decode one bounded closed native JSON object."""
-    if not isinstance(raw, str) or len(raw.encode("utf-8")) > _MAX_VALUE_BYTES:
+    """Decode one closed native JSON object."""
+    if not isinstance(raw, str):
         raise ValueError("invalid native JSON value")
     value = loads_strict(raw)
     if not isinstance(value, dict):
@@ -113,10 +110,10 @@ def _messages(
 ) -> tuple[dict[str, str], str]:
     """Validate message membership and the exact native model."""
     messages = db.execute(
-        "SELECT id, data FROM message WHERE session_id=? ORDER BY time_created, id LIMIT ?",
-        (session, _MAX_ROWS + 1),
+        "SELECT id, data FROM message WHERE session_id=? ORDER BY time_created, id",
+        (session,),
     ).fetchall()
-    if not messages or len(messages) > _MAX_ROWS:
+    if not messages:
         raise ValueError("invalid native message count")
     roles = {}
     users = []
@@ -194,14 +191,12 @@ def _user_text(value: dict[str, object]) -> str:
 def _parts(
     db: sqlite3.Connection, session: str, roles: dict[str, str]
 ) -> tuple[bytes, list[NativeStepObservation]]:
-    """Reduce bounded part membership to prompt bytes and terminal step facts."""
+    """Reduce part membership to prompt bytes and terminal step facts."""
     parts = db.execute(
         "SELECT id, message_id, data, time_created, time_updated "
-        "FROM part WHERE session_id=? ORDER BY time_created, id LIMIT ?",
-        (session, _MAX_ROWS + 1),
+        "FROM part WHERE session_id=? ORDER BY time_created, id",
+        (session,),
     ).fetchall()
-    if len(parts) > _MAX_ROWS:
-        raise ValueError("oversized native history")
     prompt = []
     steps = []
     seen = set()
@@ -225,7 +220,6 @@ def read_native_history(
     expected_prompt: bytes,
     expected_model: str,
     session_id: str | None,
-    max_bytes: int = 16 * 1024 * 1024,
 ) -> NativeHistoryObservation:
     """Read one contained, checkpointed database; never export raw native data.
 
@@ -237,7 +231,7 @@ def read_native_history(
         return NativeHistoryObservation(status="unsupported-platform")
     try:
         observation = _contained_history(
-            work, expected_prompt, expected_model, session_id, max_bytes
+            work, expected_prompt, expected_model, session_id
         )
     except PathContainmentError as exc:
         observation = NativeHistoryObservation(
@@ -260,28 +254,13 @@ def _wal_is_empty(work: Path) -> bool:
 
 
 @contextmanager
-def _native_database(
-    work: Path, max_bytes: int, max_steps: int
-) -> Iterator[sqlite3.Connection | None]:
-    """Open the contained database read-only; yield ``None`` when it is oversized."""
+def _native_database(work: Path) -> Iterator[sqlite3.Connection]:
+    """Open the contained database read-only."""
     with open_contained_nofollow(work, _DATABASE) as source:
-        if os.fstat(source.fileno()).st_size > max_bytes:
-            yield None
-            return
         uri = f"file:/proc/self/fd/{source.fileno()}?mode=ro&immutable=1"
         with closing(sqlite3.connect(uri, uri=True, timeout=0)) as db:
             db.execute("PRAGMA query_only=ON")
             db.execute("PRAGMA trusted_schema=OFF")
-            db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _MAX_VALUE_BYTES)
-            calls = 0
-
-            def bounded_query() -> int:
-                """Abort native queries after a bounded number of VM steps."""
-                nonlocal calls
-                calls += 1
-                return int(calls > max_steps)
-
-            db.set_progress_handler(bounded_query, 1000)
             yield db
 
 
@@ -312,21 +291,14 @@ def _checkpointed_root(work: Path) -> Iterator[Path]:
 
 
 def _contained_history(
-    work: Path, prompt: bytes, model: str, session: str | None, max_bytes: int
+    work: Path, prompt: bytes, model: str, session: str | None
 ) -> NativeHistoryObservation:
-    """Read only a contained checkpointed database under SQLite resource limits."""
-    with (
-        _checkpointed_root(work) as root,
-        _native_database(root, max_bytes, 1000) as db,
-    ):
-        if db is None:
-            return NativeHistoryObservation(status="oversized")
+    """Read only a contained checkpointed database."""
+    with _checkpointed_root(work) as root, _native_database(root) as db:
         return _read_session(db, prompt, model, session)
 
 
-def export_native_session(
-    work: Path, *, max_bytes: int = 256 * 1024 * 1024
-) -> dict[str, object] | None:
+def export_native_session(work: Path) -> dict[str, object] | None:
     """Return every recorded session, message and part, or ``None`` when unreadable.
 
     The export is the participant's raw chat: prompts, reasoning, replies, tool
@@ -336,11 +308,8 @@ def export_native_session(
     if sys.platform != "linux":
         return None
     try:
-        with (
-            _checkpointed_root(work) as root,
-            _native_database(root, max_bytes, 10_000_000) as db,
-        ):
-            return None if db is None else _session_export(db)
+        with _checkpointed_root(work) as root, _native_database(root) as db:
+            return _session_export(db)
     except OSError, sqlite3.Error, ValueError, PathContainmentError:
         return None
 

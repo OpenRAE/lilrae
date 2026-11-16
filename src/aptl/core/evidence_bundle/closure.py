@@ -24,7 +24,6 @@ from aptl.core.evidence_bundle._collect import (
     collect_backend_evidence,
     collect_evidence,
 )
-from aptl.core.evidence_bundle.limits import DEFAULT_LIMITS, BundleLimits
 from aptl.core.evidence_bundle.models import (
     ClosureEntry,
     ClosureLimitation,
@@ -69,7 +68,7 @@ class ClosureSource(Protocol):
     """Enumerate the closure entries for one run (the pre-seal source seam)."""
 
     def collect(
-        self, run_dir: Path, run_id: str, *, limits: BundleLimits
+        self, run_dir: Path, run_id: str
     ) -> tuple[list[ClosureEntry], list[ClosureLimitation]]: ...
 
 
@@ -83,12 +82,12 @@ class ReadyToSealClosureSource:
 
     @staticmethod
     def collect(
-        run_dir: Path, run_id: str, *, limits: BundleLimits
+        run_dir: Path, run_id: str
     ) -> tuple[list[ClosureEntry], list[ClosureLimitation]]:
         entries: list[ClosureEntry] = []
         limitations: list[ClosureLimitation] = []
-        collect_backend_evidence(run_dir, run_id, entries, limitations, limits)
-        collect_evidence(run_dir, run_id, entries, limitations, limits)
+        collect_backend_evidence(run_dir, run_id, entries, limitations)
+        collect_evidence(run_dir, run_id, entries, limitations)
         entries, conflicts = coalesce(entries)
         limitations.extend(conflicts)
         return entries, limitations
@@ -112,7 +111,6 @@ def build_closure(
     *,
     seal_verifier: SealVerifier | None = None,
     source: ClosureSource | None = None,
-    limits: BundleLimits = DEFAULT_LIMITS,
 ) -> VerifiedClosure:
     """Assemble the verified closure for ``run_id`` under ``run_dir``.
 
@@ -123,7 +121,7 @@ def build_closure(
     verifier = seal_verifier if seal_verifier is not None else UnsealedClosureVerifier()
     collector = source if source is not None else ReadyToSealClosureSource()
     seal = verifier.verify(run_id)
-    entries, limitations = collector.collect(run_dir, run_id, limits=limits)
+    entries, limitations = collector.collect(run_dir, run_id)
     all_limitations = list(seal.limitations) + limitations
     return VerifiedClosure(
         run_id=run_id,

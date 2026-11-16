@@ -221,14 +221,13 @@ class DetectionContentProvider:
         }
 
     def _gather(self, context: ProvenanceContext) -> tuple[ProvenanceLeaf, ...]:
-        """Accumulate leaves under the context's entry, byte, and time limits."""
+        """Accumulate leaves within the context's time limit."""
         leaves: list[ProvenanceLeaf] = []
-        consumed = 0
         for root in self._roots:
             for relative in self._list_root(root):
-                self._check_budget(context, len(leaves))
-                data = self._read_artifact(relative, context.max_bytes - consumed)
-                consumed += len(data)
+                if context.expired():
+                    raise _degraded.deadline()
+                data = self._read_artifact(relative)
                 leaves.append(
                     ProvenanceLeaf(
                         logical_id=f"{root.root_id}/{_leaf_name(root, relative)}",
@@ -250,15 +249,7 @@ class DetectionContentProvider:
             log.warning("run-provenance: detection root %s could not be listed", root.root_id)
             raise _degraded.owner_failure() from exc
 
-    @staticmethod
-    def _check_budget(context: ProvenanceContext, collected: int) -> None:
-        """Raise when the declared deadline or entry budget is exhausted."""
-        if context.expired():
-            raise _degraded.deadline()
-        if collected >= context.max_entries:
-            raise _degraded.entry_limit()
-
-    def _read_artifact(self, relative: str, remaining: int) -> bytes:
+    def _read_artifact(self, relative: str) -> bytes:
         """Read one artifact no-follow, declaring a degradation on any refusal.
 
         A :class:`PathContainmentError` means a component became a symlink
@@ -267,11 +258,9 @@ class DetectionContentProvider:
         admitted it, so a disagreement between the two is a fact worth
         disclosing rather than quietly dropping an artifact from the identity.
         """
-        if remaining <= 0:
-            raise _degraded.byte_limit()
         try:
             with open_contained_nofollow(self._project_dir, relative) as handle:
-                data = handle.read(remaining + 1)
+                return handle.read()
         except PermissionError as exc:
             raise _degraded.denied() from exc
         except PathContainmentError as exc:
@@ -279,6 +268,3 @@ class DetectionContentProvider:
         except OSError as exc:
             log.warning("run-provenance: a detection artifact could not be read")
             raise _degraded.owner_failure() from exc
-        if len(data) > remaining:
-            raise _degraded.byte_limit()
-        return data

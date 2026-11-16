@@ -1080,3 +1080,70 @@ def test_opencode_per_call_token_usage_is_kept_but_any_other_tokens_value_is_red
         {"input": True},
     ):
         assert redact({"tokens": value}) == {"tokens": "[REDACTED]"}
+
+
+_ARGV_LISTS = (
+    ["hydra", "-p", "hunter2", "ssh://host"],
+    ["--password", "hunter2"],
+    ["a", "--user", "alice:S3cr3t"],
+    ["run", ["hydra", "-p", "x"], {"token": "y"}],
+    [{"cmd": ["--password", "hunter2"]}, "--password", 7, "plain"],
+    ["--password", "--password", "hunter2"],
+    [],
+)
+
+
+@pytest.mark.parametrize("value", _ARGV_LISTS)
+def test_incremental_list_redaction_matches_the_whole_list_policy(value):
+    """A list streamed one item at a time redacts exactly as the whole list."""
+    from aptl.utils.redaction import iter_redact_list
+
+    assert list(iter_redact_list(iter(value))) == redact(value)
+
+
+def test_incremental_list_redaction_keeps_known_argv_results():
+    from aptl.utils.redaction import iter_redact_list
+
+    assert list(iter_redact_list(["hydra", "-p", "hunter2"])) == [
+        "hydra",
+        "-p",
+        REDACTED,
+    ]
+    assert list(iter_redact_list(["--password", "hunter2", "next"])) == [
+        "--password",
+        REDACTED,
+        "next",
+    ]
+
+
+def test_incremental_list_redaction_reads_one_item_ahead_at_most():
+    """The generator yields each item before it reads the item after the next."""
+    from aptl.utils.redaction import iter_redact_list
+
+    consumed: list[int] = []
+
+    def source():
+        for index in range(5):
+            consumed.append(index)
+            yield f"item-{index}"
+
+    stream = iter_redact_list(source())
+    next(stream)
+    assert consumed == [0]
+
+
+def test_mapping_item_redaction_matches_the_whole_mapping_policy():
+    from aptl.utils.redaction import redact_mapping_item
+
+    value = {
+        "password": "hunter2",
+        "api_key": "abc",
+        "note": "Authorization: Bearer XYZ.TOKEN",
+        "nested": {"secret": "s", "count": 3},
+        "args": ["hydra", "-p", "x"],
+        "authorization_scope": ["read", "write"],
+        "tokens": {"input": 10, "output": 2},
+    }
+    assert {key: redact_mapping_item(key, item) for key, item in value.items()} == redact(
+        value
+    )

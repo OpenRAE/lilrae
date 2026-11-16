@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from raes_contracts.contracts import ParticipantConfigurationResultModel
     from aptl.workbench.opencode_evidence import OpenCodeRunState
 
-_PLUGIN_SHA256 = "dfe080c3aff2d08ca9beae8c13cacdd424b82579df3a4f8779fc762cb027ca67"
+_PLUGIN_SHA256 = "7f20a5e98d7e51927aef15679e42be793587d37ed2780189ddeb604ddefb8242"
 
 _CAPTURE_FILE = "provider-capture.jsonl"
 
@@ -55,9 +55,6 @@ class OpenCodeCaptureLease:
             len(prompt),
         )
         self._secrets = tuple(credentials.values())
-        self._limit = archive.grant.binding.limits.max_bytes
-        if not 1024 <= self._limit <= 64 * 1024 * 1024:
-            raise ValueError("provider capture byte budget is unsupported")
         plugin = Path(__file__).with_name("provider_capture.mjs").read_bytes()
         if hashlib.sha256(plugin).hexdigest() != _PLUGIN_SHA256:
             raise ValueError("provider capture plugin differs from its pin")
@@ -80,7 +77,6 @@ class OpenCodeCaptureLease:
         """Private inputs used by either approved host-owned observer path."""
         return {
             "path": str(self.work / _CAPTURE_FILE),
-            "maxBytes": self._limit,
             "endpoint": self.endpoint,
             "invocationId": self.invocation_id,
         }
@@ -100,12 +96,9 @@ class OpenCodeCaptureLease:
     def retain(self, stdout: bytes, *, failure_reason: str | None = None) -> None:
         """Publish safe partial observations even after timeout or cancellation."""
         with open_contained_nofollow(self.work, _CAPTURE_FILE) as stream:
-            data = stream.read(self._limit + 1)
+            data = stream.read()
         capture = reduce_provider_capture(
-            data,
-            invocation_id=self.invocation_id,
-            secrets=self._secrets,
-            max_bytes=self._limit,
+            data, invocation_id=self.invocation_id, secrets=self._secrets
         )
         cli_events, cli_complete = _cli_events(stdout)
         completed_steps = sum(

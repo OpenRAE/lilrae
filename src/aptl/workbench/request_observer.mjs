@@ -46,12 +46,9 @@ function safeLabel(secrets, value, pattern = /^[A-Za-z0-9][A-Za-z0-9 ._/:@+-]*$/
 function journalWriter() {
   const fd = openSync(new URL("./provider-observations.jsonl", import.meta.url),
     constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-  let written = 0;
   return (event) => {
     const bytes = Buffer.from(JSON.stringify(event) + "\n");
-    if (bytes.length > 131072 || written + bytes.length > 16 * 1024 * 1024) fail();
     if (writeSync(fd, bytes) !== bytes.length) fail();
-    written += bytes.length;
   };
 }
 
@@ -150,7 +147,7 @@ function createObservedFetch(write, nativeTurns, secrets, nativeFetch = fetch) {
   const counters = { calls: 0, completedTurns: 0 };
   return async (url, init = {}) => {
     if (String(url) !== input.endpoint + "/chat/completions" || init.method !== "POST"
-      || typeof init.body !== "string" || Buffer.byteLength(init.body) > 1024 * 1024 || counters.calls >= 10000
+      || typeof init.body !== "string"
       || (nativeTurns !== null && counters.completedTurns >= nativeTurns)) fail();
     const body = JSON.parse(init.body);
     const controls = requestControls(body);

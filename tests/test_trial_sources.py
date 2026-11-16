@@ -20,7 +20,7 @@ import pytest
 @pytest.mark.parametrize(
     "participants", [("agents.operator",), ("agents.red", "agents.blue")]
 )
-def test_native_usage_survives_the_real_acquisition_and_redaction_path(
+def test_native_usage_and_scenario_credentials_survive_acquisition(
     tmp_path, participants
 ):
     request, _ = capture_request(tmp_path)
@@ -31,7 +31,7 @@ def test_native_usage_survives_the_real_acquisition_and_redaction_path(
         capture_kind="log",
         artifact_roles=("lilrae.participant-sessions",),
         channel_refs=("lilrae.participant-sessions",),
-        sensitivity="redacted",
+        sensitivity="plain",
     )
     registry = CollectorRegistry((registration,))
     plan = admit_capture_demands(
@@ -73,7 +73,7 @@ def test_native_usage_survives_the_real_acquisition_and_redaction_path(
     content = (
         request.run_store.get_run_path(request.run_id) / result.refs[0].content_uri
     ).read_bytes()
-    assert b"private-test-credential" not in content
+    assert b"private-test-credential" in content
     payload = json.loads(content)
     assert len(payload) == len(participants)
     for item in payload:
@@ -102,9 +102,10 @@ def test_audit_source_keeps_only_the_episode_and_detects_missing_logs(tmp_path):
     )
     result = source.fetch("2026-11-12T00:00:00Z", "2026-11-12T00:00:01Z")
     assert result.status == CollectorStatus.OK
-    assert "current" in result.records[0]["audit_log"]
-    assert "old" not in result.records[0]["audit_log"]
-    assert "later" not in result.records[0]["audit_log"]
+    [record] = json.loads(b"".join(result.chunks))
+    assert "current" in record["audit_log"]
+    assert "old" not in record["audit_log"]
+    assert "later" not in record["audit_log"]
 
 
 def test_measurement_sources_are_not_authorized_for_startup_preparation(tmp_path):

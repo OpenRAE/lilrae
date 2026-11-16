@@ -20,17 +20,16 @@ trusted composition code — never selected by experiment input.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from dataclasses import dataclass, field, replace
-from contextvars import ContextVar
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from subprocess import TimeoutExpired
-from time import monotonic
 from typing import Protocol, runtime_checkable
 
 from aptl.core.correlation.clock import ClockProvider
 from aptl.core.evidence.outcomes import SUCCESS_STATUSES, CollectorStatus
-from aptl.core.evidence.deadline import native_read_timeout, native_read_budget
+from aptl.core.evidence.deadline import progress_timeout
 from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome
+from aptl.core.evidence.spool import StreamedContent
 from aptl.utils.probe_execution import probe_output_byte_limit
 
 
@@ -41,8 +40,8 @@ class SourceResult:
     ``status`` distinguishes a real capture / legitimate emptiness from each
     failure the source can detect (a returncode, a ``None`` HTTP result, a
     missing archive file). ``records`` are structured events the coordinator
-    will serialize + redact; an over-limit source reports :attr:`dropped_count`
-    rather than silently losing events.
+    will serialize; a source that loses events reports :attr:`dropped_count`
+    rather than silently losing them.
     """
 
     status: CollectorStatus
@@ -50,7 +49,7 @@ class SourceResult:
     dropped_count: int = 0
     source_min_time: str | None = None
     source_max_time: str | None = None
-    chunks: tuple[bytes, ...] = ()
+    chunks: Sequence[bytes] | StreamedContent = ()
     media_type: str = "application/json"
     observer_effect: str | None = None
     source_pipeline: dict[str, object] = field(default_factory=dict)
@@ -65,30 +64,13 @@ class WindowedSource(Protocol):
         ...
 
 
-_READ_BYTES: ContextVar[int | None] = ContextVar("capture_read_bytes", default=None)
-
-
-def capture_read_bytes(requested: int) -> int:
-    """Use the admitted artifact budget when bounding native reads."""
-    return min(requested, _READ_BYTES.get() or requested)
-
-
-def capture_read_timeout(requested: float) -> float:
-    """Bound native reads through the backend's existing nested-call budget."""
-    try:
-        return native_read_timeout(requested)
-    except TimeoutError:
-        raise TimeoutExpired("capture-read", requested) from None
-
-
 @dataclass(frozen=True)
 class _WindowHandle:
     """Opaque per-start handle: the window's start time + the observation clock."""
 
     started_at: str
     clock: object
-    deadline: float
-    max_bytes: int
+    progress_timeout_seconds: float
 
 
 class CallableWindowedSource:
@@ -150,30 +132,18 @@ class WindowedQueryCollector:
         return _WindowHandle(
             started_at=context.clock.now(),
             clock=context.clock,
-            deadline=monotonic() + context.deadline_seconds,
-            max_bytes=context.binding.limits.max_bytes,
+            progress_timeout_seconds=context.progress_timeout_seconds,
         )
 
     def stop(self, handle: _WindowHandle) -> CollectorOutcome:
         """Close the window, query the source, and map its typed result."""
         window_end = handle.clock.now()
-        byte_token = _READ_BYTES.set(handle.max_bytes)
         try:
-            # Native I/O enforces the remaining budget at its boundary. Local,
-            # already captured archives still need references after timeout.
-            with native_read_budget(handle.deadline, monotonic):
+            with progress_timeout(handle.progress_timeout_seconds):
                 result = self._source.fetch(handle.started_at, window_end)
         except TimeoutExpired, TimeoutError:
             result = SourceResult(status=CollectorStatus.TIMEOUT)
-        except Exception:
-            if monotonic() <= handle.deadline:
-                raise
-            result = SourceResult(status=CollectorStatus.TIMEOUT)
-        finally:
-            _READ_BYTES.reset(byte_token)
         finished_at = handle.clock.now()
-        if monotonic() > handle.deadline:
-            result = replace(result, status=CollectorStatus.TIMEOUT)
         return _to_outcome(result, handle.started_at, finished_at)
 
 
@@ -183,6 +153,15 @@ def source_result_to_outcome(
     """Convert a source result through the existing collector outcome owner."""
 
     return _to_outcome(result, started_at, finished_at)
+
+
+def _event_count(result: SourceResult) -> int:
+    """Return the number of events a source result carries."""
+    if result.records:
+        return len(result.records)
+    if isinstance(result.chunks, StreamedContent):
+        return result.chunks.event_count
+    return len(result.chunks)
 
 
 def _to_outcome(
@@ -224,7 +203,7 @@ def _to_outcome(
         finished_at=finished_at,
         chunks=chunks,
         media_type=result.media_type,
-        event_count=len(result.records) if result.records else len(result.chunks),
+        event_count=_event_count(result),
         dropped_count=result.dropped_count,
         source_min_time=result.source_min_time,
         source_max_time=result.source_max_time,

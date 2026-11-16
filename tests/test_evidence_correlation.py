@@ -16,7 +16,7 @@ from aptl.core.correlation.clock import FixedClockProvider
 from aptl.core.evidence.coordinator import acquire_evidence
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.protocol import CollectorOutcome, RunScope
-from aptl.core.experiment.capture_registry import CaptureBinding, CaptureLimits, CaptureVisibility
+from aptl.core.experiment.capture_registry import CaptureBinding, CaptureVisibility
 from aptl.core.runstore import LocalRunStore
 
 _CLOCK = FixedClockProvider(measurement_time="2026-07-20T00:00:00Z")
@@ -33,7 +33,6 @@ def _binding() -> CaptureBinding:
         required_artifact_roles=("observation",), sensitivity="internal", redaction_required=False,
         integrity_requirements=("sha256-digest",), retention_policy="retain", loss_disclosure_required=True,
         visibility_class=CaptureVisibility.PARTICIPANT_VISIBLE,
-        limits=CaptureLimits(max_bytes=4096, max_artifact_count=10, max_duration_s=60),
     )
 
 

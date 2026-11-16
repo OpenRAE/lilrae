@@ -434,4 +434,8 @@ def _default_run_store(project_dir: Path, config: "AptlConfig") -> LocalRunStore
     local_path = Path(config.run_storage.local_path)
     if not local_path.is_absolute():
         local_path = project_dir / local_path
-    return LocalRunStore(local_path)
+    return LocalRunStore(
+        local_path,
+        free_space_reserve=config.run_storage.free_space_reserve,
+        progress_timeout_seconds=config.run_storage.capture_progress_timeout_seconds,
+    )

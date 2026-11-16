@@ -242,14 +242,14 @@ def test_a_required_owner_failure_blocks_the_affected_trial(
         gate.close()
 
 
-def test_insufficient_run_filesystem_space_blocks_before_dispatch(
+def test_run_filesystem_below_the_free_space_reserve_blocks_before_dispatch(
     tmp_path, admitted, monkeypatch
 ):
     inputs, target, delivery, cleanup = admitted
     gate = readiness_for(inputs, target, cleanup.store, cleanup.clock, tmp_path)
     monkeypatch.setattr(
-        "aptl.backends.readiness.os.fstatvfs",
-        lambda fd: SimpleNamespace(f_bavail=0, f_frsize=4096),
+        "aptl.utils.pathsafe_stream.os.fstatvfs",
+        lambda fd: SimpleNamespace(f_bavail=9, f_blocks=100, f_frsize=4096),
     )
     try:
         with pytest.raises(ValueError, match="^trial-readiness-blocked$"):

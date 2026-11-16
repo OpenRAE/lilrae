@@ -18,7 +18,7 @@ from aptl.core.provenance.registry import (
     SealProfile,
 )
 
-_LIMITS = ProvenanceLimits(max_bytes=1024, max_entries=8, timeout_s=5)
+_LIMITS = ProvenanceLimits(timeout_s=5)
 
 
 def _registration(provider_id: str = "detection-content", **overrides):
@@ -42,15 +42,16 @@ class TestRegistration:
         projection = _registration().declaration_projection()
         assert projection["registry_schema"] == REGISTRY_SCHEMA_VERSION
         assert projection["provider_id"] == "detection-content"
-        assert projection["max_bytes"] == 1024
-        assert projection["max_entries"] == 8
         assert projection["timeout_s"] == 5
+        assert "max_bytes" not in projection
+        assert "max_entries" not in projection
+        assert REGISTRY_SCHEMA_VERSION == "aptl-provenance-registry/v2"
 
     def test_effective_config_digest_pins_the_declaration(self):
         assert _registration().effective_config_digest().startswith("sha256:")
 
     def test_digest_changes_when_a_declared_limit_changes(self):
-        tighter = ProvenanceLimits(max_bytes=512, max_entries=8, timeout_s=5)
+        tighter = ProvenanceLimits(timeout_s=4)
         assert (
             _registration().effective_config_digest()
             != _registration(limits=tighter).effective_config_digest()
@@ -87,14 +88,12 @@ class TestRegistration:
     @pytest.mark.parametrize(
         "limits",
         [
-            ProvenanceLimits(max_bytes=0, max_entries=8, timeout_s=5),
-            ProvenanceLimits(max_bytes=1024, max_entries=0, timeout_s=5),
-            ProvenanceLimits(max_bytes=1024, max_entries=8, timeout_s=0),
-            ProvenanceLimits(max_bytes=-1, max_entries=8, timeout_s=5),
+            ProvenanceLimits(timeout_s=0),
+            ProvenanceLimits(timeout_s=-1),
         ],
     )
-    def test_limits_must_be_positive(self, limits):
-        """An unbounded provider is not admissible."""
+    def test_timeout_must_be_positive(self, limits):
+        """A provider without a positive time bound is not admissible."""
         with pytest.raises(ProvenanceRegistrationError):
             _registration(limits=limits)
 

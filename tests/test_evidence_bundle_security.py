@@ -11,7 +11,6 @@ bytes are never rewritten — redaction is upstream).
 from __future__ import annotations
 
 import dataclasses
-import os
 import sys
 import tarfile
 from pathlib import Path
@@ -106,25 +105,25 @@ class TestSymlinkAndTraversal:
 
 
 class TestResourceExhaustion:
-    def test_oversized_blob_is_excluded_not_fatal(self, tmp_path: Path) -> None:
+    def test_blob_larger_than_the_profile_member_bound_is_retained(
+        self, tmp_path: Path
+    ) -> None:
         run_dir = tmp_path / "run-1"
         fixtures.build_ready_to_seal_run(run_dir, run_id="run-1")
-        # Enlarge the blob well past a tight member bound; schema/envelope stay small.
-        blob = next((run_dir / "evidence" / "blobs").iterdir())
-        blob.write_bytes(os.urandom(200_000))
-        # RAES 4.1's published evidence schema is larger than the old 20 KiB
-        # fixture bound.  Keep the bound above governed schemas and below the
-        # deliberately oversized retained blob so this still tests exclusion
-        # of evidence data rather than rejection of required metadata.
-        limits = dataclasses.replace(DEFAULT_LIMITS, max_member_bytes=100_000)
+        # Building a bundle never drops evidence for its size; only the
+        # verifier of an outside bundle applies byte bounds. Every member is
+        # larger than this one-byte profile bound.
+        limits = dataclasses.replace(
+            DEFAULT_LIMITS, max_member_bytes=1, max_total_bytes=1, max_entries=1
+        )
 
         out = tmp_path / "exports" / "b.tar"
         result = build_evidence_bundle(
             run_dir, "run-1", out, options=BundleOptions(limits=limits)
         )
 
-        assert "aptl.evidence-bundle.rejected-source" in _codes(result)
-        assert not any(
+        assert "aptl.evidence-bundle.rejected-source" not in _codes(result)
+        assert any(
             name.startswith("evidence/blobs/") for name in _member_names(out)
         )
 
@@ -187,7 +186,7 @@ class TestMaliciousFilenames:
 
 
 class TestAccidentalSecrets:
-    def test_secret_shaped_metadata_is_redacted_in_the_envelope(
+    def test_secret_shaped_metadata_is_kept_in_the_envelope(
         self, tmp_path: Path
     ) -> None:
         run_dir = tmp_path / "run-1"
@@ -201,6 +200,5 @@ class TestAccidentalSecrets:
         )
 
         envelope = _envelope_bytes(out)
-        assert _SECRET_TOKEN.encode() not in envelope
-        assert b"[REDACTED]" in envelope
-        assert "aptl.evidence-bundle.metadata-redacted" in _codes(result)
+        assert _SECRET_TOKEN.encode() in envelope
+        assert "aptl.evidence-bundle.metadata-redacted" not in _codes(result)

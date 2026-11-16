@@ -13,6 +13,7 @@ import os
 
 import pytest
 
+from aptl.core.provenance.identity import digest_bytes
 from aptl.core.provenance.outcomes import ProvenanceStatus
 from aptl.core.provenance.protocol import ProvenanceContext
 from aptl.core.provenance.providers.detection import (
@@ -27,7 +28,7 @@ from aptl.core.provenance.registry import (
 )
 
 
-def _context(*, max_bytes=65536, max_entries=64, timeout_s=30, clock=None):
+def _context(*, timeout_s=30, clock=None):
     registration = ProvenanceProviderRegistration(
         provider_id=DETECTION_PROVIDER_ID,
         implementation_version="1.0.0",
@@ -35,9 +36,7 @@ def _context(*, max_bytes=65536, max_entries=64, timeout_s=30, clock=None):
         owner_adapter="aptl.core.provenance.providers.detection",
         seal_point=SealPoint.RUN_READY_TO_SEAL,
         requiredness_policy_key="detection-content-required",
-        limits=ProvenanceLimits(
-            max_bytes=max_bytes, max_entries=max_entries, timeout_s=timeout_s
-        ),
+        limits=ProvenanceLimits(timeout_s=timeout_s),
     )
     ticker = clock or (lambda: 0.0)
     return ProvenanceContext(registration=registration, clock=ticker, started_at=0.0)
@@ -149,21 +148,21 @@ class TestAbsentAndDegradedSources:
         assert result.status is ProvenanceStatus.UNAVAILABLE
         assert result.leaves == ()
 
-    def test_exceeding_the_entry_limit_is_truncated(self, tmp_path):
-        for index in range(6):
+    def test_many_artifacts_are_all_collected(self, tmp_path):
+        """No entry count cuts the detection identity."""
+        for index in range(2000):
             _write(tmp_path, f"config/suricata/rules/rule-{index}.rules")
-        result = DetectionContentProvider(tmp_path).collect(_context(max_entries=3))
-        assert result.status is ProvenanceStatus.TRUNCATED
+        result = DetectionContentProvider(tmp_path).collect(_context())
+        assert result.status is ProvenanceStatus.COLLECTED
+        assert len(result.leaves) == 2000
 
-    def test_exceeding_the_byte_limit_is_truncated(self, tmp_path):
-        _write(tmp_path, "config/suricata/rules/big.rules", b"x" * 4096)
-        result = DetectionContentProvider(tmp_path).collect(_context(max_bytes=1024))
-        assert result.status is ProvenanceStatus.TRUNCATED
-
-    def test_a_truncated_collection_reports_no_partial_content_as_complete(self, tmp_path):
-        _write(tmp_path, "config/suricata/rules/big.rules", b"x" * 4096)
-        result = DetectionContentProvider(tmp_path).collect(_context(max_bytes=1024))
-        assert result.status is not ProvenanceStatus.COLLECTED
+    def test_a_large_artifact_is_hashed_completely(self, tmp_path):
+        """No byte budget cuts an artifact; the digest covers every byte."""
+        content = b"x" * (9 * 1024 * 1024)
+        _write(tmp_path, "config/suricata/rules/big.rules", content)
+        result = DetectionContentProvider(tmp_path).collect(_context())
+        assert result.status is ProvenanceStatus.COLLECTED
+        assert [leaf.digest for leaf in result.leaves] == [digest_bytes(content)]
 
     def test_expired_deadline_is_timed_out(self, tmp_path):
         _write(tmp_path, "config/suricata/rules/local.rules")

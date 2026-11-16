@@ -3,7 +3,7 @@
 The emitted record is a public ``ExperimentEvidenceRecordModel`` (validated at
 construction and round-trippable through the RAES model), its identity is
 derived from stable inputs only (never ``captured_at`` / ingestion order), and
-a truncated/redacted/withheld record always carries the mandatory loss
+a lossy/redacted/withheld record always carries the mandatory loss
 disclosure the RAES model requires.
 """
 
@@ -22,7 +22,6 @@ from aptl.core.evidence.records import (
 from aptl.core.evidence.content_store import ContentInsertion
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 
@@ -49,9 +48,6 @@ def _binding(**overrides) -> CaptureBinding:
         "retention_policy": "retain",
         "loss_disclosure_required": True,
         "visibility_class": CaptureVisibility.EVALUATOR_ONLY,
-        "limits": CaptureLimits(
-            max_bytes=1024, max_artifact_count=10, max_duration_s=60
-        ),
     }
     fields.update(overrides)
     return CaptureBinding(**fields)
@@ -62,7 +58,6 @@ def _content(digest_hex="ab" * 32, size=42) -> ContentInsertion:
         relative_path=f"evidence/{digest_hex}",
         digest=f"sha256:{digest_hex}",
         size=size,
-        truncated=False,
     )
 
 
@@ -231,6 +226,8 @@ def test_acquisition_carries_typed_false_observation_without_changing_it(tmp_pat
     )
     record = retained.record
     assert retained.effective_status is CollectorStatus.OK
+    assert record.redaction_state == "redacted"
+    assert record.redaction_policy == "redact_secrets"
     assert project_for_participant((retained.ref,)) == ()
     description = record.typed_description.model_dump(mode="json")
     assert description["facts"][0]["value"]["value"] is False
@@ -240,3 +237,24 @@ def test_acquisition_carries_typed_false_observation_without_changing_it(tmp_pat
         )
         == record
     )
+
+
+def test_persist_without_redaction_policy_retains_raw_content(tmp_path):
+    from dataclasses import replace
+    from aptl.core.evidence._persist import persist_success_outcome
+    from aptl.core.runstore import LocalRunStore
+
+    raw = b'[{"password":"scenario-fixture-value"}]'
+    store = LocalRunStore(tmp_path)
+    store.create_run("run-1")
+    retained = persist_success_outcome(
+        binding=_binding(),
+        outcome=replace(_outcome(), chunks=(raw,), event_count=1),
+        run_store=store,
+        run_id="run-1",
+        planned_trial_id="trial-1",
+    )
+    record = retained.record
+    assert record.redaction_state == "none"
+    assert record.redaction_policy is None
+    assert (tmp_path / "run-1" / retained.ref.content_uri).read_bytes() == raw

@@ -541,8 +541,11 @@ def test_on_demand_collector_preserves_observer_effect_on_clock_skew():
         run_id="run-1",
         attempt_id="provisioning",
         binding=SimpleNamespace(registration_id="r"),
-        deadline_seconds=60,
-        clock=_Clock("2026-09-14T00:00:00Z", "2026-09-14T00:00:05Z"),
+        progress_timeout_seconds=60,
+        # Start, the on-demand window end, and the finish each read the clock.
+        clock=_Clock(
+            "2026-09-14T00:00:00Z", "2026-09-14T00:00:05Z", "2026-09-14T00:00:05Z"
+        ),
     )
     collector = _OnDemandNativeCollector("r", _Source())
     outcome = collector.stop(collector.start(context))

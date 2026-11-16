@@ -1,8 +1,8 @@
 """Bounded, no-follow source reads shared by the closure and archive builders.
 
 One place that maps :mod:`aptl.utils.pathsafe` containment errors into the
-missing/rejected distinction and enforces the member byte bound while streaming
-from the single contained handle — so neither the closure nor the archive
+missing/rejected distinction and applies an optional byte bound while
+streaming from the single contained handle — so neither the closure nor the archive
 reintroduces its own path reader (EXP-008 preflight: reuse the containment
 helper, do not duplicate validators).
 """
@@ -41,7 +41,7 @@ def _open(run_dir: Path, relpath: str) -> BinaryIO:
 
 
 def _stream(
-    handle: BinaryIO, *, max_bytes: int, keep_body: bool
+    handle: BinaryIO, *, max_bytes: int | None, keep_body: bool
 ) -> tuple[str, int, bytes]:
     """Hash a handle to ``sha256:<hex>`` and its size, optionally retaining bytes."""
     digest = hashlib.sha256()
@@ -52,7 +52,7 @@ def _stream(
         if not chunk:
             break
         size += len(chunk)
-        if size > max_bytes:
+        if max_bytes is not None and size > max_bytes:
             raise SourceRejected("source exceeds member byte limit")
         digest.update(chunk)
         if keep_body:
@@ -60,7 +60,9 @@ def _stream(
     return f"sha256:{digest.hexdigest()}", size, bytes(body)
 
 
-def hash_source(run_dir: Path, relpath: str, *, max_bytes: int) -> tuple[str, int]:
+def hash_source(
+    run_dir: Path, relpath: str, *, max_bytes: int | None = None
+) -> tuple[str, int]:
     """Return ``(sha256:<hex>, size)`` of ``relpath`` without buffering it whole."""
     with _open(run_dir, relpath) as handle:
         digest, size, _ = _stream(handle, max_bytes=max_bytes, keep_body=False)
@@ -68,9 +70,12 @@ def hash_source(run_dir: Path, relpath: str, *, max_bytes: int) -> tuple[str, in
 
 
 def read_source(
-    run_dir: Path, relpath: str, *, max_bytes: int
+    run_dir: Path, relpath: str, *, max_bytes: int | None = None
 ) -> tuple[str, int, bytes]:
-    """Return ``(sha256:<hex>, size, bytes)`` of ``relpath``, bounded by ``max_bytes``."""
+    """Return ``(sha256:<hex>, size, bytes)`` of ``relpath``.
+
+    ``max_bytes`` bounds only reads of untrusted input; ``None`` reads it all.
+    """
     with _open(run_dir, relpath) as handle:
         return _stream(handle, max_bytes=max_bytes, keep_body=True)
 

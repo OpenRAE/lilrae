@@ -428,3 +428,20 @@ def test_project_model_selection_rejects_unsafe_or_unselected_provider(model):
 
     with pytest.raises(ValueError):
         InstalledParticipantModels(opencode=model)
+
+
+@pytest.mark.parametrize("limit", [None, 1, 5_000_000])
+def test_opencode_output_bytes_are_uncapped_by_default_and_accept_a_positive_limit(limit):
+    from aptl.workbench.opencode_configuration import validate_invocation_inputs
+    from aptl.workbench.opencode_options import OpenCodeOptions
+
+    assert OpenCodeOptions.__dataclass_fields__["max_output_bytes"].default is None
+    validate_invocation_inputs("openrouter/test/model", "prompt", 30, limit, 128)
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+def test_opencode_output_byte_limit_must_be_positive_when_set(limit):
+    from aptl.workbench.opencode_configuration import validate_invocation_inputs
+
+    with pytest.raises(ValueError):
+        validate_invocation_inputs("openrouter/test/model", "prompt", 30, limit, 128)

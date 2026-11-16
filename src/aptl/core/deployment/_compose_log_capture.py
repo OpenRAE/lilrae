@@ -1,7 +1,13 @@
-"""Bound the two native Docker log streams before buffering their output."""
+"""Stream the two output pipes of a native read command into spool files.
+
+Output is never cut. A read fails as timed out only when neither pipe
+delivers data for the progress timeout.
+"""
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from io import BufferedReader
+from typing import IO
 import os
 import signal
 import subprocess
@@ -13,11 +19,17 @@ from time import monotonic
 type PipeMessage = tuple[int, bytes | bool | None]
 
 
-class LogCapture(subprocess.CompletedProcess[str]):
-    """A completed native log read with explicit byte and time limit flags."""
+@dataclass(frozen=True)
+class StreamExit:
+    """How a streamed native read ended.
 
-    truncated: bool = False
-    timed_out: bool = False
+    ``failed_pipe`` is true when reading a pipe failed, so the spooled output
+    may be incomplete.
+    """
+
+    returncode: int | None
+    timed_out: bool
+    failed_pipe: bool
 
 
 def _send(messages: Queue[PipeMessage], stopped: Event, item: PipeMessage) -> None:
@@ -69,15 +81,15 @@ def _reap(
 
 def _drain_messages(
     messages: Queue[PipeMessage],
-    buffers: list[bytearray],
-    deadline: float,
-    remaining: int,
+    targets: Sequence[IO[bytes]],
+    progress_timeout: float,
 ) -> tuple[int, bool, bool]:
-    """Retain accepted pipe data until both streams end or a read limit is reached."""
+    """Write pipe data to ``targets`` until both pipes end or progress stops."""
     ended = 0
-    truncated, timed_out = False, False
+    failed_pipe, timed_out = False, False
+    last_progress = monotonic()
     while ended < 2:
-        wait = deadline - monotonic()
+        wait = last_progress + progress_timeout - monotonic()
         if wait <= 0:
             timed_out = True
             break
@@ -85,33 +97,29 @@ def _drain_messages(
             index, data = messages.get(timeout=min(wait, 0.1))
         except Empty:
             continue
+        last_progress = monotonic()
         if data is False:
-            truncated = True
+            failed_pipe = True
             break
         if data is None:
             ended += 1
             continue
-        accepted = min(len(data), remaining)
-        buffers[index].extend(data[:accepted])
-        remaining -= accepted
-        if len(data) > accepted:
-            truncated = True
-            break
-    return ended, truncated, timed_out
+        targets[index].write(data)
+    return ended, failed_pipe, timed_out
 
 
-def capture_logs(
+def stream_command(
     command: list[str],
     *,
     cwd: str | os.PathLike[str] | None,
     env: Mapping[str, str] | None,
-    timeout: float,
-    max_bytes: int,
-) -> LogCapture:
-    """Read within a combined byte/time budget and reap the read-only command."""
+    stdout: IO[bytes],
+    stderr: IO[bytes],
+    progress_timeout: float,
+) -> StreamExit:
+    """Run a read-only command, streaming its output, and reap it."""
     messages: Queue[PipeMessage] = Queue(maxsize=4)
     stopped = Event()
-    buffers = [bytearray(), bytearray()]
     process = subprocess.Popen(
         command,
         cwd=cwd,
@@ -127,25 +135,17 @@ def capture_logs(
     ]
     for reader in readers:
         reader.start()
-    deadline = monotonic() + timeout
     try:
-        ended, truncated, timed_out = _drain_messages(
-            messages, buffers, deadline, max_bytes
+        ended, failed_pipe, timed_out = _drain_messages(
+            messages, (stdout, stderr), progress_timeout
         )
         if ended == 2:
             try:
-                process.wait(timeout=max(0.001, deadline - monotonic()))
+                process.wait(timeout=progress_timeout)
             except subprocess.TimeoutExpired:
                 timed_out = True
     finally:
         _reap(process, readers, stopped)
-    if truncated or timed_out:
-        # Withhold a cut credential or record; only complete lines are safe.
-        buffers = [data[: data.rfind(b"\n") + 1] for data in buffers]
-    result = LogCapture(
-        command,
-        process.returncode,
-        *(bytes(data).decode("utf-8", errors="replace") for data in buffers),
-    )
-    result.truncated, result.timed_out = truncated, timed_out
-    return result
+    stdout.flush()
+    stderr.flush()
+    return StreamExit(process.returncode, timed_out, failed_pipe)

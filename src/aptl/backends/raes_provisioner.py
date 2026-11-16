@@ -12,7 +12,7 @@ from raes_contracts.planning import ChangeAction, ProvisioningPlan
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
 from aptl.backends._raes_apply_reporting import (
-    bounded_apply_details as _bounded_apply_details,
+    conformant_apply_details as _conformant_apply_details,
 )
 from aptl.backends._raes_apply_reporting import (
     closed_credential_result,
@@ -242,7 +242,7 @@ class AptlProvisioner(
             success=False,
             snapshot=working_snapshot,
             diagnostics=diagnostics,
-            details=_bounded_apply_details(
+            details=_conformant_apply_details(
                 {"realization": realization.details()}, realization
             ),
         )
@@ -275,7 +275,7 @@ class AptlProvisioner(
             success=False,
             snapshot=snapshot,
             diagnostics=diagnostics,
-            details=_bounded_apply_details(
+            details=_conformant_apply_details(
                 {
                     "profiles": selected_profiles,
                     "realization": realization.details(),
