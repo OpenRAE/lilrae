@@ -1,7 +1,7 @@
 {
   "corpus": 1,
   "scheme": "collector-registration-digest",
-  "version": "aptl-collector-registry/v2",
+  "version": "aptl-collector-registry/v4",
   "owner": "aptl.core.experiment.capture_registry.CollectorRegistration.effective_config_digest",
   "cases": [
     {
@@ -36,11 +36,6 @@
         "supports_retention": true,
         "supports_loss_disclosure": true,
         "visibility_class": "participant-visible",
-        "limits": {
-          "max_bytes": 1048576,
-          "max_artifact_count": 4,
-          "max_duration_s": 3600
-        },
         "redaction_policies": [
           "default"
         ],
@@ -49,7 +44,7 @@
         ]
       },
       "expect": {
-        "text": "sha256:d2494cd351df52861c4b6c720072895e4a8645a786f5a5dd3d521597bf664887"
+        "text": "sha256:23ef0ff5aa206c46224bf5ef3969279a7b54fb11219935a5be8fe3a47d4a5fbc"
       }
     },
     {
@@ -84,11 +79,6 @@
         "supports_retention": true,
         "supports_loss_disclosure": true,
         "visibility_class": "participant-visible",
-        "limits": {
-          "max_bytes": 1048576,
-          "max_artifact_count": 4,
-          "max_duration_s": 3600
-        },
         "redaction_policies": [
           "default"
         ],
@@ -98,7 +88,7 @@
       },
       "note": "sets are sorted before hashing",
       "expect": {
-        "text": "sha256:d2494cd351df52861c4b6c720072895e4a8645a786f5a5dd3d521597bf664887"
+        "text": "sha256:23ef0ff5aa206c46224bf5ef3969279a7b54fb11219935a5be8fe3a47d4a5fbc"
       }
     }
   ]

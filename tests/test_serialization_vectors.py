@@ -62,7 +62,6 @@ from aptl.core.evidence_bundle.envelope import BundleEnvelopeV1
 from aptl.core.evidence_bundle.projections import parquet as parquet_projection
 from aptl.core.experiment import resolver, spec_loading
 from aptl.core.experiment.capture_registry import (
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
 )
@@ -236,7 +235,6 @@ def _collector_registration_digest(case_input: object) -> dict[str, str]:
         if isinstance(value, list):
             fields[name] = frozenset(value)
     fields["visibility_class"] = CaptureVisibility(fields["visibility_class"])
-    fields["limits"] = CaptureLimits(**fields["limits"])
     return {"text": CollectorRegistration(**fields).effective_config_digest()}
 
 
