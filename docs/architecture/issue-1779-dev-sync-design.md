@@ -40,9 +40,11 @@ matter of this note is its design record. The
    `run_storage.capture_progress_timeout_seconds`. `internal/config` decodes
    and checks them as the Python release does, and the published schema gives
    them. Decision 10 of the #1747 design gives the details.
-5. **Vectors.** #1773 removes the capture limits from the collector
-   registration and moves the registry schema to v4. The
-   `collector-registration-digest` vectors and their test follow it.
+5. **Vectors.** #1773 removes the capture limits. It moves the collector
+   registry schema to v4 and the capture plan schema to v3. The
+   `collector-registration-digest` and `capture-plan` vectors follow it.
+   TechVault writes native responses without a byte bound, so the
+   `techvault-bounded-json` vectors keep only the readiness owner.
 6. **Sonar finding on `go-cutover`.** The `go-cutover` push analysis of #1780
    reports `godre:S8193` in `internal/digest/digest_test.go`. The test declares
    an unnecessary variable in a condition. #1784 removes the variable.
