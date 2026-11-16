@@ -230,6 +230,21 @@ func checkActionTimeout(seconds int64) error {
 	return nil
 }
 
+// checkReservePercent admits a percent from 0 to below 100.
+func checkReservePercent(percent float64) error {
+	if percent < 0 || percent >= 100 {
+		return errors.New("must be from 0 to below 100")
+	}
+	return nil
+}
+
+func checkProgressTimeout(seconds int64) error {
+	if seconds < 1 {
+		return errors.New("must be at least 1")
+	}
+	return nil
+}
+
 func checkTrialEpisode(seconds int64) error {
 	if seconds < 1 || seconds > 86400 {
 		return errors.New("must be from 1 to 86400")

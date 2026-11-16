@@ -130,7 +130,8 @@ func TestResolvedForm(t *testing.T) {
 		`"deployment":{"range_egress_allowances":[],"provider":"docker-compose","project_name":"aptl","ssh_host":null,` +
 		`"ssh_user":null,"ssh_key":null,"ssh_port":22,"remote_dir":null,"environment_grants":[],"dedicated_vm":false},` +
 		`"scenario":{"identity":null,"root":null,"pack_directory":null,"source":"env-pack"},` +
-		`"run_storage":{"backend":"local","local_path":"./runs","s3_bucket":null,"s3_prefix":"runs/"},` +
+		`"run_storage":{"backend":"local","local_path":"./runs","s3_bucket":null,"s3_prefix":"runs/",` +
+		`"free_space_reserve_percent":10.0,"capture_progress_timeout_seconds":1800},` +
 		`"lifecycle_policy":null,` +
 		`"experiment":{"participant_action_timeout_seconds":120,` +
 		`"participant_models":{"claude":null,"codex":null,"opencode":null},` +
@@ -145,6 +146,21 @@ func TestResolvedForm(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, string(got)); diff != "" {
 		t.Errorf("resolved form (-want +got):\n%s", diff)
+	}
+}
+
+// TestPythonFloatForm checks that a float member marshals as the Python json
+// module writes it.
+func TestPythonFloatForm(t *testing.T) {
+	t.Parallel()
+	for value, want := range map[PythonFloat]string{25: "25.0", 12.5: "12.5", 0: "0.0", 99.99: "99.99"} {
+		got, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Errorf("json.Marshal(%v) = %s, want %s", float64(value), got, want)
+		}
 	}
 }
 

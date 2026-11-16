@@ -538,6 +538,17 @@
         "s3_prefix": {
           "default": "runs/",
           "type": "string"
+        },
+        "free_space_reserve_percent": {
+          "default": 10.0,
+          "exclusiveMaximum": 100.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "capture_progress_timeout_seconds": {
+          "default": 1800,
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "type": "object"

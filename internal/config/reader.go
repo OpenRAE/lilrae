@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math/big"
 	"regexp"
 	"slices"
 	"strconv"
@@ -37,6 +38,7 @@ const (
 	ruleNull     = "must not be null"
 	ruleString   = "must be a string"
 	ruleInteger  = "must be an integer"
+	ruleNumber   = "must be a number"
 	ruleBoolean  = "must be a boolean"
 	ruleArray    = "must be an array"
 	ruleObject   = "must be an object"
@@ -182,6 +184,26 @@ func (o *object) integer(name string, def int64) (int64, bool) {
 		return def, false
 	}
 	return o.asInteger(name, v)
+}
+
+// number reads a number member. An integer reads as its float value, as a
+// Python float member accepts it.
+func (o *object) number(name string, def float64) (float64, bool) {
+	v, ok := o.value(name, false)
+	if !ok {
+		return def, false
+	}
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int64:
+		return float64(n), true
+	case *big.Int:
+		f, _ := new(big.Float).SetInt(n).Float64()
+		return f, true
+	}
+	o.fail(name, ruleNumber)
+	return def, false
 }
 
 func (o *object) optInteger(name string) (*int64, bool) {

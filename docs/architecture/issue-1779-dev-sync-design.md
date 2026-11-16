@@ -38,10 +38,16 @@ matter of this note is its design record. The
    and `experiment.trial_episode_seconds` to `aptl.json`. `internal/config`
    decodes and checks them as the Python release does. Decision 10 of the
    #1747 design gives the details.
-5. **Sonar finding on `go-cutover`.** The `go-cutover` push analysis of #1780
+5. **Run storage members from #1773.** #1773 adds
+   `run_storage.free_space_reserve_percent` and
+   `run_storage.capture_progress_timeout_seconds`. `internal/config` decodes
+   and checks them as the Python release does. The resolved form of the
+   percent uses the float text of the Python json module. Decision 10 of the
+   #1747 design gives the details.
+6. **Sonar finding on `go-cutover`.** The `go-cutover` push analysis of #1780
    reports `godre:S8193` in `internal/digest/digest_test.go`. The test declares
    an unnecessary variable in a condition. This change removes the variable.
-6. **No model change.** The change stays in the `configuration` and `digest`
+7. **No model change.** The change stays in the `configuration` and `digest`
    components and uses only their existing dependencies.
 
 ## Verification

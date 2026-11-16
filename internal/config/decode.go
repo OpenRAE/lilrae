@@ -224,6 +224,14 @@ func decodeRunStorage(o *object) RunStorage {
 	rs.LocalPath, _ = o.str("local_path", rs.LocalPath, false)
 	rs.S3Bucket, _ = o.optStr("s3_bucket")
 	rs.S3Prefix, _ = o.str("s3_prefix", rs.S3Prefix, false)
+	if percent, ok := o.number("free_space_reserve_percent", float64(rs.FreeSpaceReservePercent)); ok {
+		rs.FreeSpaceReservePercent = PythonFloat(percent)
+		o.check("free_space_reserve_percent", checkReservePercent(percent))
+	}
+	if timeout, ok := o.integer("capture_progress_timeout_seconds", rs.CaptureProgressTimeoutSeconds); ok {
+		rs.CaptureProgressTimeoutSeconds = timeout
+		o.check("capture_progress_timeout_seconds", checkProgressTimeout(timeout))
+	}
 	o.finish()
 	return rs
 }

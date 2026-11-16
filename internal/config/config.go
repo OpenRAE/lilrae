@@ -19,6 +19,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+
+	"github.com/OpenRAE/lilrae/internal/canonical"
 )
 
 // FileName is the name of the configuration file in a project directory.
@@ -122,11 +124,29 @@ type ScenarioSource struct {
 }
 
 // RunStorage configures the experiment run storage.
+// FreeSpaceReservePercent is the percent of the run-store file system that
+// evidence writes leave free, and CaptureProgressTimeoutSeconds is the time
+// that an evidence read can go without new data.
 type RunStorage struct {
-	Backend   string  `json:"backend"`
-	LocalPath string  `json:"local_path"`
-	S3Bucket  *string `json:"s3_bucket"`
-	S3Prefix  string  `json:"s3_prefix"`
+	Backend                       string      `json:"backend"`
+	LocalPath                     string      `json:"local_path"`
+	S3Bucket                      *string     `json:"s3_bucket"`
+	S3Prefix                      string      `json:"s3_prefix"`
+	FreeSpaceReservePercent       PythonFloat `json:"free_space_reserve_percent"`
+	CaptureProgressTimeoutSeconds int64       `json:"capture_progress_timeout_seconds"`
+}
+
+// PythonFloat is a float member. It marshals as the Python json module writes
+// a float, so an integral value keeps its ".0", as in model_dump.
+type PythonFloat float64
+
+// MarshalJSONTo writes the text of the Python json module for f.
+func (f PythonFloat) MarshalJSONTo(enc *jsontext.Encoder) error {
+	text, err := canonical.SortedCompactJSON(float64(f))
+	if err != nil {
+		return fmt.Errorf("python float: %w", err)
+	}
+	return enc.WriteValue(jsontext.Value(text))
 }
 
 // LifecyclePolicy is the ephemeral lifecycle policy of the range (DEP-003).
@@ -227,7 +247,10 @@ func Default() Config {
 		Lab:        defaultLab(),
 		Deployment: defaultDeployment(),
 		Scenario:   ScenarioSource{Source: "env-pack"},
-		RunStorage: RunStorage{Backend: "local", LocalPath: "./runs", S3Prefix: "runs/"},
+		RunStorage: RunStorage{
+			Backend: "local", LocalPath: "./runs", S3Prefix: "runs/",
+			FreeSpaceReservePercent: 10, CaptureProgressTimeoutSeconds: 1800,
+		},
 		Experiment: Experiment{ParticipantActionTimeoutSeconds: 120, ParticipantServingProviders: ServingProviders{}},
 		MCP:        defaultMCPPolicy(),
 	}
