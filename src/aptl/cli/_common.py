@@ -152,7 +152,11 @@ def resolve_run_store(
     local_path = Path(config.run_storage.local_path)
     if not local_path.is_absolute():
         local_path = project_dir / local_path
-    return LocalRunStore(local_path)
+    return LocalRunStore(
+        local_path,
+        free_space_reserve=config.run_storage.free_space_reserve,
+        progress_timeout_seconds=config.run_storage.capture_progress_timeout_seconds,
+    )
 
 
 def resolve_optional_config_for_cli(project_dir: Path) -> AptlConfig:

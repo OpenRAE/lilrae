@@ -184,7 +184,7 @@ class ProcessRunner(Protocol):
         cwd: Path,
         stdin: bytes,
         timeout_seconds: float,
-        max_output_bytes: int,
+        max_output_bytes: int | None,
     ) -> ProcessResult: ...
 
 
@@ -199,7 +199,7 @@ class CancellableProcessRunner(Protocol):
         cwd: Path,
         stdin: bytes,
         timeout_seconds: float,
-        max_output_bytes: int,
+        max_output_bytes: int | None,
         cancel_event: Event | None = None,
     ) -> ProcessResult: ...
 
@@ -243,7 +243,7 @@ class BoundedProcessRunner:
         cwd: Path,
         stdin: bytes,
         timeout_seconds: float,
-        max_output_bytes: int,
+        max_output_bytes: int | None,
         cancel_event: Event | None = None,
     ) -> ProcessResult:
         """Execute a child with strict time and combined-output limits."""
@@ -266,7 +266,7 @@ class BoundedProcessRunner:
             request.max_output_bytes,
         )
         cancel_event = request.cancel_event
-        if timeout_seconds <= 0 or max_output_bytes <= 0:
+        if timeout_seconds <= 0 or (max_output_bytes is not None and max_output_bytes <= 0):
             raise AgentExecutionError("agent process limits are invalid")
         if cancel_event is not None and cancel_event.is_set():
             raise AgentExecutionError(REASON_CANCELLED)

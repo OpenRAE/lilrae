@@ -48,7 +48,8 @@ func TestDecodeFullConfiguration(t *testing.T) {
 			"dedicated_vm": true
 		},
 		"scenario": {"identity": " tv ", "source": "env-pack", "pack_directory": "packs/tv"},
-		"run_storage": {"backend": "local", "local_path": "./r", "s3_bucket": "b", "s3_prefix": "p/"},
+		"run_storage": {"backend": "local", "local_path": "./r", "s3_bucket": "b", "s3_prefix": "p/",
+			"free_space_reserve_percent": 12.5, "capture_progress_timeout_seconds": 600},
 		"lifecycle_policy": {"ttl_minutes": 60, "idle_timeout_minutes": 5,
 			"teardown_remove_volumes": false,
 			"schedule": [{"at": "08:30", "days": ["MON", "fri"], "scenario": "s"}]},
@@ -78,8 +79,11 @@ func TestDecodeFullConfiguration(t *testing.T) {
 			}},
 			DedicatedVM: true,
 		},
-		Scenario:   ScenarioSource{Identity: new("tv"), PackDirectory: new("packs/tv"), Source: "env-pack"},
-		RunStorage: RunStorage{Backend: "local", LocalPath: "./r", S3Bucket: new("b"), S3Prefix: "p/"},
+		Scenario: ScenarioSource{Identity: new("tv"), PackDirectory: new("packs/tv"), Source: "env-pack"},
+		RunStorage: RunStorage{
+			Backend: "local", LocalPath: "./r", S3Bucket: new("b"), S3Prefix: "p/",
+			FreeSpaceReservePercent: 12.5, CaptureProgressTimeoutSeconds: 600,
+		},
 		LifecyclePolicy: &LifecyclePolicy{
 			TTLMinutes: new(int64(60)), IdleTimeoutMinutes: new(int64(5)),
 			Schedule: []ScheduleEntry{{At: "08:30", Days: []string{"mon", "fri"}, Scenario: new("s")}},
@@ -173,6 +177,11 @@ func TestDecodeRejections(t *testing.T) {
 		{"number boolean", `{"lifecycle_policy": {"teardown_remove_volumes": 1}}`, FieldError{"lifecycle_policy.teardown_remove_volumes", ruleBoolean}},
 		{"string dedicated vm", `{"deployment": {"dedicated_vm": "true"}}`, FieldError{"deployment.dedicated_vm", ruleBoolean}},
 		{"integral float trial episode", `{"experiment": {"trial_episode_seconds": 60.0}}`, FieldError{"experiment.trial_episode_seconds", ruleInteger}},
+		{"string free space reserve", `{"run_storage": {"free_space_reserve_percent": "10"}}`, FieldError{"run_storage.free_space_reserve_percent", ruleNumber}},
+		{"boolean free space reserve", `{"run_storage": {"free_space_reserve_percent": true}}`, FieldError{"run_storage.free_space_reserve_percent", ruleNumber}},
+		{"null free space reserve", `{"run_storage": {"free_space_reserve_percent": null}}`, FieldError{"run_storage.free_space_reserve_percent", ruleNull}},
+		{"free space reserve beyond 64 bits", `{"run_storage": {"free_space_reserve_percent": 99999999999999999999}}`, FieldError{"run_storage.free_space_reserve_percent", ruleNumber}},
+		{"integral float progress timeout", `{"run_storage": {"capture_progress_timeout_seconds": 60.0}}`, FieldError{"run_storage.capture_progress_timeout_seconds", ruleInteger}},
 		{"array element", `{"containers": {"profiles": ["a", 1]}}`, FieldError{"containers.profiles.1", ruleString}},
 		{"grant element", `{"deployment": {"environment_grants": [1]}}`, FieldError{"deployment.environment_grants.0", ruleObject}},
 		{"missing grant source", `{"deployment": {"environment_grants": [{"pack": "p", "consumer": "c", "variable": "v"}]}}`, FieldError{"deployment.environment_grants.0.source", ruleRequired}},
@@ -242,6 +251,9 @@ func TestDecodeSemanticChecks(t *testing.T) {
 		{"long action timeout", `{"experiment": {"participant_action_timeout_seconds": 3601}}`, "experiment.participant_action_timeout_seconds"},
 		{"zero trial episode", `{"experiment": {"trial_episode_seconds": 0}}`, "experiment.trial_episode_seconds"},
 		{"long trial episode", `{"experiment": {"trial_episode_seconds": 86401}}`, "experiment.trial_episode_seconds"},
+		{"negative free space reserve", `{"run_storage": {"free_space_reserve_percent": -0.5}}`, "run_storage.free_space_reserve_percent"},
+		{"full free space reserve", `{"run_storage": {"free_space_reserve_percent": 100}}`, "run_storage.free_space_reserve_percent"},
+		{"zero progress timeout", `{"run_storage": {"capture_progress_timeout_seconds": 0}}`, "run_storage.capture_progress_timeout_seconds"},
 		{"mutable claude model", `{"experiment": {"participant_models": {"claude": "claude-latest"}}}`, "experiment.participant_models.claude"},
 		{"unknown codex family", `{"experiment": {"participant_models": {"codex": "davinci-3"}}}`, "experiment.participant_models.codex"},
 		{"opencode model of an unknown router", `{"experiment": {"participant_models": {"opencode": "anthropic/claude"}}}`, "experiment.participant_models.opencode"},
@@ -290,6 +302,9 @@ func TestDecodeAcceptsBoundaryValues(t *testing.T) {
 		`{"experiment": {"trial_episode_seconds": 1}}`,
 		`{"experiment": {"trial_episode_seconds": 86400}}`,
 		`{"experiment": {"trial_episode_seconds": null}}`,
+		`{"run_storage": {"free_space_reserve_percent": 0}}`,
+		`{"run_storage": {"free_space_reserve_percent": 99.99}}`,
+		`{"run_storage": {"capture_progress_timeout_seconds": 1}}`,
 		`{"experiment": {"participant_models": {"claude": "claude-x-20250101", "codex": "o3-2025-01-01"}}}`,
 		`{"experiment": {"participant_models": {"claude": "claude-opus-4.8", "codex": "gpt-5", "opencode": "google-vertex/gemini-3-pro"}}}`,
 		`{"experiment": {"participant_credential_sources": {"vertex": {"kind": "process-environment", "variable": "GOOGLE_KEY"}}}}`,
@@ -305,6 +320,19 @@ func TestDecodeAcceptsBoundaryValues(t *testing.T) {
 		if _, err := Decode([]byte(data)); err != nil {
 			t.Errorf("Decode(%.80s): %v", data, err)
 		}
+	}
+}
+
+// TestDecodeIntegerFreeSpaceReserve checks that a JSON integer is a valid
+// number, as Python converts it to a float.
+func TestDecodeIntegerFreeSpaceReserve(t *testing.T) {
+	t.Parallel()
+	cfg, err := Decode([]byte(`{"run_storage": {"free_space_reserve_percent": 15}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.RunStorage.FreeSpaceReservePercent; got != 15 {
+		t.Errorf("FreeSpaceReservePercent = %v, want 15", got)
 	}
 }
 

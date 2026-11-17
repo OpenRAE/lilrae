@@ -1,35 +1,61 @@
-"""The native log command enforces its byte budget while reading pipes."""
+"""The native read command streams complete output and reaps its child."""
 
 import sys
+import tempfile
+
 import pytest
-from aptl.core.deployment._compose_log_capture import capture_logs
+
+from aptl.core.deployment._compose_log_capture import StreamExit, stream_command
 
 
-@pytest.mark.parametrize("timeout", [False, True])
-def test_native_log_command_keeps_complete_prefix_and_reaps_child(tmp_path, timeout):
-    script = (
-        "import sys,time;print('accepted complete line',flush=True);time.sleep(20)"
-        if timeout
-        else "import sys;sys.stdout.write('accepted complete line\\n' + 'x'*10000000);sys.stdout.flush()"
-    )
-    result = capture_logs(
+def _run(tmp_path, script: str, progress_timeout: float):
+    stdout, stderr = tempfile.TemporaryFile(), tempfile.TemporaryFile()
+    result = stream_command(
         [sys.executable, "-c", script],
         cwd=tmp_path,
         env=None,
-        timeout=0.5 if timeout else 10,
-        max_bytes=4096,
+        stdout=stdout,
+        stderr=stderr,
+        progress_timeout=progress_timeout,
     )
-    assert result.stdout == "accepted complete line\n"
-    assert len(result.stdout.encode()) + len(result.stderr.encode()) <= 4096
-    assert result.timed_out is timeout
-    assert result.truncated is (not timeout)
+    stdout.seek(0)
+    return result, stdout.read()
 
 
-def test_backend_bounded_logs_use_owned_identity_and_existing_transport(
-    tmp_path, monkeypatch
+def test_native_read_command_keeps_every_byte(tmp_path):
+    script = (
+        "import sys;sys.stdout.write('accepted complete line\\n' + 'x'*10000000);"
+        "sys.stdout.flush()"
+    )
+    result, output = _run(tmp_path, script, 10)
+    assert result == StreamExit(0, timed_out=False, failed_pipe=False)
+    assert output == b"accepted complete line\n" + b"x" * 10_000_000
+
+
+def test_stalled_read_times_out_and_keeps_accepted_output(tmp_path):
+    script = "import time;print('accepted complete line',flush=True);time.sleep(20)"
+    result, output = _run(tmp_path, script, 0.5)
+    assert result.timed_out is True
+    assert output == b"accepted complete line\n"
+
+
+def test_steady_read_longer_than_the_progress_timeout_completes(tmp_path):
+    script = (
+        "import time\n"
+        "for n in range(6):\n"
+        "    print(n, flush=True); time.sleep(0.2)\n"
+    )
+    result, output = _run(tmp_path, script, 0.5)
+    assert result == StreamExit(0, timed_out=False, failed_pipe=False)
+    assert output.split() == [b"0", b"1", b"2", b"3", b"4", b"5"]
+
+
+@pytest.mark.parametrize("method", ["logs", "exec"])
+def test_backend_streams_use_owned_identity_and_existing_transport(
+    tmp_path, monkeypatch, method
 ):
     from aptl.core.deployment.docker_compose import DockerComposeBackend
-    import aptl.core.deployment._compose_log_capture as owner
+    import aptl.core.deployment._compose_queries as owner
 
     backend = DockerComposeBackend(project_dir=tmp_path, project_name="test")
     monkeypatch.setattr(
@@ -42,25 +68,23 @@ def test_backend_bounded_logs_use_owned_identity_and_existing_transport(
     )
     seen = []
 
-    def capture(command, **kwargs):
+    def stream(command, **kwargs):
         seen.append((command, kwargs))
-        return owner.LogCapture(command, 0, "accepted\n", "")
+        return StreamExit(0, timed_out=False, failed_pipe=False)
 
-    monkeypatch.setattr(owner, "capture_logs", capture)
-    result = backend.container_logs_capture(
-        "soc", since="start", until="end", timeout=3, max_bytes=4096
-    )
-    assert result.stdout == "accepted\n"
+    monkeypatch.setattr(owner, "stream_command", stream)
+    out, err = tempfile.TemporaryFile(), tempfile.TemporaryFile()
+    if method == "logs":
+        backend.container_logs_stream(
+            "soc", since="start", until="end", stdout=out, stderr=err
+        )
+        expected = ["docker", "logs", "--since", "start", "--until", "end", "owned-soc"]
+    else:
+        backend.container_exec_stream("soc", ["cat", "--", "/f"], stdout=out, stderr=err)
+        expected = ["docker", "exec", "owned-soc", "cat", "--", "/f"]
     command, kwargs = seen[0]
-    assert command == [
-        "docker",
-        "logs",
-        "--since",
-        "start",
-        "--until",
-        "end",
-        "owned-soc",
-    ]
-    assert kwargs["max_bytes"] == 4096
-    assert kwargs["timeout"] == 3
+    assert command == expected
+    assert kwargs["stdout"] is out
+    assert kwargs["stderr"] is err
+    assert kwargs["progress_timeout"] > 0
     assert kwargs["env"] == {"DOCKER_HOST": "ssh://fixture"}

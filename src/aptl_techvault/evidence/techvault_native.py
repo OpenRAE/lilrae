@@ -42,10 +42,11 @@ from aptl_techvault.evidence.techvault_wazuh_agent_readiness import (
     WazuhAgentReadinessSource,
 )
 from aptl_techvault.evidence.techvault_native_support import (
-    MAX_SOURCE_BYTES,
     content_identities,
     find_node,
     inside_window,
+    spool_lines,
+    stream_container_file,
     utc_iso_now,
     webapp_endpoint,
 )
@@ -293,7 +294,7 @@ class TechVaultNativeEvidenceOwner:
             _SURICATA_READINESS_SCRIPT,
             timeout=120,
         )
-        if result.returncode != 0 or len(result.stdout.encode()) > MAX_SOURCE_BYTES:
+        if result.returncode != 0:
             return None
         parsed = self._parse_suricata_readiness(result.stdout)
         outcome = None
@@ -381,34 +382,30 @@ class TechVaultNativeEvidenceOwner:
     def query_suricata(
         self, start_iso: str, end_iso: str
     ) -> Sequence[Mapping[str, object]] | None:
-        """Read a bounded EVE tail and retain exact fresh SQLi alerts only."""
+        """Read the complete EVE log and retain exact fresh SQLi alerts only."""
 
-        result = self._operations.container_exec(
-            _SURICATA_CONTAINER,
-            ["tail", "-c", str(MAX_SOURCE_BYTES), "/var/log/suricata/eve.json"],
-            timeout=30,
+        spool, _ = stream_container_file(
+            self._operations, _SURICATA_CONTAINER, "/var/log/suricata/eve.json"
         )
-        raw = result.stdout.encode()
-        if result.returncode != 0 or len(raw) > MAX_SOURCE_BYTES:
+        if spool is None:
             return None
         events: list[Mapping[str, object]] = []
-        # A healthy long-running sensor routinely exceeds the transfer bound.
-        # Read its bounded suffix; a partial first line is discarded below.
         # Exact window/flow correlation still refuses missing native evidence.
-        for line in result.stdout.splitlines():
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            alert = event.get("alert") if isinstance(event, Mapping) else None
-            if (
-                isinstance(event, Mapping)
-                and isinstance(alert, Mapping)
-                and alert.get("signature_id") == SURICATA_SQLI_SID
-                and inside_window(event.get("timestamp"), start_iso, end_iso)
-            ):
-                events.append(event)
-        return events[:256]
+        with spool:
+            for line, _terminated in spool_lines(spool):
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                alert = event.get("alert") if isinstance(event, Mapping) else None
+                if (
+                    isinstance(event, Mapping)
+                    and isinstance(alert, Mapping)
+                    and alert.get("signature_id") == SURICATA_SQLI_SID
+                    and inside_window(event.get("timestamp"), start_iso, end_iso)
+                ):
+                    events.append(event)
+        return events
 
     def query_wazuh(
         self, start_iso: str, end_iso: str

@@ -19,7 +19,6 @@ _DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _REF_PATTERN = re.compile(r"terminal-[0-9a-f]{64}\Z")
 # The shared scanner skips some command patterns beyond this text length.
 # Withhold that direction's frames instead of making a partial safety claim.
-_MAX_REDACTION_CONTEXT = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -199,13 +198,13 @@ def _retained_frame_data(frames: Sequence[TranscriptFrame]) -> list[str]:
     for direction in ("input", "output"):
         indices = [i for i, frame in enumerate(frames) if frame.direction == direction]
         joined = "".join(raw[i] for i in indices)
-        if len(joined) > _MAX_REDACTION_CONTEXT or redact(joined) != "".join(
+        if redact(joined) != "".join(
             safe[i] for i in indices
         ):
             for index in indices:
                 safe[index] = REDACTED
     retained = "".join(safe)
-    if len(retained) > _MAX_REDACTION_CONTEXT or redact(retained) != retained:
+    if redact(retained) != retained:
         return [REDACTED] * len(frames)
     return safe
 

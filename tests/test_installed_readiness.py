@@ -266,7 +266,7 @@ def test_concrete_owners_prove_build_provider_source_writer_and_exact_resource_d
         assert owners.containment()
         assert owners.participants[0].check()
         assert owners.captures["approved.source"].check(None)
-        assert owners.captures["approved.source"].destination.check(1024)
+        assert owners.captures["approved.source"].destination.check()
         assert owners.resources(None, 262144)
         transport.map_count = 262143
         assert not owners.resources(None, 262144)

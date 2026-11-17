@@ -32,18 +32,7 @@ SQLI_ATTEMPT_EFFECT = (
 SQLI_DELIVERY_UNCONFIRMED: Mapping[str, object] = MappingProxyType(
     {"delivery_confirmed": False}
 )
-_MAX_NATIVE_JSON_BYTES = 2 * 1024 * 1024
 _UTC_OFFSET = "+00:00"
-
-
-def _bounded_json(value: object) -> bytes | None:
-    """Encode one native response only when it fits the admitted byte bound."""
-
-    try:
-        raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-    except (TypeError, ValueError, RecursionError):
-        return None
-    return raw if len(raw) <= _MAX_NATIVE_JSON_BYTES else None
 
 
 def _failure(status: CollectorStatus = CollectorStatus.MID_RUN_LOSS) -> SourceResult:

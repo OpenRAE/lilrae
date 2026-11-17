@@ -67,13 +67,11 @@ def _techvault_boundary_policy(_case_input: dict) -> dict[str, object]:
 
 
 def _techvault_bounded_json(case_input: dict) -> dict[str, object]:
-    native = techvault_evidence._bounded_json(case_input["value"])
     readiness = techvault_readiness_probes.bounded_json(
         case_input["value"], case_input["limit"]
     )
     return {
         "value": {
-            "native_hex": None if native is None else native.hex(),
             "readiness_hex": None if readiness is None else readiness.hex(),
         }
     }

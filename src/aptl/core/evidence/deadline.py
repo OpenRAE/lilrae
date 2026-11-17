@@ -1,31 +1,35 @@
-"""Capture deadlines shared by core collection and native backend reads."""
+"""Read progress timeout shared by core collection and native backend reads.
 
-from collections.abc import Callable, Iterator
+An evidence read fails as a timeout only when it receives no new data for the
+progress timeout. A source that keeps delivering data never times out, so the
+timeout never limits how much evidence a capture retains.
+"""
+
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-_DEADLINE: ContextVar[tuple[float, Callable[[], float]] | None] = ContextVar(
-    "capture_read_deadline", default=None
+#: Default seconds without new data before a read fails. No measurements of
+#: read stalls exist yet, so the default is deliberately long.
+DEFAULT_PROGRESS_TIMEOUT_SECONDS = 1800.0
+
+_PROGRESS_TIMEOUT: ContextVar[float] = ContextVar(
+    "capture_progress_timeout", default=DEFAULT_PROGRESS_TIMEOUT_SECONDS
 )
 
 
 @contextmanager
-def native_read_budget(expires: float, clock: Callable[[], float]) -> Iterator[None]:
-    """Keep the absolute expiry visible through nested native reads."""
-    token = _DEADLINE.set((expires, clock))
+def progress_timeout(seconds: float) -> Iterator[None]:
+    """Make ``seconds`` the progress timeout of nested native reads."""
+    if seconds <= 0:
+        raise ValueError("progress timeout must be positive")
+    token = _PROGRESS_TIMEOUT.set(seconds)
     try:
         yield
     finally:
-        _DEADLINE.reset(token)
+        _PROGRESS_TIMEOUT.reset(token)
 
 
-def native_read_timeout(timeout: int | float | None) -> int | float | None:
-    """Clamp a native operation without giving it a new deadline."""
-    budget = _DEADLINE.get()
-    if budget is None:
-        return timeout
-    expires, clock = budget
-    remaining = expires - clock()
-    if remaining <= 0:
-        raise TimeoutError("capture read deadline expired")
-    return remaining if timeout is None else min(timeout, remaining)
+def current_progress_timeout() -> float:
+    """Return the progress timeout that applies to the current read."""
+    return _PROGRESS_TIMEOUT.get()

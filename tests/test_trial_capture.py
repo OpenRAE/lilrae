@@ -2,7 +2,6 @@
 
 from dataclasses import replace
 import json
-from subprocess import CompletedProcess
 from types import SimpleNamespace
 
 import pytest
@@ -17,32 +16,46 @@ from aptl.core.experiment.capture_plan import admit_capture_demands
 from aptl.core.experiment.capture_registry import CollectorRegistry
 
 
-def test_selected_container_logs_preserve_both_streams_and_accepted_prefix():
+def _streamed(result):
+    return json.loads(b"".join(result.chunks))
+
+
+def _exit(returncode=0, timed_out=False):
+    from aptl.core.deployment._compose_log_capture import StreamExit
+
+    return StreamExit(returncode, timed_out=timed_out, failed_pipe=False)
+
+
+def test_selected_container_logs_preserve_both_complete_streams():
     calls = []
 
-    def logs(name, **kwargs):
+    def logs(name, *, stdout, stderr, **kwargs):
         calls.append((name, kwargs))
         if name == "missing":
             raise OSError("private backend failure")
-        return CompletedProcess([], 0, "first line\n", "second line\n")
+        stdout.write(b"first line\n" + b"x" * (9 * 1024 * 1024))
+        stderr.write(b"second line\n")
+        return _exit()
 
     operations = AdmittedRuntimeOperations(
-        SimpleNamespace(container_logs_capture=logs),
+        SimpleNamespace(container_logs_stream=logs),
         [SimpleNamespace(name="soc"), SimpleNamespace(name="missing")],
     )
     result = ContainerLogSource(operations, ["soc", "missing"]).fetch(
         "2026-11-04T00:00:00Z", "2026-11-04T00:01:00Z"
     )
     assert result.status is CollectorStatus.SOURCE_UNAVAILABLE
-    assert result.records == [
-        {"container": "soc", "output": "first line\n", "stderr": "second line\n"},
+    assert _streamed(result) == [
+        {
+            "container": "soc",
+            "output": "first line\n" + "x" * (9 * 1024 * 1024),
+            "stderr": "second line\n",
+        },
         {"container": "missing", "status": "source-unavailable"},
     ]
-    assert calls[0][1].pop("max_bytes") > 0
     assert calls[0][1] == {
         "since": "2026-11-04T00:00:00Z",
         "until": "2026-11-04T00:01:00Z",
-        "timeout": 30,
     }
     with pytest.raises(ValueError, match="not-admitted"):
         operations.container_logs_capture(
@@ -50,29 +63,31 @@ def test_selected_container_logs_preserve_both_streams_and_accepted_prefix():
         )
 
 
-def test_selected_log_files_retain_raw_records_and_disclose_truncation():
+def test_selected_log_files_retain_every_raw_line_in_the_window():
     from aptl.core.evidence.adapters.builtins import ContainerFileSource
 
     calls = []
 
-    def execute(name, command, **kwargs):
+    def execute(name, command, *, stdout, stderr):
         calls.append((name, command))
-        return CompletedProcess(command, 0, "one\ntwo\n", "")
+        stdout.write(b"one\ntwo\n" * 1000)
+        return _exit()
 
     operations = AdmittedRuntimeOperations(
-        SimpleNamespace(container_exec=execute), [SimpleNamespace(name="soc")]
+        SimpleNamespace(container_exec_stream=execute), [SimpleNamespace(name="soc")]
     )
     source = ContainerFileSource(
         operations,
         [("soc", "/var/log/events.json")],
-        max_bytes=7,
         timestamp_of=lambda line: "2026-11-04T00:00:01Z",
     )
     result = source.fetch("2026-11-04T00:00:00Z", "2026-11-04T00:01:00Z")
-    assert result.status is CollectorStatus.TRUNCATION
-    assert result.records[0]["output"] == "one\ntwo"
-    assert result.records[0]["path"] == "/var/log/events.json"
-    assert calls == [("soc", ["head", "-c", "8", "--", "/var/log/events.json"])]
+    record = _streamed(result)[0]
+    assert result.status is CollectorStatus.MID_RUN_LOSS
+    assert record["output"] == "one\ntwo\n" * 1000
+    assert record["path"] == "/var/log/events.json"
+    assert "status" not in record
+    assert calls == [("soc", ["cat", "--", "/var/log/events.json"])]
 
 
 def test_observed_empty_log_file_discloses_unverified_window_coverage():
@@ -80,7 +95,7 @@ def test_observed_empty_log_file_discloses_unverified_window_coverage():
     from aptl.core.evidence.adapters.sources import source_result_to_outcome
 
     source = ContainerFileSource(
-        SimpleNamespace(container_exec=lambda *a, **k: CompletedProcess([], 0, "", "")),
+        SimpleNamespace(container_exec_stream=lambda *a, **k: _exit()),
         [("soc", "/var/log/events.json")],
         timestamp_of=lambda line: "2026-11-04T00:00:01Z",
     )
@@ -151,7 +166,7 @@ def test_manifest_admitted_trial_source_returns_artifacts_and_honest_status(
         request.run_store.get_run_path("run-1"), result.refs[0].content_uri
     )
     assert json.loads(content) == [
-        {"message": "actual source log", "api_key": "[REDACTED]"}
+        {"message": "actual source log", "api_key": "private-canary"}
     ]
     assert (
         "mid-run" in (result.records[0].raw_content.loss_disclosure or "")
@@ -258,9 +273,10 @@ def test_both_participants_and_adapter_logs_share_the_advertised_trial_path(
             request.capture_selection, registry=registry, contribution=contribution
         ),
         backend=SimpleNamespace(
-            container_logs_capture=lambda *a, **k: CompletedProcess(
-                [], 0, "alert\n", ""
-            )
+            container_logs_stream=lambda *a, stdout, **k: (
+                stdout.write(b"alert\n"),
+                _exit(),
+            )[1]
         ),
         realization=SimpleNamespace(
             nodes=(SimpleNamespace(name="soc"),), generated_artifacts=()

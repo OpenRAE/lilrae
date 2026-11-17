@@ -61,7 +61,6 @@ _JSON_MEDIA_TYPE = "application/json"
 _LIFECYCLE_ARTIFACT_ID = "lifecycle-attempt-record"
 _LIFECYCLE_CAPTURE_SPEC = "aptl.lifecycle"
 _LIFECYCLE_SUBDIR = "lifecycle"
-_LIFECYCLE_MAX_BYTES = 64 * 1024
 #: Run-relative subdirectory of the create-once evidence-record ledger (matches
 #: the evidence coordinator's ``_LEDGER_SUBDIR``).
 _EVIDENCE_LEDGER_SUBDIR = "evidence/records"
@@ -234,11 +233,7 @@ def write_lifecycle_evidence(
     }
     blob = rfc8785.dumps(payload)
     insertion = create_content_addressed(
-        store,
-        attempt_id,
-        [blob],
-        subdir=_LIFECYCLE_SUBDIR,
-        max_bytes=_LIFECYCLE_MAX_BYTES,
+        store, attempt_id, [blob], subdir=_LIFECYCLE_SUBDIR
     )
     digest_hex = hashlib.sha256(blob).hexdigest()
     artifact = ExperimentArtifactRefModel(

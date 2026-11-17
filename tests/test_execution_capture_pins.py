@@ -94,7 +94,6 @@ def _record(admitted: AdmittedExperiment, digest_hex: str):
             relative_path=f"evidence/{digest_hex}",
             digest=f"sha256:{digest_hex}",
             size=3,
-            truncated=False,
         ),
         outcome=CollectorOutcome(
             status=CollectorStatus.OK,
