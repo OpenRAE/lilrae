@@ -89,6 +89,8 @@ Current explanations and successor ADRs determine which design remains applicabl
 - [Issue #1779 Merge of dev into go-cutover after #1763 Design](issue-1779-dev-sync-design.md)
 - [Issue #1758 Merge of dev into go-cutover Design](issue-1758-dev-sync-design.md)
 - [Issue #1747 Configuration Design](issue-1747-go-config-design.md)
+- [Issue #1748 Project State and Lifecycle Locks Design](issue-1748-go-project-state-design.md)
+- [Issue #1748 Project State and Lifecycle Lock Preflight](issue-1748-project-state-preflight.md)
 - [Issue #1559 Configuration, State, and Key Material Design](issue-1559-go-config-state-keys-design.md)
 - [Issue #1559 Configuration and Trust Boundaries (CLI-007)](issue-1559-config-trust-preflight.md)
 - [Issue #1559 Strict Configuration Validation (CLI-002)](issue-1559-strict-config-preflight.md)

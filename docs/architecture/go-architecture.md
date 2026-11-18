@@ -18,6 +18,7 @@ the diagram differs from the model. Do not edit the diagram by hand.
 flowchart TB
     subgraph layer_core[core]
         component_configuration[configuration]
+        component_project_state[project-state]
     end
     subgraph layer_foundation[foundation]
         component_canonical_forms[canonical-forms]
@@ -68,5 +69,8 @@ flowchart TB
     component_file_lock --> component_deadline_wait
     component_configuration --> component_canonical_forms
     component_configuration --> component_secure_file
+    component_project_state --> component_configuration
+    component_project_state --> component_secure_file
+    component_project_state --> component_file_lock
 ```
 <!-- End of the generated diagram. -->
