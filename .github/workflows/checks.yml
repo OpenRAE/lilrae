@@ -1545,6 +1545,12 @@ jobs:
       # tools modules run on Linux only.
       - name: Race-detected, shuffled tests of the product module
         run: bash tools/ci/go-gates.sh test "$RUNNER_TEMP/go-coverage" .
+      # SonarCloud reads the profile of each platform, so the files that only
+      # macOS or Windows builds have coverage.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: go-coverage-${{ matrix.os }}
+          path: ${{ runner.temp }}/go-coverage/
       # The Linux mutation job leaves out each file that Linux does not
       # build. This job mutates the product module where those files build.
       # Gremlins reads no coverage on Windows (OpenRAE/go-rae-gremlins#12),
@@ -1755,7 +1761,7 @@ jobs:
 
   sonarcloud:
     name: SonarCloud quality gate
-    needs: [changes, python-tests, mcp-tests, web-tests, go-tests]
+    needs: [changes, python-tests, mcp-tests, web-tests, go-tests, go-cross-platform]
     # Dependabot-triggered runs are handed the Dependabot secret store, not the
     # Actions one, so `secrets.SONAR_TOKEN` is empty and the scan can only ever
     # fail with "Not authorized or project not found". Mirroring the token into
@@ -1834,6 +1840,12 @@ jobs:
         if: needs.changes.outputs.go == 'true'
         with:
           name: go-coverage
+          path: go-coverage/
+      # Each platform profile goes into go-coverage/<artifact name>/.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.changes.outputs.go == 'true'
+        with:
+          pattern: go-coverage-*
           path: go-coverage/
       # A merge group runs as a branch analysis of its gh-readonly-queue ref.
       # That tree is the dev tree after the merge, so the gate judges it as it

@@ -629,8 +629,11 @@ def test_go_gates_block_and_are_required_on_go_cutover() -> None:
             "always() && (needs.changes.result != 'success' || needs.changes.outputs.go == 'true')"
         ), job
         assert jobs[job]["steps"][0]["name"] == "Validate check selection", job
-    # The project-wide analysis waits for current Go coverage.
+    # The project-wide analysis waits for current Go coverage of each platform.
     assert "go-tests" in jobs["sonarcloud"]["needs"]
+    assert "go-cross-platform" in jobs["sonarcloud"]["needs"]
+    downloads = [step.get("with", {}) for step in jobs["sonarcloud"]["steps"]]
+    assert {"pattern": "go-coverage-*", "path": "go-coverage/"} in downloads
     assert jobs["go-regression"]["permissions"] == {"contents": "read", "issues": "read"}
 
 
@@ -655,6 +658,9 @@ def test_go_product_tests_and_mutation_run_on_macos_and_windows() -> None:
     assert job["steps"][1]["with"]["fetch-depth"] == 0
     runs = [step.get("run", "") for step in job["steps"]]
     assert 'bash tools/ci/go-gates.sh test "$RUNNER_TEMP/go-coverage" .' in runs
+    # SonarCloud reads the profile of each platform.
+    uploads = [step.get("with", {}) for step in job["steps"]]
+    assert {"name": "go-coverage-${{ matrix.os }}", "path": "${{ runner.temp }}/go-coverage/"} in uploads
     # The lock tests of #1609 run a Python child on each platform.
     assert any(step.get("uses", "").startswith("actions/setup-python@") for step in job["steps"])
     mutation = [
