@@ -137,7 +137,7 @@ build = [
     "hatchling>=1.27.0",
     # Ubuntu cloud images provide Python without pip or ensurepip. The signed
     # offline payload uses this locked wheel as its bootstrap installer.
-    "pip>=26.2.1",
+    "pip>=26.3",
     # hatchling imports `editables` to build an editable wheel. Under build
     # isolation it would fetch this itself; with isolation off it has to be
     # present (and hashed) up front, or every `pip install -e .` fails at
