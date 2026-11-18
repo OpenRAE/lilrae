@@ -13,6 +13,17 @@ MAX_TOOL_ACTIONS = 16
 MAX_CONCURRENT_TOOLS = 4
 MAX_TOOL_FRAME = 1024 * 1024
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+_SHA256 = re.compile(r"sha256:[a-f0-9]{64}\Z")
+
+
+def _is_sha256_digest(value: object) -> bool:
+    """Return True only for a canonical ``sha256:<64 hex>`` string."""
+    return isinstance(value, str) and _SHA256.fullmatch(value) is not None
+
+
+def _valid_configuration_digest(value: str | Callable[[], str]) -> bool:
+    """Accept a deferred producer or an already-resolved sha256 digest."""
+    return callable(value) or _is_sha256_digest(value)
 
 
 @dataclass(frozen=True)
@@ -29,7 +40,7 @@ class LilraeToolBinding:
     tool_affordance_address: str
     observation_boundary_address: str
     action_contract_digest: str
-    configuration_digest: str
+    configuration_digest: str | Callable[[], str]
     execution_binding: ParticipantExecutionBinding
     accepts_arguments: Callable[[dict[str, object]], bool] = field(
         repr=False, compare=False
@@ -45,8 +56,8 @@ class LilraeToolBinding:
             or not self.observation_boundary_address.startswith(
                 "participant.observation-boundary."
             )
-            or re.fullmatch(r"sha256:[a-f0-9]{64}", self.action_contract_digest) is None
-            or re.fullmatch(r"sha256:[a-f0-9]{64}", self.configuration_digest) is None
+            or not _is_sha256_digest(self.action_contract_digest)
+            or not _valid_configuration_digest(self.configuration_digest)
             or self.execution_binding.max_retries != 0
             or not callable(self.accepts_arguments)
         ):

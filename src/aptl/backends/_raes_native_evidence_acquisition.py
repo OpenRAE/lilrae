@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,6 +18,7 @@ from aptl.core.evidence.adapters.sources import (
 )
 from aptl.core.evidence.content_store import create_run_json_once
 from aptl.core.evidence.outcomes import AcquisitionPhase, CollectorStatus
+from aptl.core.evidence.deadline import progress_timeout
 from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome, RunScope
 from aptl.backends.scenario_capture import capture_run_scope
 from aptl.core.experiment.capture_registry import CaptureBinding, CollectorRegistration
@@ -57,13 +58,6 @@ def _parse_timestamp(value: str) -> datetime:
     """Parse the canonical UTC timestamp form emitted by capture clocks."""
 
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def _deadline(started_at: str, seconds: float) -> str:
-    """Return the admitted deadline measured from a collector start."""
-
-    value = _parse_timestamp(started_at) + timedelta(seconds=seconds)
-    return value.isoformat().replace("+00:00", "Z")
 
 
 def _source_times_inside_actual_window(
@@ -110,10 +104,8 @@ class _OnDemandNativeCollector:
         return _OnDemandHandle(context=context, started_at=context.clock.now())
 
     def stop(self, handle: _OnDemandHandle) -> CollectorOutcome:
-        result = self._source.fetch(
-            handle.started_at,
-            _deadline(handle.started_at, handle.context.deadline_seconds),
-        )
+        with progress_timeout(handle.context.progress_timeout_seconds):
+            result = self._source.fetch(handle.started_at, handle.context.clock.now())
         finished_at = handle.context.clock.now()
         if not _source_times_inside_actual_window(
             result, handle.started_at, finished_at

@@ -51,7 +51,7 @@ class OpenCodeOptions:
     executable: Path
     work_root: Path
     environment: Mapping[str, str] = field(default_factory=dict, repr=False)
-    max_output_bytes: int = 1_000_000
+    max_output_bytes: int | None = None
     max_output_tokens: int = 128
     runner: CancellableProcessRunner | None = None
     tools: OpenCodeToolProfile | None = None

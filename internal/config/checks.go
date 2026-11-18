@@ -237,6 +237,20 @@ func checkTrialEpisode(seconds int64) error {
 	return nil
 }
 
+func checkFreeSpaceReserve(percent float64) error {
+	if percent < 0 || percent >= 100 {
+		return errors.New("must be at least 0 and less than 100")
+	}
+	return nil
+}
+
+func checkCaptureProgressTimeout(seconds int64) error {
+	if seconds < 1 {
+		return errors.New("must be at least 1")
+	}
+	return nil
+}
+
 func checkParticipantModel(provider, model string) error {
 	if checkLength(model, 0, 128) != nil ||
 		!participantModelPattern.MatchString(model) ||

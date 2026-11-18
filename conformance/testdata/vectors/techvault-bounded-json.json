@@ -2,7 +2,7 @@
   "corpus": 1,
   "scheme": "techvault-bounded-json",
   "version": "current",
-  "owner": "aptl_techvault.evidence.techvault._bounded_json and techvault_readiness_probes.bounded_json",
+  "owner": "aptl_techvault.evidence.techvault_readiness_probes.bounded_json",
   "cases": [
     {
       "id": "sorted-nested",
@@ -21,7 +21,6 @@
       },
       "expect": {
         "value": {
-          "native_hex": "7b2261223a225c7530306539222c2262223a5b312c7b2278223a312c2279223a327d5d7d",
           "readiness_hex": "7b2261223a225c7530306539222c2262223a5b312c7b2278223a312c2279223a327d5d7d"
         }
       }
@@ -36,7 +35,6 @@
       },
       "expect": {
         "value": {
-          "native_hex": "7b2261223a2278787878787878787878787878787878787878787878787878787878787878787878787878787878227d",
           "readiness_hex": null
         }
       },
@@ -54,7 +52,6 @@
       },
       "expect": {
         "value": {
-          "native_hex": "7b2261223a312e307d",
           "readiness_hex": "7b2261223a312e307d"
         }
       }
@@ -71,7 +68,6 @@
       },
       "expect": {
         "value": {
-          "native_hex": "7b2261223a4e614e7d",
           "readiness_hex": "7b2261223a4e614e7d"
         }
       },

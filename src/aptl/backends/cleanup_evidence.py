@@ -21,29 +21,22 @@ from aptl.core.evidence.records import (
 )
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 from aptl.core.lifecycle_guard import lifecycle_recovery_command
 from aptl.core.runstore import LocalRunStore
 from aptl.utils.pathsafe import open_contained_nofollow
 
-_MAX_BYTES = 128 * 1024
-
-
 def _read(store: LocalRunStore, run_id: str, path: str) -> bytes:
-    """Read bounded evidence bytes without following links outside the run."""
+    """Read evidence bytes without following links outside the run."""
     with open_contained_nofollow(store.get_run_path(run_id), path) as handle:
-        data = handle.read(_MAX_BYTES + 1)
-    if len(data) > _MAX_BYTES:
-        raise ValueError("cleanup evidence exceeds its byte bound")
-    return data
+        return handle.read()
 
 
 def load_cleanup_receipt(
     store: LocalRunStore, run_id: str, receipt_id: str
 ) -> TrialCleanupReceiptModel:
-    """Read the exact retained receipt through the bounded no-follow boundary."""
+    """Read the exact retained receipt through the no-follow boundary."""
     return TrialCleanupReceiptModel.model_validate_json(
         _read(store, run_id, f"cleanup/receipts/{receipt_id}.json")
     )
@@ -70,15 +63,8 @@ def retain_cleanup_readback(
             "lilrae lab stop -v --yes", scope.project_dir
         ),
     }
-    data = rfc8785.dumps(payload)
-    if len(data) > _MAX_BYTES:
-        raise BufferError("cleanup evidence exceeds its byte bound")
     content = create_content_addressed(
-        store,
-        scope.run_id,
-        (data,),
-        subdir="cleanup/content",
-        max_bytes=_MAX_BYTES,
+        store, scope.run_id, (rfc8785.dumps(payload),), subdir="cleanup/content"
     )
     binding = CaptureBinding(
         capture_spec_id="lilrae.native-cleanup",
@@ -101,7 +87,6 @@ def retain_cleanup_readback(
         retention_policy=None,
         loss_disclosure_required=True,
         visibility_class=CaptureVisibility.APPARATUS_ONLY,
-        limits=CaptureLimits(_MAX_BYTES, 1, 1),
     )
     record = build_evidence_record(
         binding=binding,
@@ -136,8 +121,5 @@ def verify_cleanup_record(
     if content.content_uri is None or content.content_checksum is None:
         raise ValueError("cleanup evidence content is missing")
     data = _read(store, run_id, content.content_uri)
-    if (
-        len(data) > _MAX_BYTES
-        or hashlib.sha256(data).hexdigest() != content.content_checksum.value
-    ):
+    if hashlib.sha256(data).hexdigest() != content.content_checksum.value:
         raise ValueError("cleanup evidence bytes changed")

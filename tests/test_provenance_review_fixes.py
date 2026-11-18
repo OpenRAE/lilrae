@@ -43,7 +43,7 @@ from aptl.core.runstore import LocalRunStore
 _RUN_ID = "run_20260101T000000Z"
 
 
-def _context(provider_id, *, max_bytes=1_000_000, max_entries=64, timeout_s=30):
+def _context(provider_id, *, timeout_s=30):
     registration = ProvenanceProviderRegistration(
         provider_id=provider_id,
         implementation_version="1.0.0",
@@ -51,9 +51,7 @@ def _context(provider_id, *, max_bytes=1_000_000, max_entries=64, timeout_s=30):
         owner_adapter="tests",
         seal_point=SealPoint.RUN_READY_TO_SEAL,
         requiredness_policy_key=f"{provider_id}-required",
-        limits=ProvenanceLimits(
-            max_bytes=max_bytes, max_entries=max_entries, timeout_s=timeout_s
-        ),
+        limits=ProvenanceLimits(timeout_s=timeout_s),
     )
     return ProvenanceContext(registration=registration, clock=lambda: 0.0, started_at=0.0)
 

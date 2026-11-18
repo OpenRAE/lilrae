@@ -11,7 +11,6 @@ from raes_contracts.diagnostics import Diagnostic
 
 from aptl.core.deployment.errors import BackendTimeoutError, CaptureReconciliationError
 from aptl.core.evidence.outcomes import capture_diagnostic
-from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.utils.pathsafe import (
     REASON_NOT_FOUND,
     PathContainmentError,
@@ -52,8 +51,6 @@ class _ExportProgress:
 def expected_transcript_session_ids(
     store_base: Path,
     run_id: str,
-    *,
-    max_sessions: int,
 ) -> tuple[str, ...]:
     """Read the MCP-owned expected-session census without following links."""
 
@@ -64,8 +61,6 @@ def expected_transcript_session_ids(
         if exc.reason == REASON_NOT_FOUND:
             return ()
         raise
-    if len(names) > max_sessions:
-        raise ValueError("transcript session census exceeds admitted limits")
     session_ids: list[str] = []
     for name in names:
         if not name.endswith(".jsonl"):
@@ -92,7 +87,6 @@ def export_transcript_payload(
     backend: object,
     store_base: Path,
     run_id: str,
-    binding: CaptureBinding,
 ) -> tuple[object | None, TranscriptExportFailure | None]:
     """Quiesce the broker and export against the stable session census.
 
@@ -107,7 +101,7 @@ def export_transcript_payload(
     progress = _ExportProgress()
     try:
         payload = _quiesce_and_export(
-            quiesce, export, store_base, run_id, binding, progress
+            quiesce, export, store_base, run_id, progress
         )
     except CaptureReconciliationError as exc:
         return None, TranscriptExportFailure(
@@ -126,7 +120,6 @@ def _quiesce_and_export(
     export: Callable[..., object],
     store_base: Path,
     run_id: str,
-    binding: CaptureBinding,
     progress: _ExportProgress,
 ) -> object | None:
     """Run the export steps in order, recording each step as it starts."""
@@ -136,10 +129,6 @@ def _quiesce_and_export(
     # Admission is now closed under the broker's registration lock.
     # Read the independent MCP census only after that boundary is stable.
     progress.step = "census"
-    expected_session_ids = expected_transcript_session_ids(
-        store_base,
-        run_id,
-        max_sessions=binding.limits.max_artifact_count // 2,
-    )
+    expected_session_ids = expected_transcript_session_ids(store_base, run_id)
     progress.step = "export"
     return export(expected_session_ids=expected_session_ids)

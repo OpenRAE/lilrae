@@ -7,10 +7,12 @@ level — never the empty-on-error collapse), and the trusted wiring seam.
 
 from __future__ import annotations
 
+import json
 import types
 
 
 from aptl.core.correlation.clock import FixedClockProvider
+from aptl.core.deployment._compose_log_capture import StreamExit
 from aptl.core.evidence.adapters.builtins import (
     ContainerLogSource,
     RunArchiveSource,
@@ -21,7 +23,6 @@ from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.protocol import CollectorContext
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 from aptl.core.runstore import LocalRunStore
@@ -51,7 +52,6 @@ def _binding(registration_id="aptl.collector.mcp-red") -> CaptureBinding:
         retention_policy="retain",
         loss_disclosure_required=True,
         visibility_class=CaptureVisibility.PARTICIPANT_VISIBLE,
-        limits=CaptureLimits(max_bytes=4096, max_artifact_count=10, max_duration_s=60),
     )
 
 
@@ -61,7 +61,7 @@ def _context(registration_id="aptl.collector.mcp-red") -> CollectorContext:
         run_id="run-1",
         attempt_id="attempt-1",
         binding=_binding(registration_id),
-        deadline_seconds=60.0,
+        progress_timeout_seconds=60.0,
         clock=_CLOCK,
     )
 
@@ -125,35 +125,59 @@ class TestRunArchiveSource:
         assert result.dropped_count == 1
 
 
+def _log_backend(
+    returncode: int, stdout: bytes = b"", stderr: bytes = b"", **flags: bool
+) -> types.SimpleNamespace:
+    """Return a backend whose log stream writes fixed output into the spools."""
+
+    def stream(name, *, since, until, stdout: object, stderr: object) -> StreamExit:
+        stdout.write(out)
+        stderr.write(err)
+        return StreamExit(
+            returncode, flags.get("timed_out", False), flags.get("failed_pipe", False)
+        )
+
+    out, err = stdout, stderr
+    return types.SimpleNamespace(container_logs_stream=stream)
+
+
+def _records(result: SourceResult) -> list[dict[str, object]]:
+    return json.loads(b"".join(result.chunks))
+
+
 class TestContainerLogSource:
     def test_nonzero_returncode_is_source_unavailable(self):
-        backend = types.SimpleNamespace(
-            container_logs_capture=lambda *a, **k: types.SimpleNamespace(
-                returncode=1, stdout=""
-            )
-        )
-        source = ContainerLogSource(backend, ["c1"])
+        source = ContainerLogSource(_log_backend(1), ["c1"])
         assert source.fetch("s", "e").status is CollectorStatus.SOURCE_UNAVAILABLE
 
     def test_empty_output_is_empty_ok(self):
-        backend = types.SimpleNamespace(
-            container_logs_capture=lambda *a, **k: types.SimpleNamespace(
-                returncode=0, stdout="", stderr=""
-            )
-        )
-        source = ContainerLogSource(backend, ["c1"])
+        source = ContainerLogSource(_log_backend(0), ["c1"])
         assert source.fetch("s", "e").status is CollectorStatus.EMPTY_OK
 
     def test_output_becomes_records(self):
-        backend = types.SimpleNamespace(
-            container_logs_capture=lambda *a, **k: types.SimpleNamespace(
-                returncode=0, stdout="line1\nline2", stderr=""
-            )
-        )
-        source = ContainerLogSource(backend, ["c1"])
+        source = ContainerLogSource(_log_backend(0, b"line1\nline2"), ["c1"])
         result = source.fetch("s", "e")
         assert result.status is CollectorStatus.OK
-        assert result.records[0]["container"] == "c1"
+        assert _records(result) == [{"container": "c1", "output": "line1\nline2"}]
+
+    def test_large_output_is_retained_completely(self):
+        output = b"event\n" * 400_000
+        source = ContainerLogSource(_log_backend(0, output, b"warn"), ["c1"])
+        result = source.fetch("s", "e")
+        assert result.status is CollectorStatus.OK
+        record = _records(result)[0]
+        assert record["output"] == output.decode()
+        assert record["stderr"] == "warn"
+
+    def test_stalled_read_keeps_accepted_output_as_timeout(self):
+        source = ContainerLogSource(
+            _log_backend(None, b"accepted\n", timed_out=True), ["c1"]
+        )
+        result = source.fetch("s", "e")
+        assert result.status is CollectorStatus.TIMEOUT
+        assert _records(result) == [
+            {"container": "c1", "status": "timeout", "output": "accepted\n"}
+        ]
 
 
 class TestSocWindowedSource:
