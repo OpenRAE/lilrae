@@ -2838,6 +2838,13 @@ Edit maintained text at its existing owner. Do not hand-edit generated releases.
 | `web/vite.config.ts` | Repository source | Source interfaces |
 | `web/vitest.config.ts` | Repository source | Source interfaces |
 
+## Issue #1748 source check
+
+[Project state and lifecycle locks](issue-1748-project-state-preflight.md) is an Explanation.
+Its reader routes are the architecture index and MkDocs preflight navigation.
+The note records the inspected revision and canonical source paths.
+Verify later edits against those owners and the current Go architecture model.
+
 ## Non-Markdown source records
 
 | Path or scope | Reader purpose and treatment |

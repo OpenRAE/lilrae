@@ -266,7 +266,8 @@ modules: the tracked `go.mod` files, except `web/caddy-build` and test data.
   covers `web/caddy-build` and the design notes, which are not in the `go` lane.
 - SonarCloud needs current coverage from each stack. The `go` lane and the
   Python, MCP, and web lanes select each other, and the SonarCloud job reads the
-  Go profiles with repository paths.
+  Go profiles with repository paths. It also reads the macOS and Windows
+  profiles, so the files that only those platforms build have coverage.
 - The Trivy filesystem scan reads each `go.mod`. It also proves with the same
   fixture module that it fails on a vulnerable Go module.
 - The Go jobs set `GOWORK=off` and `GOTOOLCHAIN=local`.
