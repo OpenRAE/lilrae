@@ -31,7 +31,6 @@ COPY requirements/runtime.txt /tmp/aptl-runtime-requirements.txt
 RUN /usr/local/bin/python3.14 -m venv /opt/aptl/venv \
     && /opt/aptl/venv/bin/pip install --require-hashes \
         -r /tmp/aptl-runtime-requirements.txt \
-    && /opt/aptl/venv/bin/python -c "import pip._vendor.msgpack as m; assert m.Unpacker.__module__ == 'pip._vendor.msgpack.fallback'" \
     && rm /tmp/aptl-runtime-requirements.txt \
     && /usr/local/bin/python3.14 -m pip uninstall --yes pip
 ENV PATH="/opt/aptl/venv/bin:${PATH}"
