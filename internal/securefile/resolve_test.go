@@ -47,6 +47,6 @@ func TestResolveKeepsAMissingTail(t *testing.T) {
 	mkdir(t, root, "a")
 	wantResolve(t, filepath.Join(root, "a", "missing", "deeper"), filepath.Join(root, "a", "missing", "deeper"))
 	sep := string(filepath.Separator)
-	// filepath.Join would remove the ".." part before Resolve reads it.
+	// [filepath.Join] would remove the ".." part before Resolve reads it.
 	wantResolve(t, root+sep+"missing"+sep+".."+sep+"a", filepath.Join(root, "a"))
 }

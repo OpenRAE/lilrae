@@ -204,7 +204,7 @@ func TestMutateReturnsTheErrorOfTheCallback(t *testing.T) {
 // runs inside in its callback with the derived context. It returns after
 // inside returns, while the lock is held, with a function that releases the
 // lock and returns the error of Mutate. inside runs on another goroutine, so
-// it reports with t.Error.
+// it reports with [testing.T.Error].
 func holdWhile(t *testing.T, root string, inside func(ctx context.Context)) (release func() error) {
 	t.Helper()
 	held, done := make(chan struct{}), make(chan struct{})

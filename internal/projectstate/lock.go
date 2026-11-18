@@ -17,7 +17,7 @@ import (
 // byte finds a longer value.
 const (
 	fenceLength    = 64
-	fenceReadLimit = fenceLength + 1
+	fenceReadLimit = 65
 )
 
 // errInvalidFence is the cause of a refusal for a malformed trial fence.
@@ -115,7 +115,7 @@ func mutate(ctx context.Context, root, trialOwner string, fn func(ctx context.Co
 // fn runs, and returns the error of fn. Observers overlap, and they exclude
 // a mutation. Observe does not join a held lock. Windows has no shared lock,
 // so there Observe returns an error that matches both ErrBusy, as in the
-// Python release, and errors.ErrUnsupported.
+// Python release, and [errors.ErrUnsupported].
 func Observe(dir string, fn func(root string) error) (err error) {
 	root, err := ProjectRoot(dir)
 	if err != nil {
@@ -137,13 +137,7 @@ func acquire(root string, mode filelock.Mode, check func(*securefile.Dir) error)
 		return nil, unavailable(err)
 	}
 	defer func() {
-		if closeErr := dir.Close(); closeErr != nil {
-			if err == nil {
-				err = unavailable(closeErr)
-			} else {
-				err = errors.Join(err, closeErr)
-			}
-		}
+		err = errors.Join(err, closeRoot(dir))
 		if err != nil && file != nil {
 			err = errors.Join(err, release(file))
 			file = nil
@@ -176,6 +170,14 @@ func lockFile(dir *securefile.Dir, mode filelock.Mode) (*os.File, error) {
 	return file, nil
 }
 
+// closeRoot closes the opened root, and reports a failure as unavailable.
+func closeRoot(dir *securefile.Dir) error {
+	if err := dir.Close(); err != nil {
+		return unavailable(err)
+	}
+	return nil
+}
+
 // unavailable reports that the lock cannot be taken safely because of cause.
 func unavailable(cause error) error {
 	return &refusal{text: textUnavailable, kind: ErrUnavailable, cause: cause}
@@ -191,14 +193,16 @@ func release(file *os.File) error {
 // names no owner.
 func checkTrialOwner(dir *securefile.Dir, owner string) error {
 	retained, err := readTrialFence(dir)
-	switch {
-	case securefile.IsReason(err, securefile.ReasonNotFound):
+	if securefile.IsReason(err, securefile.ReasonNotFound) {
 		return nil
-	case err != nil:
+	}
+	if err != nil {
 		return &refusal{text: textTrialUnavailable, kind: ErrUnavailable, cause: err}
-	case !validTrialOwner(retained):
+	}
+	if !validTrialOwner(retained) {
 		return &refusal{text: textTrialUnavailable, kind: ErrUnavailable, cause: errInvalidFence}
-	case string(retained) != owner:
+	}
+	if string(retained) != owner {
 		return &refusal{text: textTrialBusy, kind: ErrBusy}
 	}
 	return nil

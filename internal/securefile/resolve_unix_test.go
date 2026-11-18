@@ -9,7 +9,7 @@ import (
 )
 
 // raw joins parts with the separator and keeps each ".." part, which
-// filepath.Join would remove before Resolve reads it.
+// [filepath.Join] would remove before Resolve reads it.
 func raw(parts ...string) string {
 	return strings.Join(parts, string(filepath.Separator))
 }
@@ -29,7 +29,7 @@ func TestResolveGoesToTheParentOfTheResolvedPart(t *testing.T) {
 	mkdir(t, root, "real/sub")
 	mkdir(t, root, "other")
 	symlink(t, root, filepath.Join(root, "real", "sub"), "other/link")
-	// Python goes to the parent of the target, not to "other".
+	// Python goes to the parent of the target, not to the other directory.
 	wantResolve(t, raw(root, "other", "link", ".."), filepath.Join(root, "real"))
 }
 

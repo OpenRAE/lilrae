@@ -25,17 +25,17 @@ const (
 	// StateDir holds the project state.
 	StateDir = ".aptl"
 	// LifecycleDir holds the lifecycle state.
-	LifecycleDir = StateDir + "/lifecycle"
+	LifecycleDir = ".aptl/lifecycle"
 	// LockFile is the rendezvous file of the lifecycle locks. The package
 	// never replaces, truncates, or removes it.
-	LockFile = LifecycleDir + "/.lock"
+	LockFile = ".aptl/lifecycle/.lock"
 	// TrialFence holds the owner of an unresolved trial. The runtime owner
 	// writes it, and a new mutation lock reads it.
-	TrialFence = LifecycleDir + "/trial-owner"
+	TrialFence = ".aptl/lifecycle/trial-owner"
 )
 
 // The categories of a refused lock. An error of the package matches one of
-// them with errors.Is, and it keeps its cause for errors.Is and errors.As.
+// them with [errors.Is], and it keeps its cause for [errors.Is] and [errors.As].
 var (
 	// ErrBusy reports that another owner holds the lifecycle lock, or that
 	// an unresolved trial owns the placement.
@@ -90,7 +90,7 @@ func ProjectRoot(dir string) (string, error) {
 }
 
 // OpenProjectRoot opens the resolved project root root, which comes from
-// ProjectRoot or securefile.Resolve. It opens root as an entry of its parent,
+// ProjectRoot or [securefile.Resolve]. It opens root as an entry of its parent,
 // so it refuses a root that is a link or another reparse point, as the
 // Windows lock of the Python release does. A volume root opens directly. The
 // caller closes the Dir.
@@ -103,13 +103,12 @@ func OpenProjectRoot(root string) (dir *securefile.Dir, err error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if closeErr := above.Close(); closeErr != nil {
-			if dir != nil {
-				closeErr = errors.Join(closeErr, dir.Close())
-			}
-			dir, err = nil, errors.Join(err, closeErr)
-		}
-	}()
-	return above.Subdir(name)
+	dir, err = above.Subdir(name)
+	err = errors.Join(err, above.Close())
+	// Subdir returns no Dir with its error, so only a failed close of the
+	// parent leaves a Dir to close.
+	if err != nil && dir != nil {
+		return nil, errors.Join(err, dir.Close())
+	}
+	return dir, err
 }
