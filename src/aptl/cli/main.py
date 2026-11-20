@@ -1,5 +1,6 @@
 """Main entry point for the LilRAE CLI (``lilrae``, formerly ``aptl``)."""
 
+import logging
 from typing import Optional
 
 import typer
@@ -19,6 +20,7 @@ from aptl.cli import (
     web,
 )
 from aptl.cli._command_alias import warn_deprecated_command
+from aptl.utils.logging import setup_logging
 
 app = typer.Typer(
     name="lilrae",
@@ -39,6 +41,17 @@ app.add_typer(containment.app, name="containment")
 app.command("doctor")(doctor.doctor)
 
 
+# The log level a CLI run installs, raised one step per --verbose. Warnings and
+# errors print by default; what an operator needs at the default level is
+# echoed, like the `[lab start]` progress lines (#1323).
+_CLI_LOG_LEVELS = (logging.WARNING, logging.INFO, logging.DEBUG)
+
+
+def _cli_log_level(verbose: int) -> int:
+    """Return the ``aptl`` log level for a ``--verbose`` count."""
+    return _CLI_LOG_LEVELS[min(verbose, len(_CLI_LOG_LEVELS) - 1)]
+
+
 def _version_callback(value: bool) -> None:
     """Print the installed version and exit when ``--version`` is passed."""
     if value:
@@ -56,8 +69,21 @@ def main(
         callback=_version_callback,
         is_eager=True,
     ),
+    verbose: int = typer.Option(
+        0,
+        "--verbose",
+        count=True,
+        # A repeatable flag, not a value: hide the counter's int type and default.
+        metavar="",
+        show_default=False,
+        help=(
+            "Log more on standard error: once for INFO, twice for DEBUG. "
+            "Without it, only warnings and errors are logged."
+        ),
+    ),
 ) -> None:
     """LilRAE CLI."""
+    setup_logging(_cli_log_level(verbose))
 
 
 def legacy_main() -> None:
