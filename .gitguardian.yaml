@@ -15,9 +15,8 @@ secret:
     - name: correlation-models-secret-shape-test-fixture
       match: "token=abc123def456"
     # The intentional weak password the vulnerable techvault DB bootstraps with.
-    # In this repository .env.example, tests/test_smoke.py and
-    # scenarios/archive/prime-scenario.md carry it. A scenario honeypot
-    # credential, never a real secret.
+    # In this repository .env.example and scenarios/archive/prime-scenario.md
+    # carry it. A scenario honeypot credential, never a real secret.
     - name: techvault-honeypot-db-password
       match: "techvault_db_pass"
     # Deterministic SOC-stack lab fixture credentials for the disposable,
