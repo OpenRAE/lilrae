@@ -1,93 +1,59 @@
 # Paper Scenario Realization
 
-APTL includes `paper-agent-loop`, a catalog scenario based on the RAES paper
-reference scenario from Brad-Edwards/aces#598. It is the first dynamic
-realization path for ADR-046: the RAES plan is interpreted into typed node,
-network, participant, and evaluator intent, then handed to `DeploymentBackend`
-for backend side effects. The paper participant action is realized from a
-compiled runtime binding: the `paper-agent-behavior` behavior specification
-carries an `aptl-participant-runtime-binding/v1` payload on its
-`x-aptl:participant-runtime-binding` governed extension, which APTL parses into
-the container command, success markers, target evidence references, and
-participant snapshot surfaces. The binding is backend-private topology data, so
-it rides the behavior-spec extension seam rather than being planted as scenario
-content on the participant container (issue #691).
+`scenarios/paper-agent-loop.sdl.yaml` is a checkout-only research fixture based on the RAES paper scenario from issue #598.
+The ordinary acquired-pack catalog excludes it.
+The backend interprets its RAES plan into typed node, network, participant, and evaluator intent.
+`DeploymentBackend` owns the native effects.
 
-Run it through the public path:
+The `paper-agent-behavior` specification carries `aptl-participant-runtime-binding/v1` on the governed `x-aptl:participant-runtime-binding` extension.
+LilRAE parses that binding into the participant command, success markers, target evidence references, and snapshot surfaces.
+The binding remains backend-private topology data.
+It is not participant-visible placed content.
 
-```bash
-aptl lab start --scenario-path scenarios/paper-agent-loop.sdl.yaml
-```
+| Authored node | Backend service | Networks |
+| --- | --- | --- |
+| `red-workbench` | `aptl-kali` | `redteam-net`, `dmz-net` |
+| `customer-portal` | `aptl-webapp` | `dmz-net`, `internal-net` |
+| `customer-db` | `aptl-db` | `internal-net` |
+| `wazuh-manager` | Wazuh manager | `security-net`, `internal-net` |
+| `wazuh-indexer` | Wazuh indexer | `security-net` |
 
-The required container profiles are derived from the compiled RAES resources.
-For the current Docker Compose backend, APTL starts the required service set and
-then reconciles the realized containers onto the paper topology:
+The workbench has no `internal-net` or `security-net` attachment.
+The compiled `participant.action-contract.probe-customer-portal-login` action resolves its service references through the runtime plan and backend mapping.
+It examines the portal login endpoint from the workbench.
+Negative database and Wazuh reachability markers remain evaluator evidence.
+They do not enter participant `observable_refs` or `disclosed_refs`.
 
-- `red-workbench` binds to `aptl-kali` on `redteam-net` and `dmz-net`.
-- `customer-portal` binds to `aptl-webapp` on `dmz-net` and `internal-net`.
-- `customer-db` binds to `aptl-db` on `internal-net`.
-- `wazuh-manager` and `wazuh-indexer` bind to the Wazuh manager/indexer services
-  on `security-net`, with the manager also on `internal-net`.
-
-The participant workbench is not attached to `internal-net` or `security-net`.
-The participant action binding for `participant.behavior.paper-agent` is parsed
-from the compiled `paper-agent-behavior` behavior specification's
-`x-aptl:participant-runtime-binding` extension. It executes the compiled
-`participant.action-contract.probe-customer-portal-login` contract by resolving
-service refs from the runtime plan and Compose backend mapping, then checks the
-portal login endpoint from Kali and records negative boundary markers for
-direct database and Wazuh API reachability. Those markers are evaluator-only
-negative-boundary evidence: they are kept out of the observation boundary's
-participant-visible projection (the internal DB and Wazuh endpoint identities
-never appear in `observable_refs` / `disclosed_refs`). Wazuh evidence likewise
-remains evaluator-only rather than participant-visible task context or a
-detection-quality claim.
-
-This is a checkout-only research fixture, excluded from the ordinary acquired-pack catalog.
+Use [trace a participant action](../sdl/paper-walkthrough.md) for a learning exercise.
+Use the [fixture procedure](../sdl/techvault-curated-variants.md) for the development selection boundary.
+The explicit startup command is `lilrae lab start --scenario-path scenarios/paper-agent-loop.sdl.yaml`.
+Run it only in an approved isolated lab VM or CI.
 
 ## Evidence surfaces
 
-The paper scenario's non-content evidence surfaces follow ADR-046's Paper
-Scenario Evidence Modeling Addendum:
+| Surface | Contract |
+| --- | --- |
+| Participant terminal observation | `paper-agent-view` owns this observation. It travels through `participant-observation-envelope-v1`. It is neither placed content nor an evidence requirement. |
+| Wazuh corroboration | `wazuh-evidence` declares capture intent, separate from participant-visible context. |
+| Negative reachability checks | `boundary-check-evidence` declares evaluator-only capture intent. |
+| Task brief | This content resides at `/home/kali/operations/scenario/task.md` on the existing `kali_operations` volume. |
 
-- The **participant terminal observation** is owned by the `paper-agent-view`
-  observation boundary and carried at runtime by the
-  `participant-observation-envelope-v1` carrier; it is neither placed content
-  nor an authored evidence requirement.
-- **Wazuh corroboration** and **negative boundary checks** are authored RAES
-  `evidence_requirements` (`wazuh-evidence`, `boundary-check-evidence`). These
-  declare portable capture intent (source/scope/trigger/boundary, channel,
-  sensitivity, redaction, integrity, retention, and loss-disclosure) and are
-  not proof that capture occurred.
-- The only remaining `content:` entry is the participant-visible task brief,
-  which lowers to a typed content realization on the existing `kali_operations`
-  named volume (`/home/kali/operations/scenario/task.md`).
+Evidence requirements keep source, scope, trigger, boundary, channel, sensitivity, redaction, integrity, retention, and loss declarations.
+A declaration does not prove collection.
+Wazuh evidence does not establish detection quality by itself.
 
-The upstream paper SDL still carries OCR-style `metrics`, `evaluations`, `tlos`,
-and `goals` as source content. APTL does not declare or realize that SDL scoring
-chain after RAES ADR-073; planning records unsupported evaluator-section
-diagnostics for those resources while retaining the condition/objective
-evaluation surface that belongs to the runtime target.
+The upstream paper model keeps historical `metrics`, `evaluations`, `tlos`, and `goals` content.
+The backend does not realize that retired scoring chain after RAES ADR-073.
+It keeps condition/objective evaluation and reports unsupported evaluator sections.
 
-The participant behavior, action-contract, observation-boundary, action-instance,
-and shared-state snapshot entries are emitted from the runtime-selected
-participant/action/boundary addresses. They must not reuse the legacy TechVault
-SSH participant identifiers when the paper scenario supplies its own compiled
-runtime binding.
+Snapshot entries use the selected participant, action, and observation-boundary addresses.
+They must not substitute legacy TechVault SSH identities.
 
 ## Upstream Provenance
 
-The scenario is an APTL realization variant of the RAES #598 paper scenario,
-pinned to the upstream `paper-agent-loop.sdl.yaml` content that introduced the
-participant behavior/action/observation surfaces. APTL adds condition bindings
-needed for local evaluator resources and omits the optional policy-gate
-provenance surface because this repository does not yet ship a real
-`participant-policy-gate` backend service. The realized concerns in this issue
-are the red workbench, DMZ portal, internal database, Wazuh evaluator evidence
-surface, participant action, and negative network boundary checks.
+The fixture keeps the participant behavior, action, and observation surfaces from the upstream #598 scenario.
+LilRAE adds local condition bindings.
+It omits the optional policy-gate provenance surface because this repository has no real `participant-policy-gate` backend service.
 
-Related work:
-
-- Brad-Edwards/aces#598: authored paper scenario.
-- Brad-Edwards/aces#600: second backend proof for the paper scenario.
-- Brad-Edwards/aptl#554: participant runtime implementation provenance.
+The original related work is RAES #598, second-backend proof #600, and LilRAE participant-provenance issue #554.
+[ADR-046](../adrs/adr-046-dynamic-raes-scenario-realization.md) records the evidence-modeling decision.

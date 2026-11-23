@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -14,7 +15,6 @@ from aptl.core.evidence.outcomes import (
     capture_diagnostic,
 )
 from aptl.core.evidence_bundle._io import SourceMissing, SourceRejected, read_source
-from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.core.runstore import LocalRunStore
 
 
@@ -22,7 +22,6 @@ def qualify_retained_transcript(
     result: AcquisitionResult,
     runtime_adapter: object,
     payload: object,
-    binding: CaptureBinding,
     store_base: Path,
     run_id: str,
 ) -> AcquisitionResult:
@@ -35,14 +34,36 @@ def qualify_retained_transcript(
         retained_digest, _, body = read_source(
             LocalRunStore(store_base).get_run_path(run_id),
             record.raw_content.content_uri,
-            max_bytes=binding.limits.max_bytes,
         )
         if retained_digest != f"sha256:{record.raw_content.content_checksum.value}":
             raise ValueError("retained transcript checksum mismatch")
         sessions = payload["sessions"]  # type: ignore[index]
+        retained = json.loads(body)
+        expected = set(payload["expected_session_ids"])
+        accepted = {item["session_id"] for item in sessions}
+        missing = expected - accepted
+        if missing and retained.get("reconciliation") != {
+            "census_refs": sorted(
+                "capture-" + hashlib.sha256(item.encode("utf-8")).hexdigest()
+                for item in expected
+            ),
+            "accepted_refs": sorted(
+                "capture-" + hashlib.sha256(item.encode("utf-8")).hexdigest()
+                for item in accepted
+            ),
+            "missing_refs": sorted(
+                "capture-" + hashlib.sha256(item.encode("utf-8")).hexdigest()
+                for item in missing
+            ),
+            "census_count": len(expected),
+            "accepted_count": len(accepted),
+            "missing_count": len(missing),
+            "reason": "no broker record; cause unknown",
+        }:
+            raise ValueError("retained reconciliation disagrees with source")
         validator(
-            json.loads(body),
-            expected_entries=len(payload["expected_session_ids"]),  # type: ignore[index]
+            retained,
+            expected_entries=len(sessions),  # type: ignore[index]
             expected_frames=sum(len(item["frames"]) for item in sessions),
         )
     except (KeyError, TypeError, ValueError, SourceMissing, SourceRejected):

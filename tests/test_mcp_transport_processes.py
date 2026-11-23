@@ -1,7 +1,7 @@
 """Real OpenSSH and built MCP interoperability, without a deployed lab.
 
 Run after mcp/build-all-mcps.sh. Runtime identity/capture observations are test
-fixtures, not evidence of full TechVault boot or production qualification.
+fixtures, not evidence of a full scenario boot or production qualification.
 """
 
 import json
@@ -206,7 +206,23 @@ def transport():
             test.close()
 
 
-def request(process, method, identifier, params):
+def _exit_report(process, method, stderr_log):
+    """Name the exit status and the stderr of an MCP that stopped first."""
+    status = process.wait(timeout=15)
+    if stderr_log is not None:
+        detail = Path(stderr_log).read_text()
+    elif process.stderr is not None:
+        detail = process.stderr.read()
+    else:
+        detail = "(stderr not captured)"
+    return f"MCP exited with status {status} before it answered {method}:\n{detail}"
+
+
+def request(process, method, identifier, params, *, stderr_log=None):
+    """Send one JSON-RPC request and return its result.
+
+    Give stderr_log when the MCP writes stderr to a file, not to a pipe.
+    """
     import select
 
     process.stdin.write(
@@ -216,13 +232,14 @@ def request(process, method, identifier, params):
     process.stdin.flush()
     assert select.select([process.stdout], [], [], 15)[0], "MCP response timed out"
     line = process.stdout.readline()
-    assert line, process.stderr.read()
+    if not line:
+        pytest.fail(_exit_report(process, method, stderr_log))
     result = json.loads(line)
     assert "error" not in result, result
     return result["result"]
 
 
-def initialize(process):
+def initialize(process, *, stderr_log=None):
     return request(
         process,
         "initialize",
@@ -232,7 +249,33 @@ def initialize(process):
             capabilities={},
             clientInfo=dict(name="transport-test", version="1"),
         ),
+        stderr_log=stderr_log,
     )
+
+
+def test_request_reports_child_exit_and_stderr_log(tmp_path):
+    log_path = tmp_path / "child.stderr"
+    with log_path.open("w") as log:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import sys; sys.stdin.readline(); sys.exit('module not found')",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=log,
+            text=True,
+        )
+    try:
+        with pytest.raises(pytest.fail.Exception) as failure:
+            initialize(process, stderr_log=log_path)
+    finally:
+        process.stdin.close()
+        process.stdout.close()
+        process.wait(timeout=15)
+    assert "exited with status 1 before it answered initialize" in str(failure.value)
+    assert "module not found" in str(failure.value)
 
 
 def test_real_ssh_relay_and_mcp_reject_role_escape_and_revoke(transport):
@@ -383,6 +426,8 @@ def test_blue_indexer_process_queries_controlled_https_service(transport):
             "1",
             "-subj",
             "/CN=localhost",
+            "-addext",
+            "subjectAltName=DNS:localhost,IP:127.0.0.1",
             "-keyout",
             str(root / "https.key"),
             "-out",
@@ -393,6 +438,7 @@ def test_blue_indexer_process_queries_controlled_https_service(transport):
         stderr=subprocess.DEVNULL,
     )
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(root / "https.crt", root / "https.key")
     upstream = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     upstream.socket = context.wrap_socket(upstream.socket, server_side=True)
@@ -411,9 +457,21 @@ def test_blue_indexer_process_queries_controlled_https_service(transport):
         known_hosts=transport.clients / "known_hosts",
         username=pwd.getpwuid(os.getuid()).pw_name,
     )
+    # The indexer MCP verifies TLS against the lab Wazuh CA beside its package
+    # (SEC-009). Run a copy of the package so that the test CA stays in tmp.
+    package = root / "mcp" / "mcp-indexer"
+    package.mkdir(parents=True)
+    source = REPO / "mcp" / "mcp-indexer"
+    shutil.copytree(source / "build", package / "build")
+    for name in ("package.json", "docker-lab-config.json"):
+        shutil.copyfile(source / name, package / name)
+    (package / "node_modules").symlink_to(source / "node_modules")
+    lab_ca = root / "config" / "wazuh_indexer_ssl_certs" / "root-ca.pem"
+    lab_ca.parent.mkdir(parents=True)
+    shutil.copyfile(root / "https.crt", lab_ca)
     processes = json.loads((root / "processes.json").read_text())
     process_config = processes.pop("aptl-red")
-    process_config["argv"][1] = str(REPO / "mcp/mcp-indexer/build/index.js")
+    process_config["argv"][1] = str(package / "build/index.js")
     process_config["env"].update(
         {
             "APTL_HP_WAZUH_INDEXER_9200": str(upstream.server_port),

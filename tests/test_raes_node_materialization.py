@@ -68,7 +68,7 @@ class _FakeBackend:
 
 def _node() -> NodeRealization:
     return NodeRealization(
-        address="techvault.analyst-box",
+        address="range.analyst-box",
         name="analyst-box",
         aliases=(),
         profiles=(),
@@ -81,7 +81,7 @@ def _node() -> NodeRealization:
         runtime=RuntimeConfiguration(
             packages=[RuntimePackage(manager="apt", name="curl", version="*")],
             local_identity=RuntimeLocalIdentityInventory(
-                groups=[RuntimeLocalGroup(name="techvault")],
+                groups=[RuntimeLocalGroup(name="rangeops")],
                 users=[RuntimeLocalUser(username="analyst")],
             ),
         ),
@@ -98,7 +98,7 @@ def test_realize_node_starts_base_then_materializes_and_verifies():
     # Declared state materialized.
     assert "curl" in backend.installed
     assert "analyst" in backend.users
-    assert "techvault" in backend.groups
+    assert "rangeops" in backend.groups
 
 
 def test_realize_node_fails_closed_when_state_unverifiable():
@@ -116,7 +116,7 @@ def test_realize_node_fails_closed_when_state_unverifiable():
 
 def _switch() -> NodeRealization:
     return NodeRealization(
-        address="techvault.sw",
+        address="range.sw",
         name="sw",
         aliases=(),
         profiles=(),
@@ -143,13 +143,13 @@ def test_realize_nodes_fails_closed_on_first_failure():
     result = realize_nodes([_node()], _BrokenBackend())
     assert result is not None
     assert result.success is False
-    assert "techvault.analyst-box" in (result.error or "")
+    assert "range.analyst-box" in (result.error or "")
 
 
 def _named_node(name: str) -> NodeRealization:
     node = _node()
     return NodeRealization(
-        address=f"techvault.{name}",
+        address=f"range.{name}",
         name=name,
         aliases=(),
         profiles=(),
@@ -232,4 +232,4 @@ def test_realize_nodes_returns_first_failure_in_declared_order():
     assert result is not None
     assert result.success is False
     # Deterministic: box-0 is first in declared order even though box-1 failed first.
-    assert "techvault.box-0" in (result.error or "")
+    assert "range.box-0" in (result.error or "")

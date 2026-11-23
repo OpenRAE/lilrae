@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from raes_contracts.realization_observation import ObservedOperatingSystemIdentity
+from raes_contracts.vocabulary import ObservationStrength
 
 from aptl.core.deployment._compose_service_health import (
     container_completed_successfully,
@@ -42,6 +43,7 @@ class ObservedResource(object):
     concerns: dict[tuple[str, ...], object] = field(default_factory=dict)
     evidence: dict[str, object] = field(default_factory=dict)
     operating_system: ObservedOperatingSystemIdentity | None = None
+    concern_sources: dict[tuple[str, ...], ObservationStrength] = field(default_factory=dict)
 
 
 def consumer_mount_evidence(

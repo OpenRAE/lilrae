@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 
 import pytest
 import yaml
@@ -39,6 +40,17 @@ from aptl.core.experiment.resolver import ResolvedArtifact
 from aptl.core.runstore import LocalRunStore
 
 CORPUS_ROOT = corpus_family_root(FIXTURES)
+
+
+def _trusted_fixture_source(*args):
+    from aptl.core.experiment.admission import build_associated_artifact_source
+    from tests.test_experiment_bindings import _FIXTURE_VALIDATOR
+
+    source = build_associated_artifact_source(*args)
+    return replace(source, participant_manifests={
+        key: replace(binding, validator=_FIXTURE_VALIDATOR)
+        for key, binding in source.participant_manifests.items()
+    })
 
 
 def _resolved(data: bytes, locator: str, media_type: str) -> ResolvedArtifact:
@@ -341,6 +353,7 @@ class TestExperimentControllerHappyPath:
             run_store=LocalRunStore(tmp_path / "store"),
             backend_manifest=backend,
             processor_manifest=processor,
+            artifact_source_factory=_trusted_fixture_source,
         )
 
         result = controller.admit(
@@ -356,6 +369,9 @@ class TestExperimentControllerHappyPath:
         assert result.admitted is True
         configuration = result.plan.trials[0].participant_configurations[0]
         assert configuration.manifest_ref == "reference-red-agent-manifest"
+        from raes_contracts.canonical import canonical_contract_digest
+        from raes_contracts.contracts import ParticipantImplementationManifestModel
+        assert configuration.manifest_digest == canonical_contract_digest(ParticipantImplementationManifestModel.model_validate_json(participant_manifest_bytes))
         assert {
             value.target_id: value.value.value
             for value in configuration.configuration.values

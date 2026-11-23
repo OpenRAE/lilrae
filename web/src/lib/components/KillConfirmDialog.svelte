@@ -1,7 +1,7 @@
 <script lang="ts">
-	import Dialog from '$lib/components/kit/Dialog.svelte';
-	import Button from '$lib/components/kit/Button.svelte';
-	import { focusRing } from '$lib/components/kit/tone';
+	import Dialog from '#lib/components/kit/Dialog.svelte';
+	import Button from '#lib/components/kit/Button.svelte';
+	import { focusRing } from '#lib/components/kit/tone.ts';
 
 	interface Props {
 		/** Open state. Bindable so the parent can also close it. */

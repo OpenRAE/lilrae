@@ -1,5 +1,13 @@
 # REP-003 Run-Scoped Provenance Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/rep-003-run-scoped-provenance-preflight.md).
+Its last recorded file change before this rewrite was `ca648f10fbd0`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note is the architecture preflight for REP-003 / issue #452. It is
 guidance, not an implementation plan. No new ADR is needed: ADR-044 owns the
 RAES-aligned run-record composition, ADR-029 owns control-plane secret handling,

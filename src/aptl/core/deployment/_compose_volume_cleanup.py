@@ -15,7 +15,7 @@ def project_scoped_volume_names(
 ) -> tuple[set[str], str]:
     """Return the volumes scoped to this Compose project, by name prefix.
 
-    Teardown is scenario-agnostic — ``aptl lab stop`` does not know which bundle
+    Teardown is scenario-agnostic — ``lilrae lab stop`` does not know which bundle
     a running range was realized from — so it must discover its resources by
     project-scoped Docker identity, never by re-reading a filesystem Compose
     model that may belong to a different root than the one the scenario started

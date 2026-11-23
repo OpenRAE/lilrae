@@ -1,10 +1,10 @@
 """Declared credential classes must be realized, not silently substituted.
 
-TechVault declares ``password_strength`` per account: seven weak, four medium,
-three strong. Those are in-world facts — the weak ones are the credential
-surface the scenario's attack path is built on. Realizing all fourteen with
-``--random-password`` produces a range in which that surface does not exist,
-and nothing failed to say so (issue #1006).
+A scenario declares ``password_strength`` per account. Those are in-world
+facts — the weak ones are the credential surface the scenario's attack path is
+built on. Realizing every account with ``--random-password`` produces a range
+in which that surface does not exist, and nothing failed to say so (issue
+#1006).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ def _resolve(spec: dict):
         resource=resource,
         payload={"spec": spec},
         target_address="scenario.node.ad",
-        target_service="ad",
+        target_account_provider="samba-ad",
     )
 
 
@@ -178,9 +178,9 @@ class TestProviderArgv:
         assert body == f"username=bob\npassword={password}\n"
 
     def test_realm_still_reaches_the_probe(self):
-        argv = provider.samba_user_authenticate("TECHVAULT.LOCAL")
+        argv = provider.samba_user_authenticate("RANGE.EXAMPLE")
 
-        assert argv[argv.index("-W") + 1] == "TECHVAULT.LOCAL"
+        assert argv[argv.index("-W") + 1] == "RANGE.EXAMPLE"
 
     def test_policy_relaxation_permits_the_declared_weak_class(self):
         argv = provider.samba_domain_relax_password_policy()

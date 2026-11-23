@@ -23,7 +23,7 @@ import hashlib
 import json
 from typing import TYPE_CHECKING, Any
 
-from raes.artifact_requirements import ArtifactMechanismProfile
+from raes_contracts.artifact_identity import ArtifactMechanismProfile
 
 # Import from the ``raes_contracts.contracts`` package surface, not from the
 # ``raes_contracts.artifact_requirements`` leaf module. In raes 2.0.0 the leaf

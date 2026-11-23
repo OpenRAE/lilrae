@@ -1,9 +1,20 @@
 # Issue 790 SSH Module Split Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-790-ssh-module-split-preflight.md).
+Its last recorded file change before this rewrite was `41551db875b1`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes the architecture guardrails for the quality-budget refactor. It
 is design guidance, not an implementation plan. ADR-003, ADR-004, ADR-033, and
 ADR-042 remain authoritative for the common-library API, session lifecycle,
 capture correlation, and PTY ownership boundaries.
+
+Paths beginning `src/` in this note are relative to
+`mcp/aptl-mcp-common/`.
 
 ## Architecture Decisions
 

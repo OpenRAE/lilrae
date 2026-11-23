@@ -31,7 +31,7 @@ from aptl.core.provenance.registry import (
 )
 
 
-def _context(provider_id, *, max_entries=64, timeout_s=30, clock=None):
+def _context(provider_id, *, timeout_s=30, clock=None):
     registration = ProvenanceProviderRegistration(
         provider_id=provider_id,
         implementation_version="1.0.0",
@@ -39,9 +39,7 @@ def _context(provider_id, *, max_entries=64, timeout_s=30, clock=None):
         owner_adapter="tests",
         seal_point=SealPoint.RUN_READY_TO_SEAL,
         requiredness_policy_key=f"{provider_id}-required",
-        limits=ProvenanceLimits(
-            max_bytes=1_000_000, max_entries=max_entries, timeout_s=timeout_s
-        ),
+        limits=ProvenanceLimits(timeout_s=timeout_s),
     )
     return ProvenanceContext(
         registration=registration, clock=clock or (lambda: 0.0), started_at=0.0
@@ -116,6 +114,20 @@ class TestSafeConfigProjection:
         assert source["descriptor_sha256"].startswith("sha256:")
         assert "PRIVATE_SOURCE_LOCATOR" not in repr(projection)
 
+    def test_attached_vertex_source_identity_is_included(self):
+        config = AptlConfig(
+            experiment={
+                "participant_credential_sources": {
+                    "vertex": {"kind": "attached-service-account", "project": "attached-project"}
+                }
+            }
+        )
+
+        source = safe_config_projection(config)["participant_source_descriptors"]["vertex"]
+
+        assert source["kind"] == "attached-service-account"
+        assert source["descriptor_sha256"].startswith("sha256:")
+
     def test_projection_never_contains_a_secret_shaped_value(self):
         from aptl.utils.redaction import redact
 
@@ -143,7 +155,7 @@ class TestSafeConfigProjection:
             assert raw_section not in projection
         for value in projection.values():
             assert not isinstance(value, BaseModel)
-        assert all(isinstance(flag, bool) for flag in projection["containers"].values())
+        assert projection["containers"] == {"profiles": None}
 
     def test_projection_still_carries_the_fields_it_promises(self):
         """Guards the exclusion test above from passing on an empty projection."""
@@ -302,12 +314,13 @@ class TestRuntimeFactsProvider:
         result = RuntimeFactsProvider(None).collect(_context(RUNTIME_PROVIDER_ID))
         assert result.status is ProvenanceStatus.UNAVAILABLE
 
-    def test_more_containers_than_the_budget_is_truncated(self):
-        containers = [_StubContainer(f"aptl-node-{index}") for index in range(20)]
+    def test_every_container_is_collected_without_an_entry_limit(self):
+        containers = [_StubContainer(f"aptl-node-{index}") for index in range(300)]
         result = RuntimeFactsProvider(_StubSnapshot(containers)).collect(
-            _context(RUNTIME_PROVIDER_ID, max_entries=5)
+            _context(RUNTIME_PROVIDER_ID)
         )
-        assert result.status is ProvenanceStatus.TRUNCATED
+        assert result.status is ProvenanceStatus.COLLECTED
+        assert len(result.leaves) >= 300
 
     def test_payload_records_the_range_snapshot_identity(self):
         result = RuntimeFactsProvider(_StubSnapshot()).collect(

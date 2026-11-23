@@ -4,8 +4,11 @@ import builtins
 import importlib
 from pathlib import Path
 import sys
+import json
 
 import pytest
+
+from aptl.core.scenario_bundle import ScenarioSourceKind
 
 
 class ParserFailure(Exception):
@@ -45,17 +48,76 @@ def test_import_does_not_require_raes_sdl(monkeypatch):
 def test_catalog_id_selects_configured_acquired_pack(tmp_path):
     from aptl.core.scenario_catalog import resolve_scenario_selection
 
-    assert resolve_scenario_selection(tmp_path, scenario_id="techvault") is None
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {"identity": "fixture-range"}}))
+    assert resolve_scenario_selection(tmp_path, scenario_id="fixture-range") is None
+
+
+def test_unselected_catalog_does_not_choose_or_acquire_a_pack(tmp_path, monkeypatch):
+    from aptl.core import scenario_catalog
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("an unselected catalog tried to acquire a pack")
+    monkeypatch.setattr(scenario_catalog, "resolve_scenario_bundle", unexpected)
+    (tmp_path / "aptl.json").write_text("{}")
+    with pytest.raises(ValueError, match="No scenario is selected"):
+        scenario_catalog.load_scenario_catalog(tmp_path)
+    assert not (tmp_path / ".aptl").exists()
+
+
+@pytest.mark.parametrize("relative", [False, True], ids=["absolute", "default-dot"])
+def test_a_scenario_id_without_any_project_config_names_the_search(
+    tmp_path, monkeypatch, relative
+):
+    """No aptl.json is a missing project, not an unknown scenario."""
+
+    from aptl.core.scenario_catalog import resolve_scenario_selection
+
+    monkeypatch.chdir(tmp_path)
+    project_dir = Path(".") if relative else tmp_path
+    with pytest.raises(ValueError, match="No aptl.json was found in") as raised:
+        resolve_scenario_selection(project_dir, scenario_id="fixture-range")
+    assert f"{tmp_path.resolve()} or its parents" in str(raised.value)
+    assert "--project-dir" in str(raised.value)
+
+
+@pytest.mark.parametrize("relative", [False, True], ids=["absolute", "default-dot"])
+def test_a_catalog_without_project_config_names_the_directory(
+    tmp_path, monkeypatch, relative
+):
+    from aptl.core.scenario_catalog import load_scenario_catalog
+
+    monkeypatch.chdir(tmp_path)
+    project_dir = Path(".") if relative else tmp_path
+    with pytest.raises(ValueError, match="No aptl.json was found in") as raised:
+        load_scenario_catalog(project_dir)
+    assert str(raised.value).startswith(
+        f"No aptl.json was found in {tmp_path.resolve()}. "
+    )
+
+
+def test_a_scenario_id_reads_the_config_the_start_uses_above_the_directory(
+    tmp_path,
+):
+    """The start resolves its project through the lifecycle root, upward."""
+
+    from aptl.core.scenario_catalog import resolve_scenario_selection
+
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {"identity": "fixture-range"}}))
+    nested = tmp_path / "scenarios" / "notes"
+    nested.mkdir(parents=True)
+
+    assert resolve_scenario_selection(nested, scenario_id="fixture-range") is None
 
 
 def test_unknown_catalog_id_lists_only_configured_pack(tmp_path):
     from aptl.core.scenario_catalog import resolve_scenario_selection
 
-    with pytest.raises(ValueError, match="Available scenarios: techvault"):
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {"identity": "fixture-range"}}))
+    with pytest.raises(ValueError, match="Available scenarios: fixture-range"):
         resolve_scenario_selection(tmp_path, scenario_id="local-shadow")
 
 
-@pytest.mark.parametrize("scenario_id", ("../techvault", "TechVault", "tech/vault"))
+@pytest.mark.parametrize("scenario_id", ("../fixture-range", "Fixture-Range", "fixture/range"))
 def test_catalog_selector_rejects_path_shaped_or_noncanonical_ids(
     tmp_path, scenario_id
 ):
@@ -65,26 +127,11 @@ def test_catalog_selector_rejects_path_shaped_or_noncanonical_ids(
         resolve_scenario_selection(tmp_path, scenario_id=scenario_id)
 
 
-def test_repository_catalog_projects_validated_pack_identity():
-    from aptl.core.scenario_catalog import load_scenario_catalog
-
-    project_root = Path(__file__).resolve().parents[1]
-    catalog = load_scenario_catalog(project_root)
-
-    assert [entry.id for entry in catalog.scenarios] == [
-        "techvault-participant-study"
-    ]
-    assert catalog.pack_identity.pack_id == "techvault-participant-study"
-    assert catalog.pack_identity.pack_version == "0.1.1"
-    assert catalog.pack_identity.set_digest.startswith("sha256:")
-    assert catalog.maturity == "built"
-    assert not hasattr(catalog.scenarios[0], "path")
-
-
 def test_rejected_pack_fails_closed_without_local_fallback(mocker, tmp_path):
     from aptl.core.scenario_bundle import EnvPackError
     from aptl.core.scenario_catalog import load_scenario_catalog
 
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {"identity": "fixture-range"}}))
     mocker.patch(
         "aptl.core.scenario_catalog.resolve_scenario_bundle",
         side_effect=EnvPackError("digest mismatch"),
@@ -141,26 +188,9 @@ def test_rejects_selecting_both_id_and_path(tmp_path):
     with pytest.raises(ValueError, match="mutually exclusive"):
         resolve_scenario_selection(
             tmp_path,
-            scenario_id="techvault",
+            scenario_id="fixture-range",
             scenario_path=Path("dev-scenarios/custom.sdl.yaml"),
         )
-
-
-def test_resolve_acquired_scenario_returns_same_validated_bundle():
-    from aptl.core.scenario_catalog import (
-        load_scenario_catalog,
-        resolve_acquired_scenario,
-    )
-
-    project_root = Path(__file__).resolve().parents[1]
-    catalog = load_scenario_catalog(project_root)
-    resolved = resolve_acquired_scenario(
-        project_root, "techvault-participant-study", catalog=catalog
-    )
-
-    assert resolved.entry.id == "techvault-participant-study"
-    assert resolved.scenario.name == "techvault-participant-study"
-    assert resolved.bundle is catalog.bundle
 
 
 def test_resolve_acquired_scenario_unknown_id_is_not_found(mocker, tmp_path):
@@ -168,13 +198,16 @@ def test_resolve_acquired_scenario_unknown_id_is_not_found(mocker, tmp_path):
     from aptl.core.scenario_catalog import ScenarioCatalog, resolve_acquired_scenario
     from aptl.core.scenarios import ScenarioNotFoundError
 
-    root = tmp_path / "staging" / "techvault"
+    root = tmp_path / "staging" / "fixture-range"
     root.mkdir(parents=True)
     catalog = ScenarioCatalog(
         scenarios=(),
-        pack_identity=PackIdentity("techvault", "0.1.0", "sha256:" + "a" * 64),
+        pack_identity=PackIdentity("fixture-range", "0.1.0", "sha256:" + "a" * 64),
         maturity="built",
-        bundle=ScenarioBundle("techvault", root, root / "sdl/techvault.sdl.yaml"),
+        bundle=ScenarioBundle(
+            "fixture-range", root, root / "sdl/fixture-range.sdl.yaml",
+            source_kind=ScenarioSourceKind.ENV_PACK,
+        ),
     )
     mocker.patch(
         "aptl.core.scenario_catalog.load_scenario_catalog", return_value=catalog
@@ -192,30 +225,34 @@ def test_compatibility_projection_removes_its_owned_staging(mocker, tmp_path):
         resolve_and_parse_scenario,
     )
 
-    root = tmp_path / "staging" / "techvault"
-    sdl = root / "sdl" / "techvault.sdl.yaml"
+    root = tmp_path / "staging" / "fixture-range"
+    sdl = root / "sdl" / "fixture-range.sdl.yaml"
     sdl.parent.mkdir(parents=True)
-    sdl.write_text("name: techvault\n")
+    sdl.write_text("name: fixture-range\n")
     catalog = ScenarioCatalog(
-        scenarios=(ScenarioCatalogEntry(id="techvault", name="TechVault"),),
-        pack_identity=PackIdentity("techvault", "0.1.0", "sha256:" + "a" * 64),
+        scenarios=(ScenarioCatalogEntry(id="fixture-range", name="Fixture-Range"),),
+        pack_identity=PackIdentity("fixture-range", "0.1.0", "sha256:" + "a" * 64),
         maturity="built",
-        bundle=ScenarioBundle("techvault", root, sdl),
+        bundle=ScenarioBundle(
+            "fixture-range", root, sdl,
+            source_kind=ScenarioSourceKind.ENV_PACK,
+        ),
     )
     mocker.patch(
         "aptl.core.scenario_catalog.load_scenario_catalog", return_value=catalog
     )
     _patch_parser(mocker, side_effect=None).return_value = object()
 
-    entry, _scenario = resolve_and_parse_scenario(tmp_path, "techvault")
+    entry, _scenario = resolve_and_parse_scenario(tmp_path, "fixture-range")
 
-    assert entry.id == "techvault"
+    assert entry.id == "fixture-range"
     assert not root.parent.exists()
 
 
 def test_invalid_catalog_projection_removes_its_staging(mocker, tmp_path):
     from aptl.core.scenario_catalog import load_scenario_catalog
 
+    (tmp_path / "aptl.json").write_text(json.dumps({"scenario": {"identity": "fixture-range"}}))
     mocker.patch(
         "aptl.core.scenario_catalog._entry_from_projection",
         side_effect=ValueError("invalid projection"),

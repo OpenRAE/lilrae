@@ -1,34 +1,30 @@
 # Reverse Engineering Container
 
-The reverse engineering container provides a platform for binary analysis and malware reverse engineering operations.
+The generic lab no longer gives a reverse workstation or a `reverse` Compose profile.
+The optional `mcp-reverse` artifact remains available for an explicitly configured SSH target.
+Its example target is disabled.
+
+The [source record](records/reverse-engineering-container-2026-11-06.txt) keeps the earlier image description at revision `28fc8f18`.
+That description does not establish a current image, address, port, tool installation, or Wazuh agent.
+Status reviewed: 2026-11-06.
 
 ## Container Configuration
 
-- **Base Image**: ubuntu:26.04
-- **Tools**: radare2, binutils, yara, floss, capa, upx-ucl, osslsigncode
-- **User**: `labadmin` with sudo privileges
-- **SSH**: Key-based authentication only (port 22, mapped to host 2027)
-
-See [containers/reverse/Dockerfile](https://github.com/OpenRAE/lilrae/blob/main/containers/reverse/Dockerfile) for complete build configuration.
+An operator gives the authorized target and its software.
+There is no current `containers/reverse/Dockerfile` in this repository.
 
 ## Network Access
 
-- **Container IP**: 172.20.0.27
-- **SSH Access**: `ssh -i ~/.ssh/aptl_lab_key labadmin@localhost -p 2027`
+No reverse workstation publishes host port 2027 by default.
+The target's configured endpoint determines access.
 
 ## MCP Integration
 
-AI agents control this container via [Reverse Engineering MCP](https://github.com/OpenRAE/lilrae/tree/main/mcp/mcp-reverse).
-
-- **Tools**: `reverse_run_command`, `reverse_info`, etc.
-- **Access Method**: SSH with key authentication
-- **Tool Prefix**: `reverse_*` to avoid conflicts
+The server uses tool prefix `reverse` and the shared SSH connection owner.
+See [configure the reverse MCP](https://github.com/OpenRAE/lilrae/blob/dev/mcp/mcp-reverse/README.md) for target requirements.
+See [MCP availability](../reference/mcp.md#server-availability) for the built artifacts.
 
 ## SIEM Integration
 
-Reverse engineering activities are logged to Wazuh SIEM via Wazuh agent:
-
-- **Agent Group**: `reverse`
-- **Logs**: CLI commands, analysis activities, system logs
-- **Destination**: Wazuh Manager (172.20.0.10:1514)
-- **Purpose**: Blue team analysis and detection training
+The optional MCP server does not establish Wazuh enrollment for an external target.
+The target owner must give and verify any monitoring separately.

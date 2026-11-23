@@ -10,6 +10,14 @@ accepted
 
 2026-08-12
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [participant Reference](../reference/participant-request-manifests.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 Before issue #856, APTL's installed-participant path read `ANTHROPIC_API_KEY`
@@ -20,10 +28,7 @@ static value into an in-memory mapping and deleted that mapping after use.
 
 That behavior proves temporary APTL possession and local reference cleanup. It
 does not prove that the value was issued for this run, is short-lived, is
-delegated, can be renewed, expires, or is revoked upstream. It also does not
-prove that an installed provider ignored a saved product login, user keychain,
-home-directory credential, cloud SDK default chain, metadata service, or
-workload-identity socket.
+delegated, can be renewed, expires, or is revoked upstream. It does not prove that a provider ignored saved logins, keychains, home credentials, SDK defaults, metadata services, or workload-identity sockets.
 
 This ADR selects a provider-neutral credential-sourcing boundary for issue
 #856. It supersedes only the participant-credential sourcing and lifecycle
@@ -57,9 +62,7 @@ The design assumes the operator who edits `aptl.json` may select an approved
 credential source, but credential values and provider output remain secret or
 hostile. It addresses:
 
-- stale or unintended credentials inherited from a shell, IDE, `.env` loader,
-  user login, keychain, home directory, cloud CLI, SDK default chain, metadata
-  service, projected token, or workload socket;
+- unintended credentials from shells, IDEs, environment loaders, logins, keychains, home directories, cloud/SDK defaults, metadata services, projected tokens, or workload sockets;
 - one installed provider receiving another provider's credential;
 - a provider's own precedence rules overriding APTL's intended source;
 - missing, placeholder, malformed, oversized, unavailable, expired, or
@@ -71,12 +74,7 @@ hostile. It addresses:
   persistence failure; and
 - evidence that calls cleanup “revocation” or static possession a “lease.”
 
-The boundary does not defend against a compromised kernel, root in the
-management compartment, ptrace-equivalent access to the credential-bearing
-process, or an upstream issuer that misstates its token semantics. The
-supported appliance must provide the process/user/PID and egress isolation
-needed for any stronger isolation claim; a developer-local run cannot inherit
-that claim merely by using the same Python classes.
+This boundary does not protect against compromised kernels, management root, ptrace-level process access, or false issuer claims about token semantics. A stronger appliance claim needs demonstrated process/user/PID and egress isolation. Reusing Python classes in local development does not establish it.
 
 ## Research Considered
 
@@ -114,10 +112,7 @@ into secret surfaces. It violates ADR-029 and is rejected.
 The config names exactly one parent environment variable. APTL reads only that
 name, validates the value without logging it, and passes only the provider
 adapter's required delivery fields to an isolated child. This is portable and
-is the smallest defensible replacement for current behavior. It still carries
-a static credential in parent and child memory/environment, offers no issuer
-expiry or revocation semantics, and can be inspected by sufficiently
-privileged sibling processes. Accepted as the initial source kind with those
+is the smallest defensible replacement for current behavior. Static credentials still enter parent and child memory/environment. They lack issuer expiry or revocation and remain visible to sufficiently privileged processes. Accepted as the initial source kind with those
 limitations made explicit.
 
 ### Configured private file or OS credential store
@@ -226,16 +221,11 @@ provider cannot demonstrate its required adapter controls, APTL fails
 qualification rather than making the claim.
 
 Secrets never enter process argv, prompt stdin, URLs, filenames, config JSON,
-or provider-visible task content. A provider-supported stdin bootstrap or
-private store may be used when direct environment delivery is unsupported;
-the resulting store is provider-run-private state, not the credential source.
+or provider-visible task content. A supported stdin bootstrap or private store may replace unsupported direct environment delivery. That run-private store is derived state rather than the credential source.
 
 ### Lifecycle facts are data, not inferred adjectives
 
-Each acquisition carries a secret-free lifecycle description from its source
-kind: source kind/resolver version, acquisition outcome/time, authoritative
-expiry when one exists, renewal support/outcome, upstream revocation
-support/outcome, and local cleanup outcome/time. Static process-environment
+Acquisition records safe lifecycle facts: source/resolver version, outcome/time, authoritative expiry, renewal, upstream revocation, and local cleanup support/outcome/time. Static process-environment
 sources report expiry `unknown`, renewal `unsupported`, upstream revocation
 `unsupported-by-aptl`, and cleanup limited to local possession.
 
@@ -249,9 +239,7 @@ upstream invalidation.
 
 ### Evidence is a projection of the one acquisition
 
-Extend the existing participant readiness/qualification and participant
-provenance builders with one shared secret-free credential-binding projection;
-do not create provider-specific report schemas or a parallel run archive. The
+Readiness, qualification, and provenance must share one safe credential-binding projection. Provider-specific report schemas and another archive are prohibited. The
 projection records:
 
 - provider and run identity;
@@ -264,12 +252,7 @@ projection records:
   `unsupported`, `not-requested`, `succeeded`, or stable failure codes; and
 - local cleanup and isolation proof outcomes.
 
-It never records a secret value, prefix, suffix, length, secret-derived hash,
-auth header, provider response, account/project identity, home path, helper
-stdout/stderr, lease id, access token claims, or raw exception. General safe
-config provenance continues to exclude credential locators; the descriptor
-digest lets an operator holding the applicable config correlate the evidence
-without publishing the locator.
+It never records secret values or derivatives, headers, responses, account/project identity, home paths, helper output, lease IDs, token claims, or raw exceptions. General configuration provenance still omits credential locators. An operator with the configuration can correlate its descriptor digest without publishing that locator.
 
 Readiness evidence must survive acquisition or launch failure before turn
 zero. Cleanup outcome is captured after provider close, so a successful model
@@ -294,16 +277,7 @@ changing a `v1`/`v2` meaning.
 | Persistence and observability | `ParticipantReadinessReport`, qualification/control evidence builders, participant provenance provider, `RunStorageBackend`, `LocalRunStore` JSON/JSONL/create-once methods, ADR-029 redaction, and exporter packaging remain the owners. Never use opaque `write_file()` for credential-bearing output or make exporter the first filter. |
 | Appliance/network policy | ADR-049, `ApplianceBoundaryPolicy`, boundary gates, management-zone placement, exact-authority egress, and guest replacement determine supported isolation. A selected metadata/workload endpoint is an explicit flow; other credential-service exclusions may be claimed only when the applicable appliance controls are enforced and verified. Process-level evidence does not imply that claim. |
 
-The repository surfaces in scope are `aptl.json`; `src/aptl/core/config.py`;
-the config CLI and safe-config provenance projection;
-`src/aptl/validation/participant_readiness_provider.py`, readiness and
-qualification models/builders; `src/aptl/workbench/{credentials,agent,
-codex_agent,participant_source_binding,process,runtime,bootstrap}.py`;
-participant apparatus/control
-evidence and provenance; runstore/redaction/logging; appliance boundary and
-launch assembly; the bounded-participant runbook; and their existing config,
-workbench, runtime, readiness, provenance, runstore, redaction, and appliance
-tests. SDL, MCP tool schemas, deployment backends, Compose topology, and the
+Scope includes `aptl.json`, configuration/loading/provenance, participant readiness/qualification, workbench credential and process owners, participant evidence, storage/redaction, and appliance assembly. Existing tests cover those same boundaries. SDL, MCP tool schemas, deployment backends, Compose topology, and the
 web frontend are not credential-source authorities.
 
 ## Extensibility
@@ -342,9 +316,7 @@ not in raw environment maps.
   there is deliberately no compatibility fallback.
 - Static environment delivery remains visible to sufficiently privileged local
   processes and has no APTL-controlled expiry or upstream revocation.
-- Provider CLIs change authentication precedence and storage behavior across
-  versions, so live qualification must pin and retest the exact adapter controls
-  on which its source-binding evidence relies.
+- Provider authentication precedence can change by version. Live qualification must pin and retest the exact controls supporting source-binding evidence.
 - Dynamic and federated sources require clock, issuer, audience, refresh,
   network, and cleanup handling that the initial environment source does not.
 
@@ -384,10 +356,7 @@ not in raw environment maps.
 - Allowing arbitrary helper commands, shell strings, executable paths,
   environment maps, credential-chain lists, URLs, or provider config fragments
   in first-party configuration.
-- Recording a passing lifecycle/isolation claim when acquisition succeeded but
-  required adapter controls, process teardown, private-store cleanup, or
-  evidence publication failed, or generalizing those controls into an
-  unverified metadata, socket, keychain, or network exclusion claim.
+- Claiming lifecycle or isolation success after failed controls, teardown, store cleanup, or evidence publication. Untested metadata, socket, keychain, or network exclusion cannot inherit that claim.
 
 ## References
 

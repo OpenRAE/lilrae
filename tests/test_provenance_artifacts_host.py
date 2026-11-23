@@ -7,6 +7,7 @@ clauses.
 
 import pytest
 
+from aptl.core.provenance.identity import digest_bytes
 from aptl.core.provenance.outcomes import ProvenanceStatus
 from aptl.core.provenance.protocol import ProvenanceContext
 from aptl.core.provenance.providers.artifacts import (
@@ -23,7 +24,7 @@ from aptl.core.provenance.registry import (
 )
 
 
-def _context(provider_id, *, max_bytes=10_000_000, max_entries=64, timeout_s=30, clock=None):
+def _context(provider_id, *, timeout_s=30, clock=None):
     registration = ProvenanceProviderRegistration(
         provider_id=provider_id,
         implementation_version="1.0.0",
@@ -31,9 +32,7 @@ def _context(provider_id, *, max_bytes=10_000_000, max_entries=64, timeout_s=30,
         owner_adapter="tests",
         seal_point=SealPoint.RUN_READY_TO_SEAL,
         requiredness_policy_key=f"{provider_id}-required",
-        limits=ProvenanceLimits(
-            max_bytes=max_bytes, max_entries=max_entries, timeout_s=timeout_s
-        ),
+        limits=ProvenanceLimits(timeout_s=timeout_s),
     )
     return ProvenanceContext(
         registration=registration, clock=clock or (lambda: 0.0), started_at=0.0
@@ -84,12 +83,22 @@ class TestDependencyArtifacts:
         assert result.status is ProvenanceStatus.UNAVAILABLE
         assert "SECRET" not in repr(result)
 
-    def test_an_oversized_lock_is_truncated_not_partially_hashed(self, tmp_path):
-        (tmp_path / "uv.lock").write_text("x" * 5000)
-        result = DependencyArtifactProvider(tmp_path).collect(
-            _context(ARTIFACTS_PROVIDER_ID, max_bytes=1024)
-        )
-        assert result.status is ProvenanceStatus.TRUNCATED
+    def test_a_large_lock_is_hashed_completely(self, tmp_path):
+        content = b"x" * (33 * 1024 * 1024)
+        (tmp_path / "uv.lock").write_bytes(content)
+        result = DependencyArtifactProvider(tmp_path).collect(_context(ARTIFACTS_PROVIDER_ID))
+        assert result.status is ProvenanceStatus.COLLECTED
+        assert digest_bytes(content) in {leaf.digest for leaf in result.leaves}
+
+    def test_every_participant_profile_lock_is_collected(self, tmp_path):
+        """No profile count cap drops an asset lock from the identity."""
+        for index in range(70):
+            profile = tmp_path / "participant-profiles" / f"profile-{index:03d}"
+            profile.mkdir(parents=True)
+            (profile / "asset-lock.json").write_text(f'{{"n": {index}}}')
+        result = DependencyArtifactProvider(tmp_path).collect(_context(ARTIFACTS_PROVIDER_ID))
+        assert result.status is ProvenanceStatus.COLLECTED
+        assert len(result.leaves) == 70
 
 
 class _StubBinding:

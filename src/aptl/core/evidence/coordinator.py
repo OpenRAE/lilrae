@@ -16,7 +16,7 @@ trial body:
 5. Compute the overall :class:`~aptl.core.evidence.outcomes.
    AcquisitionDisposition`; only ``SEALED_READY`` is ready for the #444 seal.
 
-The coordinator owns deadlines, quotas, clock, path allocation, hashing,
+The coordinator owns the read progress timeout, clock, path allocation, hashing,
 redaction, media checks, persistence, diagnostics, and record construction; a
 collector only reports typed bytes/counters/failures. Collector failures are
 typed outcome DATA projected into safe RAES diagnostics — no second exception
@@ -26,7 +26,9 @@ hierarchy, and no overloading of ``LabResult`` startup readiness.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from contextlib import nullcontext
+from dataclasses import dataclass, replace
+from pathlib import Path
 
 from raes_contracts.contracts import ExperimentEvidenceRecordModel
 from raes_contracts.diagnostics import Diagnostic
@@ -36,14 +38,19 @@ from aptl.core.evidence._persist import (
     EvidenceRef,
     media_type_supported,
     persist_success_outcome,
+    retained_failure_outcome,
 )
 from aptl.core.evidence.outcomes import (
+    ABORTING_STATUSES,
     STATUS_DIAGNOSTIC_CODES,
     SUCCESS_STATUSES,
     AcquisitionDisposition,
+    AcquisitionPhase,
     CollectorStatus,
     capture_diagnostic,
 )
+from aptl.core.evidence.deadline import DEFAULT_PROGRESS_TIMEOUT_SECONDS
+from aptl.core.evidence.spool import SPOOL_SUBDIR, spool_directory
 from aptl.core.evidence.protocol import (
     Collector,
     CollectorContext,
@@ -51,12 +58,6 @@ from aptl.core.evidence.protocol import (
     RunScope,
 )
 from aptl.core.experiment.capture_registry import CaptureBinding
-
-#: Statuses that abort the attempt before participant action (source never
-#: came up), yielding an INCONCLUSIVE disposition.
-_ABORTING_STATUSES: frozenset[CollectorStatus] = frozenset(
-    {CollectorStatus.SOURCE_UNAVAILABLE, CollectorStatus.STARTUP_FAILURE}
-)
 
 #: Statuses that invalidate a REQUIRED capture unless the policy explicitly
 #: accepted the degradation.
@@ -91,6 +92,8 @@ class CollectorReport:
     accepted_degradation: bool
     evidence_record_id: str | None = None
     diagnostic_code: str | None = None
+    scope: RunScope | None = None
+    capture_spec_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -102,6 +105,7 @@ class AcquisitionResult:
     refs: tuple[EvidenceRef, ...]
     reports: tuple[CollectorReport, ...]
     diagnostics: tuple[Diagnostic, ...]
+    scope: RunScope | None = None
 
 
 @dataclass(frozen=True)
@@ -125,7 +129,11 @@ def _binding_key(binding: CaptureBinding) -> tuple[str, str]:
 
 
 def _context(
-    binding: CaptureBinding, *, scope: RunScope, clock: ClockProvider
+    binding: CaptureBinding,
+    *,
+    scope: RunScope,
+    clock: ClockProvider,
+    progress_timeout_seconds: float,
 ) -> CollectorContext:
     """Build the narrow immutable context handed to a collector at start."""
     return CollectorContext(
@@ -133,7 +141,7 @@ def _context(
         run_id=scope.run_id,
         attempt_id=scope.attempt_id,
         binding=binding,
-        deadline_seconds=float(binding.limits.max_duration_s),
+        progress_timeout_seconds=progress_timeout_seconds,
         clock=clock,
     )
 
@@ -153,7 +161,10 @@ def _start_all(
     *,
     scope: RunScope,
     clock: ClockProvider,
-) -> tuple[list[_Started], dict[tuple[str, str], CollectorOutcome]]:
+    progress_timeout_seconds: float,
+) -> tuple[
+    list[_Started], dict[tuple[str, str], CollectorOutcome], BaseException | None
+]:
     """Start collectors in order; on the first startup failure, stop early.
 
     Returns the successfully-started collectors and a map of binding key ->
@@ -163,6 +174,7 @@ def _start_all(
     started: list[_Started] = []
     not_started: dict[tuple[str, str], CollectorOutcome] = {}
     aborted = False
+    interrupted: BaseException | None = None
     for binding, collector in plan:
         if aborted:
             not_started[_binding_key(binding)] = _failed_outcome(
@@ -171,7 +183,12 @@ def _start_all(
                 "not started (an earlier collector failed to start)",
             )
             continue
-        context = _context(binding, scope=scope, clock=clock)
+        context = _context(
+            binding,
+            scope=scope,
+            clock=clock,
+            progress_timeout_seconds=progress_timeout_seconds,
+        )
         try:
             handle = collector.start(context)
         except Exception:
@@ -180,19 +197,22 @@ def _start_all(
             )
             aborted = True
             continue
-        except BaseException:
-            # An interrupted start has no returned handle to stop, but every
-            # earlier successful start is still owned by this coordinator.
-            _stop_all(started, clock)
-            raise
+        # Defer operator interruption until earlier starts have finalized.
+        except BaseException as exc:  # NOSONAR(S5754)
+            interrupted = exc
+            not_started[_binding_key(binding)] = _failed_outcome(
+                CollectorStatus.STARTUP_FAILURE, clock, "collector start interrupted"
+            )
+            aborted = True
+            continue
         started.append(_Started(binding=binding, collector=collector, handle=handle))
-    return started, not_started
+    return started, not_started, interrupted
 
 
 def _stop_all(
     started: Sequence[_Started], clock: ClockProvider
-) -> dict[tuple[str, str], CollectorOutcome]:
-    """Stop started collectors in REVERSE order; a stop raising becomes a finalization failure."""
+) -> tuple[dict[tuple[str, str], CollectorOutcome], BaseException | None]:
+    """Stop every collector and defer interruption until accepted data persists."""
     outcomes: dict[tuple[str, str], CollectorOutcome] = {}
     interrupted: BaseException | None = None
     for entry in reversed(started):
@@ -204,7 +224,7 @@ def _stop_all(
                 clock,
                 "collector raised during stop",
             )
-        except (KeyboardInterrupt, SystemExit, GeneratorExit) as exc:  # NOSONAR
+        except BaseException as exc:  # NOSONAR(S5754)
             # Finish reverse-order cleanup even if one stop is interrupted.
             # Do not convert an operator interrupt into apparent success.
             if interrupted is None:
@@ -215,9 +235,7 @@ def _stop_all(
                 "collector stop interrupted",
             )
         outcomes[_binding_key(entry.binding)] = outcome
-    if interrupted is not None:
-        raise interrupted
-    return outcomes
+    return outcomes, interrupted
 
 
 def _resolve_plan(
@@ -273,6 +291,7 @@ def _process_outcome(
     *,
     run_store: object,
     scope: RunScope,
+    phase: AcquisitionPhase | None = None,
 ) -> tuple[
     CollectorReport,
     ExperimentEvidenceRecordModel | None,
@@ -292,25 +311,23 @@ def _process_outcome(
             run_store=run_store,  # type: ignore[arg-type]
             run_id=scope.run_id,
             planned_trial_id=scope.planned_trial_id,
-            captured_at=outcome.finished_at,
+            attempt_id=scope.attempt_id,
+            phase=phase,
         )
-    except (BufferError, ValueError, RecursionError, OSError) as exc:
+    except (ValueError, RecursionError, OSError) as exc:
         # Persistence is part of capture, not an exception-shaped escape from
         # terminal accounting. Never project the exception or source bytes.
-        status = (
-            CollectorStatus.TRUNCATION
-            if isinstance(exc, BufferError)
-            else CollectorStatus.FINALIZATION_FAILURE
-        )
+        del exc
         return _process_outcome(
             binding,
             CollectorOutcome(
-                status=status,
+                status=CollectorStatus.FINALIZATION_FAILURE,
                 started_at=outcome.started_at,
                 finished_at=outcome.finished_at,
             ),
             run_store=run_store,
             scope=scope,
+            phase=phase,
         )
     report = CollectorReport(
         registration_id=binding.registration_id,
@@ -324,7 +341,14 @@ def _process_outcome(
             else None
         ),
     )
-    return report, processed.record, processed.ref, None
+    diagnostic = None
+    if report.diagnostic_code is not None:
+        diagnostic = capture_diagnostic(
+            report.diagnostic_code,
+            f"capture.{binding.capture_spec_id}.{binding.requirement_id}",
+            f"collector reported {report.status.value}; partial evidence retained",
+        )
+    return report, processed.record, processed.ref, diagnostic
 
 
 def _pre_persistence_failure(
@@ -342,7 +366,7 @@ def _pre_persistence_failure(
     """Project source/media failures before any bytes reach persistence."""
 
     accepted = binding.accepted_limitation is not None
-    if outcome.status not in SUCCESS_STATUSES:
+    if outcome.status not in SUCCESS_STATUSES and not outcome.chunks:
         code = STATUS_DIAGNOSTIC_CODES.get(
             outcome.status, "aptl.experiment-capture.unknown-failure"
         )
@@ -378,7 +402,8 @@ def _pre_persistence_failure(
 
 def _disposition(reports: Sequence[CollectorReport]) -> AcquisitionDisposition:
     """Compute the overall disposition from the per-binding effective statuses."""
-    if any(r.status in _ABORTING_STATUSES for r in reports):
+    # An aborting status means a required source never came up: INCONCLUSIVE.
+    if any(r.status in ABORTING_STATUSES for r in reports):
         return AcquisitionDisposition.INCONCLUSIVE
     partial = False
     for report in reports:
@@ -401,8 +426,12 @@ def acquire_evidence(
     scope: RunScope,
     clock: ClockProvider,
     trial_body: Callable[[], None] = lambda: None,
+    phase: AcquisitionPhase | None = None,
 ) -> AcquisitionResult:
     """Acquire evidence for one trial's admitted capture bindings.
+
+    Each evidence read uses the run store's progress timeout: the time one
+    read may go without new data before it fails as a timeout.
 
     ``trial_body`` is the work that runs while collectors are live (participant
     actions / orchestrator workflows). It runs BETWEEN start and the reverse-
@@ -411,7 +440,40 @@ def acquire_evidence(
     is ours). Returns a one-shot :class:`AcquisitionResult`; nothing partial in
     between.
     """
+    base_dir = getattr(run_store, "base_dir", None)
+    spool = (
+        spool_directory(Path(base_dir) / SPOOL_SUBDIR)
+        if base_dir is not None
+        else nullcontext()
+    )
+    with spool:
+        return _acquire(
+            bindings=bindings,
+            collectors=collectors,
+            run_store=run_store,
+            scope=scope,
+            clock=clock,
+            trial_body=trial_body,
+            phase=phase,
+        )
+
+
+def _acquire(
+    *,
+    bindings: Sequence[CaptureBinding],
+    collectors: Mapping[str, Collector],
+    run_store: object,
+    scope: RunScope,
+    clock: ClockProvider,
+    trial_body: Callable[[], None],
+    phase: AcquisitionPhase | None,
+) -> AcquisitionResult:
+    """Run one acquisition with spool files on the run-store disk."""
+    progress_timeout_seconds = getattr(
+        run_store, "progress_timeout_seconds", DEFAULT_PROGRESS_TIMEOUT_SECONDS
+    )
     plan, diagnostics, unavailable = _resolve_plan(bindings, collectors)
+    interrupted: BaseException | None = None
     if unavailable:
         # Resolve the entire set before starting observers. A missing required
         # source must not leave a partially instrumented participant running.
@@ -423,17 +485,23 @@ def acquire_evidence(
             for binding, _ in plan
         }
     else:
-        started, not_started = _start_all(plan, scope=scope, clock=clock)
-
+        started, not_started, interrupted = _start_all(
+            plan,
+            scope=scope,
+            clock=clock,
+            progress_timeout_seconds=progress_timeout_seconds,
+        )
     try:
         if not unavailable and not not_started:
             trial_body()
     except Exception:
         pass
+    # The same interruption is re-raised after accepted capture data persists.
+    except BaseException as exc:  # NOSONAR(S5754)
+        interrupted = exc
     finally:
-        # Includes KeyboardInterrupt/SystemExit: cleanup must not depend on
-        # the participant returning normally, and interrupts still propagate.
-        stop_outcomes = _stop_all(started, clock)
+        stop_outcomes, stop_interrupted = _stop_all(started, clock)
+    interrupted = interrupted or stop_interrupted
 
     outcomes_by_key: dict[tuple[str, str], CollectorOutcome] = {
         **unavailable,
@@ -445,21 +513,29 @@ def acquire_evidence(
     refs: list[EvidenceRef] = []
     all_diagnostics: list[Diagnostic] = list(diagnostics)
     for binding in bindings:
-        outcome = outcomes_by_key[_binding_key(binding)]
-        report, record, ref, diagnostic = _process_outcome(
-            binding, outcome, run_store=run_store, scope=scope
+        outcome = retained_failure_outcome(
+            outcomes_by_key[_binding_key(binding)], binding, phase
         )
-        reports.append(report)
+        report, record, ref, diagnostic = _process_outcome(
+            binding, outcome, run_store=run_store, scope=scope, phase=phase
+        )
+        reports.append(
+            replace(report, scope=scope, capture_spec_id=binding.capture_spec_id)
+        )
         if record is not None and ref is not None:
             records.append(record)
             refs.append(ref)
         if diagnostic is not None:
             all_diagnostics.append(diagnostic)
 
-    return AcquisitionResult(
+    result = AcquisitionResult(
         disposition=_disposition(reports),
         records=tuple(records),
         refs=tuple(refs),
         reports=tuple(reports),
         diagnostics=tuple(all_diagnostics),
+        scope=scope,
     )
+    if interrupted is not None:
+        raise interrupted
+    return result

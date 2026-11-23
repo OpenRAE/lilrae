@@ -1,5 +1,13 @@
 # Issue #550: SOC selected-profile scoping preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-550-soc-selected-profile-preflight.md).
+Its last recorded file change before this rewrite was `ced66dcc408b`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note records architecture guardrails for scoping SOC startup recovery and
 prime seeding to the RAES scenario's realized Compose profiles. It is design
 guidance, not an implementation plan. No new ADR is needed: the change applies

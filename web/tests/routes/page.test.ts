@@ -17,7 +17,7 @@ function summary(overrides: Partial<ScenarioSummary> = {}): ScenarioSummary {
 		required_containers: [],
 		validation: { valid: true, detail: null },
 		pack: {
-			id: 'techvault',
+			id: 'fixture-range',
 			version: '0.1.0',
 			set_digest: `sha256:${'a'.repeat(64)}`,
 			maturity: 'built'
@@ -33,8 +33,8 @@ const startLab = vi.fn();
 const stopLab = vi.fn();
 const killLab = vi.fn();
 
-vi.mock('$lib/stores/lab', () => ({ labStatus, labLoading, refreshLabStatus }));
-vi.mock('$lib/api', () => ({ startLab, stopLab, killLab }));
+vi.mock('#lib/stores/lab.ts', () => ({ labStatus, labLoading, refreshLabStatus }));
+vi.mock('#lib/api.ts', () => ({ startLab, stopLab, killLab }));
 
 async function renderPage(
 	data: { scenarios: ScenarioSummary[]; scenariosError: boolean } = {

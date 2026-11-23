@@ -233,5 +233,10 @@ def test_built_wheel_has_both_package_and_bundle(tmp_path: Path) -> None:
     # Scenario adapters ship in this distribution, so the bundled `src` copy
     # carries them. What must not happen is one landing *inside* the framework
     # package, where it would stop being reachable only through an entry point.
-    assert any("_labdata/src/aptl_techvault/" in n for n in names)
-    assert not any(n.startswith("aptl/scenarios/aptl_techvault") for n in names)
+    from tests.declared_adapters import adapter_packages
+
+    adapters = adapter_packages()
+    assert adapters
+    for adapter in adapters:
+        assert any(f"_labdata/src/{adapter}/" in n for n in names)
+        assert not any(n.startswith(f"aptl/scenarios/{adapter}") for n in names)

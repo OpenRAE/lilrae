@@ -24,10 +24,9 @@ from tests.helpers import dockerfile_copies
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Both Ubuntu substrates duplicate the shared base layer, so both must carry it.
+# The retained Ubuntu substrate must carry the shared hardening layer.
 _UBUNTU_SUBSTRATES = (
     Path("containers/base/Dockerfile.ubuntu"),
-    Path("containers/reverse/Dockerfile"),
 )
 _DROP_IN = Path("containers/base/sshd/00-aptl-hardening.conf")
 _REQUIRED_DIRECTIVES = (

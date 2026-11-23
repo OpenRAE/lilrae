@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import { writable, get } from 'svelte/store';
 
 // The layout initialises the lab store on mount; stub it so no fetch/SSE runs.
-vi.mock('$lib/stores/lab', () => ({
+vi.mock('#lib/stores/lab.ts', () => ({
 	initLabStore: vi.fn(),
 	destroyLabStore: vi.fn(),
 	labStatus: writable({ running: false, containers: [], error: null })

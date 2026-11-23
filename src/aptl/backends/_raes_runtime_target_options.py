@@ -11,6 +11,7 @@ from aptl.backends.raes_observability_scope import ObservabilityScopeDecision
 from aptl.backends.raes_operator_access import OperatorAccessDecision
 from aptl.backends.raes_participant_actions import ParticipantActionSpec
 from aptl.backends.raes_participant_driver import ParticipantPlanAuthority
+from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
 from aptl.backends.scenario_startup import ScenarioStartupSelection
 from aptl.backends.scenario_capture import ResolvedScenarioCapture
 from aptl.core.experiment.capture_plan import CapturePlan
@@ -29,3 +30,4 @@ class RuntimeTargetOptions:
     startup_selection: ScenarioStartupSelection | None = None
     capture_selection: ResolvedScenarioCapture | None = None
     participant_inject_delivery: bool = False
+    autonomous_bindings: tuple[LilraeParticipantBinding, ...] = ()

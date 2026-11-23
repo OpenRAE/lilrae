@@ -258,7 +258,7 @@ def start(
         )
     except WorkbenchConfigurationError as exc:
         _fail(SeatLauncherError("invalid-host-access", str(exc)))
-    except (OSError, ValidationError) as exc:
+    except (OSError, ValidationError):
         _fail(SeatLauncherError("invalid-host-access", "host access input is invalid"))
     except SeatLauncherError as exc:
         _fail(exc)
@@ -375,7 +375,12 @@ def reconcile(seat_root: Path | None = typer.Option(None, "--seat-root")) -> Non
 def status(seat_root: Path | None = typer.Option(None, "--seat-root")) -> None:
     """Print coarse seat health without credentials."""
 
-    projection = status_seat(_resolved_seat_root(seat_root))
+    try:
+        projection = status_seat(_resolved_seat_root(seat_root))
+    except SeatLauncherError as exc:
+        _fail(exc)
+    except OSError:
+        _fail(SeatLauncherError("corrupt-seat-state", "seat state is unavailable"))
     _emit(projection.model_dump(mode="json"))
 
 
@@ -397,16 +402,18 @@ def open_kiosk(
             namespace_pid = read_vm_pid(resolved_root)
             if namespace_pid is None:
                 raise SeatLauncherError("vm-not-running", "seat desktop VM is not running")
+        plan = open_participant_kiosk(
+            participant_port=participant_port or 443,
+            browser_command=browser_command,
+            dry_run=dry_run,
+            launch_token=launch_token,
+            bootstrap_directory=resolved_root / "runtime/kiosk",
+            namespace_pid=namespace_pid,
+        )
     except SeatLauncherError as exc:
         _fail(exc)
-    plan = open_participant_kiosk(
-        participant_port=participant_port or 443,
-        browser_command=browser_command,
-        dry_run=dry_run,
-        launch_token=launch_token,
-        bootstrap_directory=resolved_root / "runtime/kiosk",
-        namespace_pid=namespace_pid,
-    )
+    except OSError:
+        _fail(SeatLauncherError("corrupt-seat-state", "seat state is unavailable"))
     _emit({"kiosk": True, "argv": list(plan.argv), "url": plan.url})
 
 

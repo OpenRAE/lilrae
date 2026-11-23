@@ -28,7 +28,7 @@ from aptl.core.evidence_bundle.closure import (
     VerifiedClosure,
     build_closure,
 )
-from aptl.core.evidence_bundle.envelope import BundleEnvelopeV1, InventoryRow
+from aptl.core.evidence_bundle.envelope import BundleEnvelopeV1
 from aptl.core.evidence_bundle.errors import BundleError
 from aptl.core.evidence_bundle.inventory import (
     EnvelopeInputs,
@@ -43,31 +43,9 @@ from aptl.core.evidence_bundle.projections import run_projections
 from aptl.core.evidence_bundle.projections.registry import ProjectionContext
 from aptl.core.evidence_bundle.schemas import SchemaArtifact, collect_schemas
 from aptl.core.evidence_bundle.verify import VerificationReport, verify_bundle
-from aptl.utils import redaction
 
 _BUNDLE_PROFILE = "aptl-evidence-bundle-profile/v1"
 _MEDIA_SCHEMA = "application/schema+json"
-
-
-def _scrub_rows(rows: list[InventoryRow]) -> tuple[list[InventoryRow], bool]:
-    """Redact secret-shaped values in GENERATED free-text metadata only.
-
-    Export is not the first redaction boundary (ADR-029): canonical record/blob
-    bytes are never rewritten. But a free-text disclosure the builder copies into
-    the envelope is new metadata, so a secret-shaped value there is redacted and
-    disclosed rather than published.
-    """
-    scrubbed = False
-    result: list[InventoryRow] = []
-    for row in rows:
-        disclosure = row.loss_disclosure
-        if disclosure:
-            redacted = redaction.redact(disclosure)
-            if redacted != disclosure:
-                row = row.model_copy(update={"loss_disclosure": redacted})
-                scrubbed = True
-        result.append(row)
-    return result, scrubbed
 
 
 @dataclass(frozen=True)
@@ -81,7 +59,7 @@ class BundleBuildResult:
 
 
 def _load_records(
-    run_dir: Path, closure: VerifiedClosure, limits: BundleLimits
+    run_dir: Path, closure: VerifiedClosure
 ) -> tuple[list[dict[str, object]], dict[str, int | None]]:
     """Re-read the evidence records as canonical SOURCE dicts + retained sizes.
 
@@ -99,9 +77,7 @@ def _load_records(
     for entry in closure.entries:
         if entry.logical_role != "evidence-record":
             continue
-        _, _, body = _io.read_source(
-            run_dir, entry.source_run_relpath, max_bytes=limits.max_member_bytes
-        )
+        _, _, body = _io.read_source(run_dir, entry.source_run_relpath)
         record = json.loads(body)
         records.append(record)
         content_uri = record.get("raw_content", {}).get("content_uri")
@@ -135,9 +111,8 @@ def build_evidence_bundle(
         run_id,
         seal_verifier=options.seal_verifier,
         source=options.source,
-        limits=limits,
     )
-    records, retained = _load_records(run_dir, closure, limits)
+    records, retained = _load_records(run_dir, closure)
 
     proj_ctx = ProjectionContext(
         run_dir=run_dir, records=tuple(records), retained_sizes=retained, limits=limits
@@ -172,16 +147,6 @@ def build_evidence_bundle(
     }
     for member in projection_run.members:
         rows.append(projection_row(member, descriptor_by_path[member.bundle_path]))
-
-    rows, scrubbed = _scrub_rows(rows)
-    if scrubbed:
-        limitations.append(
-            ClosureLimitation(
-                codes.METADATA_REDACTED,
-                "secret-shaped bundle metadata was redacted",
-                "envelope",
-            )
-        )
 
     validation_disclosures = [
         "canonical artifacts carry their published RAES JSON Schema for structural validation",

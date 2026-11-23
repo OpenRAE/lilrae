@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+
+from raes_contracts.canonical import canonical_json_digest
 
 
 @dataclass(frozen=True)
@@ -25,11 +27,31 @@ class SemanticRuntimeSelector:
 
 
 @dataclass(frozen=True)
+class BackendCompanionContainer:
+    """One backend-owned container that serves part of a node's surface.
+
+    It joins the owner node's network namespace, so the node keeps one network
+    identity and its declared listeners. ``environment`` holds literal values;
+    ``inherited_environment`` names plain variables copied from the owner's
+    selected runtime, so an authored value is never restated here.
+    """
+
+    role: str
+    source_name: str
+    source_version: str
+    image_ref: str
+    provenance_refs: tuple[str, ...] = ()
+    environment: tuple[tuple[str, str], ...] = ()
+    inherited_environment: tuple[str, ...] = ()
+    tmpfs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class BackendImplementationProfile:
     """One immutable image and the minimum mechanics needed to run it."""
 
     profile_id: str
-    selector: SemanticRuntimeSelector
+    selector: SemanticRuntimeSelector | None
     source_name: str
     source_version: str
     image_ref: str
@@ -37,6 +59,38 @@ class BackendImplementationProfile:
     dockerfile_relpath: str = ""
     context_relpath: str = ""
     runtime_selections: dict[str, object] = field(default_factory=dict)
+    source_aliases: tuple[tuple[str, str], ...] = ()
+    provenance_refs: tuple[str, ...] = ()
+    supported_os: tuple[tuple[str, str], ...] = (("linux", ""),)
+    source_runtime_selector: SemanticRuntimeSelector | None = None
+
+    @property
+    def source_catalog_revision(self) -> str:
+        """Fingerprint only the non-secret policy that selects a source image."""
+
+        selector = self.source_runtime_selector or self.selector
+        return canonical_json_digest({
+            "id": self.profile_id,
+            "source": [self.source_name, self.source_version],
+            "aliases": [list(alias) for alias in self.source_aliases],
+            "image_ref": self.image_ref,
+            "mode": self.image_mode,
+            "supported_os": [list(os) for os in self.supported_os],
+            "runtime_selector": asdict(selector) if selector is not None else None,
+            "provenance_refs": list(self.provenance_refs),
+            # Absent for companion-free profiles, so their revisions are stable.
+            **(
+                {"companions": [asdict(item) for item in self.companions]}
+                if self.companions
+                else {}
+            ),
+        })
+    #: The account provider that realizes and verifies SDL accounts placed on a
+    #: node this profile runs. It is an image fact, so the binding never depends
+    #: on a scenario's node name. Empty means the image has no account provider.
+    account_provider: str = ""
+    #: Backend-owned containers that run beside the selected image.
+    companions: tuple[BackendCompanionContainer, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -48,6 +102,7 @@ class BackendBaseSelection:
     run_capabilities: tuple[str, ...] = ()
     provider_kind: str = ""
     provider_parameters: tuple[tuple[str, str], ...] = ()
+    account_provider: str = ""
 
 
 def environment(*variables: dict[str, str]) -> list[dict[str, str]]:
@@ -88,6 +143,7 @@ def published_port(
 
 __all__ = (
     "BackendBaseSelection",
+    "BackendCompanionContainer",
     "BackendImplementationProfile",
     "SemanticRuntimeSelector",
     "environment",

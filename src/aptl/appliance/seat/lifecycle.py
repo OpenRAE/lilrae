@@ -238,25 +238,26 @@ def _load_seat_image(
     """Resolve the seat image and the declaration a launch is bound to."""
 
     try:
-        cache = (cache_for_seat(paths.seat_root, paths.image_reference, paths.image_cache_dir)
-                 if use_retained else paths.image_cache_dir)
+        cache = (
+            cache_for_seat(
+                paths.seat_root, paths.image_reference, paths.image_cache_dir
+            )
+            if use_retained
+            else paths.image_cache_dir
+        )
         selection = select_seat_image(
             paths.image_reference,
             cache_dir=cache,
             check=check,
         )
-        cached = cached_seat_image_config(
-            cache, disk_digest=selection.digest
-        )
+        cached = cached_seat_image_config(cache, disk_digest=selection.digest)
         if cached is None:
             descriptor = resolve_disk_descriptor(paths.image_reference)
             if descriptor.digest != selection.digest:
                 raise SeatImageError(
                     "selected disk config is unavailable after the tag moved"
                 )
-            config, config_digest = cache_seat_image_config(
-                descriptor, cache
-            )
+            config, config_digest = cache_seat_image_config(descriptor, cache)
         else:
             config, config_digest = cached
     except SeatImageError as exc:
@@ -278,10 +279,17 @@ def _image_binding(
 ) -> ApplianceBoundaryBinding:
     """Project the image declaration into the boundary binding."""
 
+    protected = image.policy.seat_component_protection
+    route_digest = (
+        image.config.binding.participant_routes_digest
+        or image.config.binding.raes_plan_digest
+    )
+    assert route_digest is not None
     return ApplianceBoundaryBinding(
         policy_digest=image.policy_digest,
         payload_digest=image.selection.digest,
-        raes_plan_digest=image.config.binding.raes_plan_digest,
+        participant_routes_digest=route_digest if protected else None,
+        raes_plan_digest=None if protected else route_digest,
         raes_boundary_required=image.policy.internal_zone_isolation,
         boundary_helper_image=image.config.binding.boundary_helper_image,
         egress_proxy_image=image.config.binding.egress_proxy_image,
@@ -301,7 +309,9 @@ def image_requires_host_access(
             descriptor = resolve_disk_descriptor(image_reference)
             config = fetch_seat_image_config(descriptor)
         else:
-            selection = select_seat_image(image_reference, cache_dir=cache_dir, check=False)
+            selection = select_seat_image(
+                image_reference, cache_dir=cache_dir, check=False
+            )
             cached = cached_seat_image_config(cache_dir, disk_digest=selection.digest)
             if cached is None:
                 descriptor = resolve_disk_descriptor(image_reference)
@@ -369,13 +379,9 @@ def stage_seat(
     image = _load_seat_image(paths, use_retained=not replace_image)
     if image.config.desktop_privilege_contract is not None:
         if desktop_mode not in {"administrative", "event"}:
-            raise SeatLauncherError(
-                "invalid-desktop-mode", SELECT_DESKTOP_MODE
-            )
+            raise SeatLauncherError("invalid-desktop-mode", SELECT_DESKTOP_MODE)
     elif desktop_mode is not None:
-        raise SeatLauncherError(
-            "unsupported-desktop-mode", UNSUPPORTED_DESKTOP_MODE
-        )
+        raise SeatLauncherError("unsupported-desktop-mode", UNSUPPORTED_DESKTOP_MODE)
     require_host_prerequisites(
         image.config.resources,
         seat_root=seat_root,
@@ -395,9 +401,11 @@ def stage_seat(
         forbidden_reachability_passed=True,
         complete=True,
     )
-    source_cache = (paths.image_cache_dir if replace_image else cache_for_seat(
-        seat_root, image_reference, paths.image_cache_dir
-    ))
+    source_cache = (
+        paths.image_cache_dir
+        if replace_image
+        else cache_for_seat(seat_root, image_reference, paths.image_cache_dir)
+    )
     retain_image(seat_root, source_cache, image.selection)
     paths.launch_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     # The gate reads the policy from disk and checks it against the digest in
@@ -406,7 +414,9 @@ def stage_seat(
         paths.boundary_policy, rfc8785.dumps(image.policy.model_dump(mode="json"))
     )
     _write_launch_descriptor(
-        paths.launch_descriptor, image, host_observation_id=bundle.observation_id,
+        paths.launch_descriptor,
+        image,
+        host_observation_id=bundle.observation_id,
         desktop_mode=desktop_mode,
     )
     digest = _launch_descriptor_digest(paths.launch_descriptor)
@@ -430,7 +440,10 @@ def stage_seat(
 
 
 def _write_launch_descriptor(
-    destination: Path, image: ResolvedSeatImage, *, host_observation_id: str,
+    destination: Path,
+    image: ResolvedSeatImage,
+    *,
+    host_observation_id: str,
     desktop_mode: str | None = None,
 ) -> None:
     """Write the create-once launch projection for one generation."""
@@ -445,14 +458,19 @@ def _write_launch_descriptor(
     if not supported and desktop_mode is not None:
         raise SeatLauncherError("unsupported-desktop-mode", UNSUPPORTED_DESKTOP_MODE)
     descriptor = SeatLaunchDescriptor(
-        schema_version="aptl.appliance-launch/v3" if supported else "aptl.appliance-launch/v2",
+        schema_version="aptl.appliance-launch/v3"
+        if supported
+        else "aptl.appliance-launch/v2",
         image_reference=str(image.selection.reference),
         image_digest=image.selection.digest,
         image_config_digest=image.config_digest,
         boundary_policy_digest=image.policy_digest,
         boundary_helper_image=image.config.binding.boundary_helper_image,
         egress_proxy_image=image.config.binding.egress_proxy_image,
-        participant_routes_digest=image.config.binding.raes_plan_digest,
+        participant_routes_digest=(
+            image.config.binding.participant_routes_digest
+            or image.config.binding.raes_plan_digest
+        ),
         host_mcp_contract=image.policy.host_mcp_contract,
         host_observation_id=host_observation_id,
         desktop_mode=desktop_mode,
@@ -670,7 +688,10 @@ def _fail_closed_start(seat_root: Path, paths: SeatPaths, starting: SeatRecord) 
 
 
 def _require_guest_publication(
-    seat_root: Path, record: SeatRecord, options: StartSeatOptions, tracked_pid: int,
+    seat_root: Path,
+    record: SeatRecord,
+    options: StartSeatOptions,
+    tracked_pid: int,
 ) -> None:
     """Check the access path declared by this generation's signed image."""
 
@@ -686,7 +707,9 @@ def _require_guest_publication(
             )
         else:
             token_file = (
-                seat_root / "access" / f"generation-{record.generation}"
+                seat_root
+                / "access"
+                / f"generation-{record.generation}"
                 / "web-launch-token"
             )
             if not token_file.is_file() or token_file.is_symlink():
@@ -700,7 +723,10 @@ def _require_guest_publication(
 
 
 def _forbidden_reachability_passed(
-    record: SeatRecord, options: StartSeatOptions, *, private_network: bool,
+    record: SeatRecord,
+    options: StartSeatOptions,
+    *,
+    private_network: bool,
 ) -> bool:
     """Keep the existing boundary probe and verify the private port is hidden."""
 
@@ -722,7 +748,9 @@ def _forbidden_reachability_passed(
 
 
 def _selected_desktop_mode(
-    paths: SeatPaths, record: SeatRecord, options: StartSeatOptions,
+    paths: SeatPaths,
+    record: SeatRecord,
+    options: StartSeatOptions,
 ) -> str | None:
     """Read the immutable mode and reject a conflicting start request."""
 
@@ -733,7 +761,9 @@ def _selected_desktop_mode(
     elif record.schema_version == "aptl.seat-record/v1":
         selected = None
     else:
-        raise SeatLauncherError("corrupt-seat-state", "seat launch descriptor is missing")
+        raise SeatLauncherError(
+            "corrupt-seat-state", "seat launch descriptor is missing"
+        )
     if options.desktop_mode is not None and options.desktop_mode != selected:
         raise SeatLauncherError(
             "desktop-mode-mismatch", "reset the seat to change desktop mode"
@@ -748,8 +778,12 @@ def _selected_desktop_mode(
 
 
 def _deliver_administrative_input(
-    mode: str | None, socket_path: Path, options: StartSeatOptions,
-    record: SeatRecord, seat_root: Path, tracked_pid: int,
+    mode: str | None,
+    socket_path: Path,
+    options: StartSeatOptions,
+    record: SeatRecord,
+    seat_root: Path,
+    tracked_pid: int,
 ) -> None:
     """Apply a chosen admin password through the private VM channel."""
 
@@ -765,7 +799,8 @@ def _deliver_administrative_input(
 
 
 def _require_image_mode_contract(
-    image: ResolvedSeatImage, mode: str | None,
+    image: ResolvedSeatImage,
+    mode: str | None,
 ) -> None:
     """Require an exact match between signed support and launch selection."""
 
@@ -917,15 +952,18 @@ def start_seat(
                         else 0
                     ),
                     occupied_probe=(
-                        lambda handle, mapping: any(
-                            observed.address == mapping.address
-                            and observed.port == mapping.port
-                            and observed.protocol == mapping.protocol
-                            for observed in collect_loopback_listeners(
-                                owner_pid=handle.pid
+                        lambda handle, mapping: (
+                            any(
+                                observed.address == mapping.address
+                                and observed.port == mapping.port
+                                and observed.protocol == mapping.protocol
+                                for observed in collect_loopback_listeners(
+                                    owner_pid=handle.pid
+                                )
                             )
+                            if private_network
+                            else None
                         )
-                        if private_network else None
                     ),
                 )
             else:
@@ -937,8 +975,12 @@ def start_seat(
                 "failed-launch", "tracked VM exited before listener observation"
             )
         _deliver_administrative_input(
-            selected, privilege_socket, launch_options, record,
-            seat_root, tracked_pid,
+            selected,
+            privilege_socket,
+            launch_options,
+            record,
+            seat_root,
+            tracked_pid,
         )
         observed = wait_for_loopback_listeners(
             record.mappings,
@@ -955,7 +997,9 @@ def start_seat(
             update={"host_boot_id": host_boot_id}
         )
         forbidden_passed = _forbidden_reachability_passed(
-            record, launch_options, private_network=private_network,
+            record,
+            launch_options,
+            private_network=private_network,
         )
         bundle = build_host_observation(
             binding=binding,
@@ -1000,10 +1044,13 @@ def start_seat(
             )
         else:
             guest = launch_options.guest_readiness_probe()
-        binding = binding.model_copy(
-            update={
+        binding = ApplianceBoundaryBinding.model_validate(
+            {
+                **binding.model_dump(),
                 "guest_boot_id": guest.boot_id,
                 "guest_daemon_id": guest.guest_daemon_id,
+                "raes_plan_digest": guest.raes_plan_digest,
+                "raes_boundary_required": guest.raes_boundary_required,
             }
         )
         verdict = run_appliance_boundary_gate(
@@ -1109,13 +1156,17 @@ def reset_seat(
     elif record.schema_version == "aptl.seat-record/v1":
         previous_mode = None
     else:
-        raise SeatLauncherError("corrupt-seat-state", "seat launch descriptor is missing")
+        raise SeatLauncherError(
+            "corrupt-seat-state", "seat launch descriptor is missing"
+        )
     selected_mode = desktop_mode if desktop_mode is not None else previous_mode
     if selected_mode is not None and selected_mode not in {"administrative", "event"}:
         raise SeatLauncherError("invalid-desktop-mode", SELECT_DESKTOP_MODE)
     if replace_image or desktop_mode is not None:
         candidate_paths = _seat_paths(
-            seat_root, seat_id=seat_id, image_reference=image_reference,
+            seat_root,
+            seat_id=seat_id,
+            image_reference=image_reference,
             image_cache_dir=image_cache_dir,
         )
         target_image = _load_seat_image(candidate_paths, use_retained=not replace_image)
@@ -1123,7 +1174,9 @@ def reset_seat(
         if supported and selected_mode is None:
             raise SeatLauncherError("invalid-desktop-mode", SELECT_DESKTOP_MODE)
         if not supported and selected_mode is not None:
-            raise SeatLauncherError("unsupported-desktop-mode", UNSUPPORTED_DESKTOP_MODE)
+            raise SeatLauncherError(
+                "unsupported-desktop-mode", UNSUPPORTED_DESKTOP_MODE
+            )
     invalidate_host_access(seat_root, reason="seat-reset")
     stop_vm(seat_root)
     paths = _seat_paths(
@@ -1134,7 +1187,8 @@ def reset_seat(
     )
     remove_overlay_artifacts(
         seat_root / "runtime/kiosk",
-        paths.overlay_path, paths.overlay_state_dir,
+        paths.overlay_path,
+        paths.overlay_state_dir,
         paths.overlay_path.with_suffix(".base.qcow2"),
     )
     updated = record.model_copy(update={"lifecycle_state": "needs-reset"})
@@ -1243,7 +1297,7 @@ def status_seat(seat_root: Path) -> SeatStatusProjection:
             desktop_mode = model_validate_json_strict(
                 SeatLaunchDescriptor, descriptor_path.read_bytes()
             ).desktop_mode
-        except (OSError, ValueError):
+        except OSError, ValueError:
             desktop_mode = None
     diagnostics: list[str] = []
     if record.lifecycle_state == "ready":
@@ -1251,8 +1305,11 @@ def status_seat(seat_root: Path) -> SeatStatusProjection:
             diagnostics.append("vm-not-running")
         else:
             desktop = next(
-                (mapping for mapping in record.mappings
-                 if mapping.audience == "participant" and mapping.guest_port == 8080),
+                (
+                    mapping
+                    for mapping in record.mappings
+                    if mapping.audience == "participant" and mapping.guest_port == 8080
+                ),
                 None,
             )
             if desktop is not None and not probe_desktop_publication(

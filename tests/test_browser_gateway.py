@@ -29,22 +29,22 @@ def test_gateway_preserves_root_paths_and_denies_other_role():
     thread.start()
     principal = [BrowserPrincipal("alice", ("red",))]
     route = BrowserRoute(
-        bookmark_ref="soc-thehive",
-        hostname="thehive.seat.localhost",
+        bookmark_ref="soc-misp",
+        hostname="misp.seat.localhost",
         upstream=f"http://127.0.0.1:{upstream.server_port}",
     )
     app = BrowserGateway(FastAPI(), routes=(route,), authorizer=lambda _: principal[0])
     try:
         client = TestClient(app)
-        assert client.get("http://thehive.seat.localhost/api/cases").status_code == 403
+        assert client.get("http://misp.seat.localhost/events/index").status_code == 403
         assert hits == []
         principal[0] = BrowserPrincipal("alice", ("blue",))
-        response = client.get("http://thehive.seat.localhost/api/cases")
+        response = client.get("http://misp.seat.localhost/events/index")
         assert response.status_code == 200
         assert response.text == "actual service response"
-        assert hits == ["/api/cases"]
+        assert hits == ["/events/index"]
         principal[0] = None
-        assert client.get("http://thehive.seat.localhost/api/cases").status_code == 401
+        assert client.get("http://misp.seat.localhost/events/index").status_code == 401
     finally:
         upstream.shutdown()
         thread.join()
@@ -69,8 +69,8 @@ def test_gateway_websocket_relays_both_frame_types_and_closes_revoked_session():
         principal = [BrowserPrincipal("alice", ("blue",))]
         port = upstream.socket.getsockname()[1]
         route = BrowserRoute(
-            bookmark_ref="soc-thehive",
-            hostname="thehive.seat.localhost",
+            bookmark_ref="soc-misp",
+            hostname="misp.seat.localhost",
             upstream=f"http://127.0.0.1:{port}",
         )
         gateway = BrowserGateway(
@@ -79,7 +79,7 @@ def test_gateway_websocket_relays_both_frame_types_and_closes_revoked_session():
         try:
             with TestClient(gateway) as client:
                 with client.websocket_connect(
-                    "ws://thehive.seat.localhost/events?seat=1"
+                    "ws://misp.seat.localhost/events?seat=1"
                 ) as socket:
                     socket.send_text("text frame")
                     assert socket.receive_text() == "text frame"
@@ -89,7 +89,7 @@ def test_gateway_websocket_relays_both_frame_types_and_closes_revoked_session():
                     with pytest.raises(WebSocketDisconnect):
                         socket.receive_text()
                 principal[0] = BrowserPrincipal("alice", ("red",))
-                denied = client.websocket_connect("ws://thehive.seat.localhost/events")
+                denied = client.websocket_connect("ws://misp.seat.localhost/events")
                 with pytest.raises(WebSocketDisconnect):
                     denied.__enter__()
         finally:
@@ -103,8 +103,8 @@ def test_gateway_rewrites_local_redirects_and_strips_workbench_cookie():
     from aptl.workbench.browser_gateway import BrowserGateway, BrowserRoute
 
     route = BrowserRoute(
-        bookmark_ref="soc-thehive",
-        hostname="thehive.seat.localhost",
+        bookmark_ref="soc-misp",
+        hostname="misp.seat.localhost",
         upstream="http://127.0.0.1:9000",
     )
     request = Request(
@@ -114,9 +114,9 @@ def test_gateway_rewrites_local_redirects_and_strips_workbench_cookie():
             "scheme": "http",
             "path": "/",
             "query_string": b"",
-            "server": ("thehive.seat.localhost", 8080),
+            "server": ("misp.seat.localhost", 8080),
             "headers": [
-                (b"host", b"thehive.seat.localhost:8080"),
+                (b"host", b"misp.seat.localhost:8080"),
                 (b"cookie", b"aptl_participant=private-session; service=retained"),
                 (b"x-aptl-owner", b"untrusted"),
                 (b"x-forwarded-host", b"foreign"),
@@ -128,7 +128,7 @@ def test_gateway_rewrites_local_redirects_and_strips_workbench_cookie():
         BrowserGateway._response_header(
             "Location", route.upstream + "/login", request, route
         )
-        == "http://thehive.seat.localhost:8080/login"
+        == "http://misp.seat.localhost:8080/login"
     )
     cookie = BrowserGateway._response_header(
         "Set-Cookie", "service=value; Domain=internal.local; HttpOnly", request, route

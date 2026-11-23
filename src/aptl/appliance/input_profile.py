@@ -11,7 +11,7 @@ from typing import Any
 from aptl.utils.deterministic_archive import hash_file_nofollow as _hash_file
 from aptl.core.scenario_bundle import ScenarioBundle
 from aptl.validation.curated_live_proof import ExpectedMatrix
-from aptl.validation.participant_mcp_smoke import resolve_participant_mcp_smoke_plan
+from aptl.validation.participant_mcp_smoke import discover_participant_mcp_smoke_checks
 from aptl.validation.participant_profile_models import (
     AssetLockEntry,
     ParticipantAssetLock,
@@ -42,14 +42,14 @@ def _profile_checks() -> list[dict[str, Any]]:
     """Describe the real tools, browser operations and delivery checks."""
     checks = []
     profiles = tuple(profile_for(role) for role in ("red", "blue"))
-    for operation in resolve_participant_mcp_smoke_plan("techvault-full.techvault"):
+    for check in discover_participant_mcp_smoke_checks("techvault-full.techvault"):
         checks.append(
             {
-                "check_id": operation.check_id,
-                "capability_id": operation.check_id,
+                "check_id": check.check_id,
+                "capability_id": check.check_id,
                 "kind": "mcp-tool",
-                "subject_id": operation.server_id,
-                "operation_id": operation.tool_name,
+                "subject_id": check.server_id,
+                "operation_id": check.tool_name,
                 "timeout_seconds": 120,
             }
         )

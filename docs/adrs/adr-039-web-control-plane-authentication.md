@@ -8,12 +8,18 @@ accepted
 
 2026-06-14
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [web Reference](../reference/web.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 The optional web profile adds an operator-facing FastAPI control plane and
-terminal relay on top of the same lab lifecycle code used by the CLI. That API
-can start, stop, inspect, and kill the lab, and the API container intentionally
-mounts the host Docker socket so it can drive Docker Compose. This is not a
+terminal relay on top of the same lab lifecycle code used by the CLI. The API can start, stop, inspect, and kill the lab. Its container mounts the host Docker socket to control Compose. This is not a
 deliberately vulnerable target service; it is a control plane with
 host-equivalent Docker reach.
 
@@ -45,25 +51,16 @@ WebSocket handshakes.
 
 The web control plane must be protected by two independent defaults:
 
-1. **Loopback exposure by default.** The API and UI host publishes must bind to
-   `127.0.0.1` by default in Docker Compose, and host-run API serving must keep
-   `127.0.0.1` as its default bind address. Any non-loopback exposure is an
+1. **Loopback exposure by default.** Compose API and UI publications must default to `127.0.0.1`. The host-run API must also default to loopback. Any non-loopback exposure is an
    explicit operator risk decision, not the default profile behavior.
 2. **Authentication on the whole API surface.** Every HTTP request under
    `/api`, including `/api/health`, SSE endpoints, and state-changing routes,
    requires the web control-plane token before route logic runs. The terminal
-   WebSocket requires the same token before `accept()`. Unknown `/api/*` paths
-   should not become an unauthenticated route-enumeration side channel; an
-   unauthenticated caller should see the auth failure before any route-specific
-   result.
+   WebSocket requires the same token before `accept()`. Unknown API paths should authenticate before returning route-specific results. This avoids an unauthenticated route-discovery channel.
 
 The token is a control-plane/operator secret under ADR-029. It belongs in
 runtime environment binding, not in `aptl.json`, checked-in config, generated
-client bundles, URL examples, logs, or command-line arguments. The auth settings
-shape should follow the existing strict env-to-Pydantic pattern used by
-`ServiceConfig.from_env()`: parse once, validate once, reject missing or
-placeholder-like values with name-attributed errors, and expose a narrow typed
-object to the API layer.
+client bundles, URL examples, logs, or command-line arguments. Authentication settings should follow `ServiceConfig.from_env()`: parse and validate once. Missing or placeholder values need errors that name the setting. API consumers receive a narrow typed object.
 
 HTTP and WebSocket enforcement must share one canonical auth helper in the API
 boundary, preferably `aptl.api.deps`. That helper owns token extraction,
@@ -76,13 +73,9 @@ WebSocket failures close with policy violation before the SSH relay is opened.
 Bearer authorization headers are the primary HTTP carrier. Browser constraints
 must not weaken the design:
 
-- Native `EventSource` cannot set an `Authorization` header, so SSE must use a
-  header-capable client path such as fetch streaming, a small EventSource
-  replacement, or a same-origin server-side proxy. Do not put the token in the
+- Native `EventSource` cannot supply an Authorization header. SSE therefore needs header-capable streaming, a replacement client, or an authenticated same-origin proxy. Do not put the token in the
   event-stream URL.
-- Browser WebSocket constructors cannot set arbitrary headers, so the terminal
-  path needs a non-URL carrier such as an authenticated same-origin proxy or a
-  validated `Sec-WebSocket-Protocol` token convention. `Origin` remains a CSWSH
+- Browser WebSockets cannot set arbitrary headers. The terminal needs a non-URL credential carrier, such as an authenticated same-origin proxy or validated WebSocket subprotocol. `Origin` remains a CSWSH
   defense only, not an auth credential.
 - If a future design uses cookies instead of bearer headers, it must add an
   explicit CSRF design and revisit CORS credentials. Do not silently flip
@@ -113,9 +106,7 @@ Future socket reduction should use a least-privilege socket proxy or typed
 ## Extensibility
 
 The extensibility seam is a small, typed web-auth settings and carrier parser at
-the API boundary. Future changes such as token rotation, a socket proxy, a
-same-origin UI proxy, or a different credential carrier should replace that
-boundary without editing every router.
+the API boundary. Later token rotation, socket proxies, UI proxies, or credential carriers should replace the shared boundary. They should not require edits to every router.
 
 The network-exposure seam is the bind host in deployment and serving
 configuration, with `127.0.0.1` as the default. A future documented remote UI

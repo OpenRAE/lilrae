@@ -11,6 +11,13 @@ updated_at: 2026-10-05T07:51:12.874346Z
 
 # DET-003: Live SIEM Query Execution from Web UI
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/DET-003/requirement.md).
+
+
 ## Statement
 
 The web UI SiemQueryBlock shall execute OpenSearch/Wazuh Indexer queries in real time and display results inline. The currently disabled "Run Query" button shall be connected to the backend query infrastructure that already exists in collectors.py.

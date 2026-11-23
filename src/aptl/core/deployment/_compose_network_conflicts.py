@@ -46,7 +46,7 @@ def _subnet_conflict_message(
             "configure a non-overlapping default bridge (the `bip` setting in "
             "daemon.json). Changing it requires a planned Docker restart and "
             "affects other workloads; APTL will not change it automatically. "
-            "Then rerun `aptl lab start`."
+            "Then rerun `lilrae lab start`."
         )
     containers = details.get("containers")
     container_note = ""
@@ -58,7 +58,7 @@ def _subnet_conflict_message(
         f"{prefix}{container_note} Remove that network with "
         f"`docker network rm {docker_name}` after confirming it is stale, "
         "or configure non-overlapping APTL subnets, then rerun "
-        "`aptl lab start`."
+        "`lilrae lab start`."
     )
 
 

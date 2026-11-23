@@ -81,7 +81,7 @@ def test_retry_lineage_seals_with_predecessor_reference(tmp_path):
     """A retry is a distinct attempt that records its predecessor via RAES refs."""
     store = _store(tmp_path)
     predecessor = ExperimentReferenceModel(
-        ref_kind="run", ref_id="run-techvault-000", ref_version="1.0.0"
+        ref_kind="run", ref_id="run-fixture-000", ref_version="1.0.0"
     )
     context = completed_context(predecessor_run_ref=predecessor)
     result = finalize_terminal_attempt(context, store=store)
@@ -92,5 +92,5 @@ def test_retry_lineage_seals_with_predecessor_reference(tmp_path):
     )
     reconstructed = ExperimentRunModel.model_validate(manifest)
     assert any(
-        ref.ref_id == "run-techvault-000" for ref in reconstructed.derived_from_refs
+        ref.ref_id == "run-fixture-000" for ref in reconstructed.derived_from_refs
     )

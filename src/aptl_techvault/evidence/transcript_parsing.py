@@ -6,7 +6,7 @@ import base64
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from aptl.core.evidence.adapters.sources import SourceResult, _to_outcome
+from aptl.core.evidence.adapters.sources import SourceResult, source_result_to_outcome
 from aptl_techvault.evidence.techvault import (
     RedteamSessionTranscriptSource,
     TranscriptFrame,
@@ -16,7 +16,6 @@ from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistry,
 )
@@ -39,9 +38,8 @@ def binding_from_projection(value: object) -> CaptureBinding:
     """Rebuild and revalidate one create-once transcript binding projection."""
 
     data = _binding_projection_data(value)
-    limits = _binding_limits(data)
     _normalize_binding_projection(data)
-    binding = CaptureBinding(**data, limits=limits)  # type: ignore[arg-type]
+    binding = CaptureBinding(**data)  # type: ignore[arg-type]
     if binding.registration_id != TRANSCRIPT_REGISTRATION:
         raise ValueError("active authority is not a transcript binding")
     if not _registration_pin_matches(binding):
@@ -58,22 +56,6 @@ def _binding_projection_data(value: object) -> dict[str, object]:
     if set(data) != set(_binding_schema_keys()):
         raise ValueError("transcript binding fields do not match the schema")
     return data
-
-
-def _binding_limits(data: dict[str, object]) -> CaptureLimits:
-    """Pop and validate all positive integer capture limits."""
-
-    keys = ("max_bytes", "max_artifact_count", "max_duration_s")
-    if any(
-        not isinstance(data[key], int) or isinstance(data[key], bool) or data[key] < 1  # type: ignore[operator]
-        for key in keys
-    ):
-        raise ValueError("transcript binding limit is invalid")
-    return CaptureLimits(
-        max_bytes=data.pop("max_bytes"),  # type: ignore[arg-type]
-        max_artifact_count=data.pop("max_artifact_count"),  # type: ignore[arg-type]
-        max_duration_s=data.pop("max_duration_s"),  # type: ignore[arg-type]
-    )
 
 
 def _normalize_binding_projection(data: dict[str, object]) -> None:
@@ -111,7 +93,6 @@ def _registration_pin_matches(binding: CaptureBinding) -> bool:
         and registration.effective_config_digest() == binding.effective_config_digest
         and registration.implementation_version == binding.implementation_version
         and registration.contract_version == binding.contract_version
-        and registration.limits == binding.limits
         and registration.visibility_class is binding.visibility_class
     )
 
@@ -142,61 +123,38 @@ def _binding_schema_keys() -> tuple[str, ...]:
         sensitivity="plain",
         redaction_required=True,
         redaction_policy="redact_secrets",
-        integrity_requirements=("chain_of_custody",),
+        integrity_requirements=("checksum",),
         retention_policy="run_lifetime",
         loss_disclosure_required=True,
         visibility_class=registration.visibility_class,
-        limits=registration.limits,
     )
     return tuple(sample.binding_projection())
 
 
-@dataclass
-class _TranscriptBudget:
-    """Mutable counters enforcing aggregate transcript export limits."""
-
-    limits: CaptureLimits
-    retained_bytes: int = 0
-    artifact_count: int = 0
-
-    def add_frame(self, decoded: bytes) -> None:
-        """Account for one frame or reject before the export can exceed limits."""
-
-        self.retained_bytes += len(decoded) + 256
-        self.artifact_count += 1
-        if (
-            self.retained_bytes > self.limits.max_bytes
-            or self.artifact_count > self.limits.max_artifact_count
-        ):
-            raise ValueError("capture export exceeds admitted limits")
-
-
 def transcript_sessions(
     payload: object,
-    limits: CaptureLimits,
 ) -> tuple[tuple[str, ...], tuple[TranscriptSession, ...]]:
-    """Parse a complete bounded broker export into typed transcript sessions."""
+    """Parse a complete broker export into typed transcript sessions."""
 
     if not isinstance(payload, Mapping):
         raise ValueError("capture export is not an object")
-    expected = _expected_session_ids(payload.get("expected_session_ids"), limits)
+    expected = _expected_session_ids(payload.get("expected_session_ids"))
     sessions_raw = payload.get("sessions")
     if not isinstance(sessions_raw, list):
         raise ValueError("capture export is incomplete")
-    budget = _TranscriptBudget(limits, artifact_count=2 * len(expected))
-    sessions = tuple(_transcript_session(raw, budget) for raw in sessions_raw)
+    sessions = tuple(_transcript_session(raw) for raw in sessions_raw)
+    if "accepted_session_ids" in payload:
+        accepted = _expected_session_ids(payload["accepted_session_ids"])
+        if set(accepted) != {session.session_id for session in sessions}:
+            raise ValueError("broker ledger disagrees with exported sessions")
     return expected, sessions
 
 
-def _expected_session_ids(
-    expected_raw: object, limits: CaptureLimits
-) -> tuple[str, ...]:
+def _expected_session_ids(expected_raw: object) -> tuple[str, ...]:
     """Validate the exact unique expected-session census."""
 
-    if (
-        not isinstance(expected_raw, list)
-        or len(expected_raw) > limits.max_artifact_count // 2
-        or any(not isinstance(value, str) or not value for value in expected_raw)
+    if not isinstance(expected_raw, list) or any(
+        not isinstance(value, str) or not value for value in expected_raw
     ):
         raise ValueError("capture session inventory is invalid")
     expected = tuple(expected_raw)
@@ -205,12 +163,12 @@ def _expected_session_ids(
     return expected
 
 
-def _transcript_session(raw: object, budget: _TranscriptBudget) -> TranscriptSession:
+def _transcript_session(raw: object) -> TranscriptSession:
     """Parse one complete session and account for all of its frames."""
 
     if not isinstance(raw, Mapping) or not isinstance(raw.get("frames"), list):
         raise ValueError("capture session is incomplete")
-    frames = tuple(_transcript_frame(item, budget) for item in raw["frames"])
+    frames = tuple(_transcript_frame(item) for item in raw["frames"])
     loss_count = raw.get("loss_count", 0)
     if not isinstance(loss_count, int) or isinstance(loss_count, bool):
         raise ValueError("capture loss count is invalid")
@@ -225,8 +183,8 @@ def _transcript_session(raw: object, budget: _TranscriptBudget) -> TranscriptSes
     )
 
 
-def _transcript_frame(raw: object, budget: _TranscriptBudget) -> TranscriptFrame:
-    """Decode one bounded base64 frame and account for its retained bytes."""
+def _transcript_frame(raw: object) -> TranscriptFrame:
+    """Decode one base64 frame."""
 
     if not isinstance(raw, Mapping):
         raise ValueError("capture frame is not an object")
@@ -236,11 +194,9 @@ def _transcript_frame(raw: object, budget: _TranscriptBudget) -> TranscriptFrame
         not isinstance(sequence, int)
         or isinstance(sequence, bool)
         or not isinstance(encoded, str)
-        or len(encoded) > 4 * 1024 * 1024 // 3 + 4
     ):
         raise ValueError("capture frame is invalid")
     decoded = base64.b64decode(encoded, validate=True)
-    budget.add_frame(decoded)
     return TranscriptFrame(
         sequence=sequence,
         timestamp=str(raw["timestamp"]),
@@ -280,10 +236,7 @@ class FinalizedTranscriptCollector:
 
         finished_at = handle.context.clock.now()
         try:
-            expected, sessions = transcript_sessions(
-                self._payload,
-                self._binding.limits,
-            )
+            expected, sessions = transcript_sessions(self._payload)
         except (KeyError, TypeError, ValueError):
             result = SourceResult(status=CollectorStatus.FINALIZATION_FAILURE)
         else:
@@ -291,7 +244,7 @@ class FinalizedTranscriptCollector:
                 lambda: expected,
                 lambda: sessions,
             ).fetch(handle.started_at, finished_at)
-        return _to_outcome(result, handle.started_at, finished_at)
+        return source_result_to_outcome(result, handle.started_at, finished_at)
 
 
 __all__ = (

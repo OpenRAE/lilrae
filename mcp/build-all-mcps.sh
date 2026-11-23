@@ -12,7 +12,7 @@ npm ci --ignore-scripts
 npm run build
 
 # Build all MCP servers
-for server in mcp-red mcp-reverse mcp-soar mcp-indexer mcp-wazuh mcp-casemgmt mcp-network mcp-threatintel; do
+for server in mcp-red mcp-reverse mcp-soar mcp-indexer mcp-wazuh mcp-network mcp-threatintel; do
   echo "--- Building $server ---"
   cd "$SCRIPT_DIR/$server"
   npm ci --ignore-scripts

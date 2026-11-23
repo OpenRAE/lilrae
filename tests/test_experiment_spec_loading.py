@@ -62,7 +62,7 @@ class TestLoadExperimentRootHappyPath:
         model = load_experiment_root(data, policy=default_admission_policy())
 
         assert isinstance(model, ExperimentSpecModel)
-        assert model.spec_id == "spec-techvault-red-tactic-sweep-v1"
+        assert model.spec_id == json.loads(data)["spec_id"]
 
 
 class TestLoadExperimentRootDuplicateKeyPreflight:
@@ -191,7 +191,7 @@ class TestLoadTaskHappyPath:
         model = load_task(data, policy=default_admission_policy())
 
         assert isinstance(model, ExperimentTaskModel)
-        assert model.task_id == "task-techvault-red-team-v1"
+        assert model.task_id == json.loads(data)["task_id"]
 
 
 class TestLoadTaskRejections:
@@ -248,7 +248,7 @@ class TestLoadCaptureSpecHappyPath:
         model = load_capture_spec(data, policy=default_admission_policy())
 
         assert isinstance(model, ExperimentCaptureSpecModel)
-        assert model.capture_spec_id == "capture-techvault-evidence-v1"
+        assert model.capture_spec_id == json.loads(data)["capture_spec_id"]
 
 
 class TestLoadCaptureSpecRejections:

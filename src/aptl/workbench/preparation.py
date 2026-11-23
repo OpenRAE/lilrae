@@ -11,9 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from aptl.backends.raes_evidence_acquisition import load_active_transcript_authorities
 from aptl.backends.raes_profiles import normalized_identifier_aliases
 from aptl.core._soc_ca_io import _atomic_write
-from aptl.core.config import load_config
+from aptl.core.config import AptlConfig, load_config
+from aptl.core.mcp_policy import McpRunAdmission, configured_server_ids
 from aptl.core.deployment.docker_compose import DockerComposeBackend
-from aptl.core.scenario_bundle import env_pack_bundle
+from aptl.core.scenario_bundle import PackIdentity, env_pack_bundle
 from aptl.validation.curated_live_proof import ExpectedMatrix, expected_bundle_matrix
 from aptl.workbench.access import (
     CallerGrant,
@@ -28,6 +29,7 @@ from aptl.workbench.guest_binding import (
     observe_guest,
     observe_guest_containers,
     read_private_binding,
+    read_management_bytes,
     verify_guest_observation,
 )
 from aptl.workbench.profiles import WorkbenchConfigurationError
@@ -80,10 +82,59 @@ def verify_full_inventory(matrix: ExpectedMatrix, containers: dict[str, str]) ->
         )
 
 
+def load_run_admission(project: Path, run_id: str) -> McpRunAdmission | None:
+    """Read the private MCP admission bound to this run and its MCP configuration.
+
+    An absent record returns ``None``. A record of another run, or one whose
+    servers differ from the run's ``.mcp.json`` selection, is refused.
+    """
+    selection_path = project / ".aptl" / "mcp-admission.json"
+    if not selection_path.exists():
+        return None
+    admission = McpRunAdmission.model_validate_json(
+        read_management_bytes(selection_path)
+    )
+    if admission.run_id != run_id or admission.server_ids != configured_server_ids(
+        project, run_id
+    ):
+        raise WorkbenchConfigurationError("guest MCP admission belongs to another run")
+    return admission
+
+
+def _transport_inventory(
+    project: Path, config: AptlConfig, run_id: str, containers: dict[str, str]
+) -> tuple[PackIdentity, tuple[str, ...]]:
+    """Validate the admitted workload and server selection for guest enrollment."""
+    server_ids = configured_server_ids(project, run_id)
+    admission = load_run_admission(project, run_id)
+    if admission is not None:
+        observed = set().union(
+            *(set(normalized_identifier_aliases(name)) for name in containers)
+        )
+        if not admission.container_aliases or any(
+            not (set(aliases) & observed) for aliases in admission.container_aliases
+        ):
+            raise WorkbenchConfigurationError(
+                "admitted workload inventory is incomplete"
+            )
+        pack_identity = admission.pack
+    else:
+        bundle = env_pack_bundle(
+            project / ".aptl" / "transport-pack", config.scenario.identity
+        )
+        verify_full_inventory(
+            expected_bundle_matrix(project, config, bundle), containers
+        )
+        pack_identity = bundle.pack_identity
+    if pack_identity is None:
+        raise WorkbenchConfigurationError("guest scenario identity is unavailable")
+    return pack_identity, server_ids
+
+
 def prepare_guest_transport(
     request: TransportPreparation, output: Path
 ) -> GuestDispatchBinding:
-    """Publish forced-key policy and discovery only for a live full deployment."""
+    """Publish forced-key policy and discovery for the live admitted deployment."""
     if not output.is_absolute() or output.exists():
         raise WorkbenchConfigurationError(
             "transport output must be a new absolute directory"
@@ -105,10 +156,9 @@ def prepare_guest_transport(
     if not backend.bind_local_docker_socket().success:
         raise WorkbenchConfigurationError("guest Docker binding failed")
     containers = observe_guest_containers(backend)
-    bundle = env_pack_bundle(
-        project / ".aptl" / "transport-pack", config.scenario.identity
+    pack_identity, server_ids = _transport_inventory(
+        project, config, request.run_id, containers
     )
-    verify_full_inventory(expected_bundle_matrix(project, config, bundle), containers)
     authorities = tuple(
         authority
         for authority in load_active_transcript_authorities(project)
@@ -129,12 +179,13 @@ def prepare_guest_transport(
         guest_daemon_id=backend._docker_daemon_id,
         guest_project=backend.project_name,
         container_ids=containers,
-        scenario_pack=bundle.pack_identity,
+        scenario_pack=pack_identity,
         guest_endpoint=request.guest_endpoint,
         outer_endpoint=request.outer_endpoint,
         host_key_fingerprint=key_fingerprint(request.host_public_key.read_text()),
         observed_at=now,
         lifecycle_state="ready",
+        mcp_server_ids=server_ids,
     )
     grants = _enrolled_grants(request, now)
     binding = GuestDispatchBinding(

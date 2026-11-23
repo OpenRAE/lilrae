@@ -35,17 +35,22 @@ class ComposeAutoremoveMixin:
         records a receipt only after Docker confirms that name is absent.
         """
 
-        image_addresses = {image.address for image in realization.images}
+        images = {image.address: image for image in realization.images}
         for node in realization.nodes:
             name = node.container_name
             if not name or not runtime_expects_completion(node.runtime):
                 continue
+            image = images.get(node.address)
+            selected_ref = image.image_ref if image and image.catalog_record else None
             failure = self._retire_completed_autoremove_node(
                 name,
                 node.os,
                 observation_context,
-                require_image_digest=node.address in image_addresses,
-                require_image_config_id=node.dynamic_composition,
+                require_image_digest=image is not None,
+                require_image_config_id=(
+                    node.dynamic_composition or selected_ref is not None
+                ),
+                selected_image_ref=selected_ref,
             )
             if failure is not None:
                 return [failure]
@@ -59,6 +64,7 @@ class ComposeAutoremoveMixin:
         *,
         require_image_digest: bool,
         require_image_config_id: bool,
+        selected_image_ref: str | None = None,
     ) -> str | None:
         """Retire one exact project container, returning a bounded failure."""
 
@@ -69,6 +75,7 @@ class ComposeAutoremoveMixin:
                 os_family,
                 require_image_digest=require_image_digest,
                 require_image_config_id=require_image_config_id,
+                selected_image_ref=selected_image_ref,
             )
             if failure is None:
                 failure = self._remove_completed_container(name)
@@ -86,6 +93,7 @@ class ComposeAutoremoveMixin:
         *,
         require_image_digest: bool,
         require_image_config_id: bool,
+        selected_image_ref: str | None = None,
     ) -> tuple[CompletedContainerReceipt | None, str | None]:
         """Capture all required readback before removing one completed node."""
 
@@ -102,6 +110,7 @@ class ComposeAutoremoveMixin:
                     name,
                     require_digest=require_image_digest,
                     require_config_id=require_image_config_id,
+                    selected_image_ref=selected_image_ref,
                 )
                 files, file_failure = self._required_os_files(name, os_family)
                 failure = failure or file_failure
@@ -111,16 +120,29 @@ class ComposeAutoremoveMixin:
                         image_digest=identities[0],
                         image_config_id=identities[1],
                         files=files,
+                        selected_image_ref=selected_image_ref,
                     )
         return receipt, failure
 
     def _required_image_identities(
-        self, name: str, *, require_digest: bool, require_config_id: bool
+        self,
+        name: str,
+        *,
+        require_digest: bool,
+        require_config_id: bool,
+        selected_image_ref: str | None = None,
     ) -> tuple[tuple[str | None, str | None], str | None]:
         """Read required image identities and report the first absent value."""
 
-        digest = self.container_image_digest(name)
         config_id = self.container_image_config_id(name) if require_config_id else None
+        if selected_image_ref is None:
+            digest = self.container_image_digest(name)
+        elif config_id is None:
+            digest = None
+        else:
+            digest = self.container_image_digest(
+                name, expected_ref=selected_image_ref, expected_config_id=config_id
+            )
         failure = None
         if require_digest and digest is None:
             failure = f"container {name!r} image identity could not be observed"

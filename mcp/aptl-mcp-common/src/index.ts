@@ -1,4 +1,4 @@
-import { resolve } from 'path';
+import { fileURLToPath } from 'node:url';
 
 // Export the working SSH implementation exactly as-is
 export {
@@ -18,6 +18,8 @@ export { expandTilde } from './utils.js';
 export { createMCPServer } from './server.js';
 export type { CreateMCPServerOptions, PostToolHook, PostToolHookInfo } from './server.js';
 export { initTracing, shutdownTracing, getTracer, traceToolCall } from './telemetry.js';
+export { boundToolResult, DEFAULT_MAX_TOOL_RESULT_TOKENS, toolResultBudgets } from './tool-output-cap.js';
+export type { BoundedToolResult, ResultBudget, ToolResult } from './tool-output-cap.js';
 export {
   redact,
   REDACTED,
@@ -63,7 +65,8 @@ export async function startServer(
   const { createMCPServer } = await import('./server.js');
   const { loadLabConfig } = await import('./config.js');
 
-  const configPath = resolve(new URL('.', callerMetaUrl).pathname, '..', 'docker-lab-config.json');
+  // fileURLToPath decodes percent-escapes (a space is %20 in the URL); URL.pathname keeps them.
+  const configPath = fileURLToPath(new URL('../docker-lab-config.json', callerMetaUrl));
   const config = await loadLabConfig(configPath);
   const server = createMCPServer(config, options);
   await server.start();

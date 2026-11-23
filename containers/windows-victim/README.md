@@ -1,160 +1,93 @@
 # Windows 11 Victim VM
 
-Windows endpoint for APTL enterprise lab. Runs as a VM (not a container) and integrates with the Docker-based lab infrastructure.
+Use this How-to guide for the optional, separately managed Windows VM.
+Normal LilRAE startup does not create this VM.
+Before you select scripts or resources, read the [endpoint reference](../../docs/reference/windows-endpoint.md).
+The [source record](records/setup-2026-11-06.txt) keeps the earlier setup proposal at revision `28fc8f18`.
+Status reviewed: 2026-11-06.
 
 ## Prerequisites
 
-- KVM/QEMU with libvirt (or VMware Workstation)
-- Windows 11 ISO or Microsoft Development VM
-- 4-6GB RAM available for the VM
-- 40GB+ disk space
+Use an approved isolated test VM and an authorized Windows installation image.
+Read the [resource and installation limits](../../docs/reference/windows-endpoint.md#resources-and-installation-limits).
+Keep the VM outside production networks.
+
+Examine each selected script before execution.
+Make sure that the approved environment permits each selected download.
 
 ## Setup
 
 ### 1. Create the VM
 
-Using virt-install (KVM):
-```bash
-virt-install \
-  --name aptl-windows \
-  --ram 4096 \
-  --vcpus 2 \
-  --disk size=40 \
-  --os-variant win11 \
-  --network bridge=virbr0 \
-  --cdrom /path/to/windows11.iso \
-  --graphics spice
-```
-
-Or download the Microsoft Development VM:
-```
-https://developer.microsoft.com/en-us/windows/downloads/virtual-machines/
-```
+Create the Windows VM with the approved hypervisor and image.
+Select resources for the approved Windows image and selected tools.
+Record the actual image, hypervisor, resource allocation, and network configuration.
+Do not infer network connectivity from the old example.
 
 ### 2. Configure Networking
 
-The VM needs to reach the Docker lab network. Options:
-
-**Option A: Bridge to Docker network (recommended)**
-```bash
-# Create a macvlan on the Docker aptl-internal network
-docker network create -d macvlan \
-  --subnet=172.20.2.0/24 \
-  --gateway=172.20.2.1 \
-  -o parent=br0 \
-  aptl-internal-vm
-```
-
-**Option B: Route through host**
-```bash
-# Add route on the Windows VM to reach Docker networks
-route add 172.20.0.0 mask 255.255.0.0 <host-ip>
-```
-
-Assign the VM a static IP: `172.20.3.10` (endpoints network).
+Choose an explicitly approved connection to the isolated lab.
+Before you install integration services, examine routes, DNS, and return traffic.
+Read the [network limits](../../docs/reference/windows-endpoint.md#network-and-mcp-limits).
+Use the admitted domain controller and Wazuh manager addresses for the selected lab.
 
 ### 3. Run Setup Scripts
 
-From the VM (run PowerShell as Administrator):
+Open PowerShell as Administrator inside the approved VM.
+Run only the selected integration scripts:
 
 ```powershell
-# Enable SSH
 .\setup-ssh.ps1
-
-# Install Wazuh agent
-.\setup-wazuh-agent.ps1
-
-# Join AD domain
+.\setup-wazuh-agent.ps1 -WazuhManagerIP '<reachable-manager-address>'
 .\join-domain.ps1
-
-# Enable RDP (optional)
 .\enable-rdp.ps1
-
-# Install Sysmon
 .\setup-sysmon.ps1
 ```
 
+Before you join the domain, examine `join-domain.ps1` parameters and its dummy lab credential defaults.
+Pass the admitted domain, DNS endpoint, and authorized lab account through the approved credential procedure.
+Omit `enable-rdp.ps1` when RDP is not required.
+After you install Sysmon, examine actual Wazuh event collection.
+
 ### 3b. Install Reverse Engineering Tools (Optional)
 
-For malware analysis and reverse engineering workloads, install the full RE tool suite:
+Examine the external downloads and disk allowance before installation.
+Run the existing orchestrator for the selected tools:
 
 ```powershell
-# Install everything in dependency order (~30-60 min, ~20-25 GB disk)
 .\setup-re-tools.ps1
-
-# Or install individual tools as needed:
-.\setup-vs-buildtools.ps1    # VS 2022 Build Tools (C++ workload, Windows 11 SDK, Spectre libs)
-.\setup-wdk.ps1              # Windows Driver Kit (requires VS Build Tools)
-.\setup-ghidra.ps1           # Ghidra decompiler + AdoptOpenJDK 17
-.\setup-x64dbg.ps1           # x64dbg/x32dbg debugger
-.\setup-sysinternals.ps1     # Full Sysinternals Suite (Process Monitor, Explorer, Autoruns, etc.)
-.\setup-python-re.ps1        # Python 3.12 + pefile, yara-python, capstone, unicorn, keystone, floss, capa
 ```
 
-**Dependency note:** `setup-wdk.ps1` requires VS Build Tools—run `setup-vs-buildtools.ps1` first.
-All other tools are independent and can be installed in any order.
+Use its skip switches to omit unwanted components:
 
-The orchestrator supports skip flags to exclude components:
 ```powershell
 .\setup-re-tools.ps1 -SkipWdk -SkipBuildTools
 ```
 
-A reboot may be required after VS Build Tools or WDK installation.
+For individual installation, select the script from the [script reference](../../docs/reference/windows-endpoint.md#script-selection).
+Before you run the script, examine its parameters.
+Reboot when the selected installer requires it.
+Examine installed versions before exercise use.
 
 ### 4. Verify Integration
 
-From Kali container:
-```bash
-# Test SSH
-ssh labadmin@172.20.3.10
+1. Examine SSH from an authorized lab peer to the VM's actual address.
+2. If RDP is enabled, verify it with the intended lab account.
+3. Make sure that the endpoint appears in the Wazuh agent list.
+4. Generate a bounded Windows event and confirm delivery under that agent identity.
+5. If Sysmon is installed, verify its event channel separately.
+6. Examine installed tool paths and versions before an exercise.
 
-# Test RDP
-xfreerdp /v:172.20.3.10 /u:jessica.williams /p:password123 /d:TECHVAULT
-```
-
-RE tools verification (if installed):
-```powershell
-# VS Build Tools
-Test-Path "C:\BuildTools\VC\Tools\MSVC\"
-
-# WDK
-Test-Path "C:\Program Files (x86)\Windows Kits\10\Include\"
-
-# Ghidra
-Test-Path "C:\Tools\Ghidra\ghidraRun.bat"
-java --version
-
-# x64dbg
-Test-Path "C:\Tools\x64dbg\release\x64\x64dbg.exe"
-
-# Sysinternals
-procmon.exe /AcceptEula /Terminate  # quick smoke test
-
-# Python RE
-python --version
-python -c "import pefile, yara, capstone, unicorn, keystone; print('RE libs OK')"
-```
-
-From Wazuh Dashboard:
-- Check agent list for the Windows endpoint
-- Verify Windows Event Logs are flowing
-- Confirm Sysmon events appear
+Keep credentials out of command arguments and shared evidence.
 
 ## Attack Scenarios
 
-With a domain-joined Windows endpoint, these attack techniques become possible:
-
-- **T1558.003** Kerberoasting (request TGS tickets for service accounts)
-- **T1550.002** Pass the Hash (use NTLM hashes for lateral movement)
-- **T1003.001** LSASS Memory Dump (extract credentials)
-- **T1021.001** Remote Desktop Protocol (lateral movement via RDP)
-- **T1059.001** PowerShell execution (fileless attacks)
-- **T1547.001** Registry Run Keys (persistence)
-- **T1053.005** Scheduled Tasks (persistence)
-- **T1070.001** Clear Windows Event Logs (defense evasion)
+Use only the explicitly authorized lab exercise.
+Examine the [historical proposal](records/setup-2026-11-06.txt) only as planning evidence.
+Record the selected scenario, bounded action, observed effect, and cleanup.
 
 ## MCP Integration
 
-No dedicated MCP server exists for this VM. Use the Red Team MCP (`mcp-red`) to
-interact with the Windows target from the Kali container via standard offensive
-tooling (for example, Impacket, CrackMapExec, Evil-WinRM).
+Read the [MCP limits](../../docs/reference/windows-endpoint.md#network-and-mcp-limits).
+Use only the admitted red MCP tools and authorized routes for the selected target.
+Examine actual tool availability before an exercise.

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { AppConfig } from '$lib/types';
-	import ConfigSummaryList from '$lib/components/ConfigSummaryList.svelte';
+	import type { AppConfig } from '#lib/types.ts';
+	import ConfigSummaryList from '#lib/components/ConfigSummaryList.svelte';
 
 	let { data }: { data: { config: AppConfig | null; configError: boolean } } = $props();
 </script>

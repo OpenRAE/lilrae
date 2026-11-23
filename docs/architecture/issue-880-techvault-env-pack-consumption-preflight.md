@@ -1,5 +1,18 @@
 # Issue #880 TechVault Env-Pack Consumption Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-880-techvault-env-pack-consumption-preflight.md).
+Its last recorded file change before this rewrite was `41551db875b1`.
+Current interfaces and successor decisions take precedence for present use.
+
+
+> **Dated preflight record.** Written on 2026-09-21 and kept as written. Since
+> then, #1149 (4191a3d5, 2026-09-21) removed
+> `config/wazuh_cluster/suricata_rules.xml`, which it cites. The acquired
+> TechVault pack ships that rule file.
+
 Reconciled against the current working tree on 2026-09-21. The supplied issue is
 the contract; there is no formal requirement. This is boundary guidance,
 not an implementation plan or completion claim. TechVault already belongs in

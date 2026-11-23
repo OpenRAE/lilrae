@@ -1,0 +1,46 @@
+[
+  {
+    "operation": {
+      "last": true
+    },
+    "protoPayload": {
+      "methodName": "v1.compute.instances.delete",
+      "resourceName": "projects/prod-mgau4w/zones/us-central1-a/instances/test-1504",
+      "status": {}
+    },
+    "timestamp": "2026-11-02T07:13:17.439116Z"
+  },
+  {
+    "operation": {
+      "first": true
+    },
+    "protoPayload": {
+      "methodName": "v1.compute.instances.delete",
+      "resourceName": "projects/prod-mgau4w/zones/us-central1-a/instances/test-1504",
+      "status": {}
+    },
+    "timestamp": "2026-11-02T07:12:25.634802Z"
+  },
+  {
+    "operation": {
+      "last": true
+    },
+    "protoPayload": {
+      "methodName": "v1.compute.instances.insert",
+      "resourceName": "projects/prod-mgau4w/zones/us-central1-a/instances/test-1504",
+      "status": {}
+    },
+    "timestamp": "2026-11-02T06:05:07.937613Z"
+  },
+  {
+    "operation": {
+      "first": true
+    },
+    "protoPayload": {
+      "methodName": "v1.compute.instances.insert",
+      "resourceName": "projects/prod-mgau4w/zones/us-central1-a/instances/test-1504",
+      "status": {}
+    },
+    "timestamp": "2026-11-02T06:05:00.092804Z"
+  }
+]

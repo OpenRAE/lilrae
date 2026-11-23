@@ -87,7 +87,7 @@ def client_entries(
         endpoint.address,
     ]
     entries = {}
-    for server in profile_for(grant.profile).servers:
+    for server in profile_for(grant.profile, server_ids=record.mcp_server_ids).servers:
         authorize_server(record, grant, server.server_id)
         selector = (
             f"aptl-mcp-v1 {record.instance_id} {record.generation} {server.server_id}"

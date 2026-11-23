@@ -173,8 +173,8 @@ def write_manifest(run_dir: Path, *, run_id: str) -> str:
     relpath = "manifest.json"
     manifest = {
         "run_id": run_id,
-        "scenario_id": "techvault",
-        "scenario_name": "TechVault",
+        "scenario_id": "fixture-range",
+        "scenario_name": "Fixture Range",
         "started_at": "2026-03-24T02:00:00Z",
         "finished_at": "2026-03-24T02:42:29Z",
     }

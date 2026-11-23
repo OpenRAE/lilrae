@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Terminal from '$lib/components/Terminal.svelte';
+	import Terminal from '#lib/components/Terminal.svelte';
 
 	interface Props {
 		container: string;

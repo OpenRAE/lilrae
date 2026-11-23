@@ -12,7 +12,7 @@
 		terminalWsUrl,
 		TerminalTicketError,
 		type TerminalStatus
-	} from '$lib/bff';
+	} from '#lib/bff.ts';
 
 	interface Props {
 		container: string;

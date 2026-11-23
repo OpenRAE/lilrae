@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 # Renewal window — once a cert is within this many days of its NotAfter,
 # the consistency check treats it as no-longer-reusable so the next
-# ``aptl lab start`` rotates the leaf (or the CA, when applied to it).
+# ``lilrae lab start`` rotates the leaf (or the CA, when applied to it).
 # 30 days is short enough to surface renewals before clients trip on
 # expired certs and long enough that operators get a real warning gap.
 _RENEWAL_WINDOW_DAYS = 30

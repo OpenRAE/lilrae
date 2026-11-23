@@ -27,6 +27,7 @@ from aptl.core.appliance_boundary_inventory import (
     HostBoundaryObservation,
 )
 from aptl.core.archival.legacy_manifest import LEGACY_REPRODUCIBILITY_SCHEMAS
+from aptl.utils.deterministic_archive import open_nofollow
 from aptl.utils.strict_json import model_validate_json_strict
 from aptl.validation.participant_qualification_evidence import (
     QualificationCheckEvidence,
@@ -41,17 +42,9 @@ _ACCESS_RECORD_NAME = "access.json"
 def _read_private_regular(path: Path) -> bytes:
     """Read one small owner-only regular file without following a leaf link."""
 
-    flags = os.O_RDONLY | os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor = os.open(path, flags)
-    with os.fdopen(descriptor, "rb") as handle:
+    with open_nofollow(path) as handle:
         info = os.fstat(handle.fileno())
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != 0o600
-        ):
+        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600:
             raise OSError("transport identity is not owner-only")
         payload = handle.read(64 * 1024 + 1)
     if not payload or len(payload) > 64 * 1024:
@@ -277,14 +270,8 @@ def publish_guest_access_request(path: Path, request: GuestAccessRequest) -> Non
 def read_guest_access_request(path: Path) -> GuestAccessRequest:
     """Read a bounded immutable request without following its final component."""
 
-    flags = os.O_RDONLY | os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
     try:
-        descriptor = os.open(path, flags)
-        with os.fdopen(descriptor, "rb") as handle:
-            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-                raise OSError("request is not regular")
+        with open_nofollow(path) as handle:
             payload = handle.read(MAX_ACCESS_MESSAGE_BYTES + 1)
         if len(payload) > MAX_ACCESS_MESSAGE_BYTES:
             raise ValueError("request exceeds access channel limit")

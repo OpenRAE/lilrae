@@ -1,8 +1,10 @@
-"""Pure network helpers for Docker Compose realization."""
+"""Network helpers for Docker Compose realization."""
 
 from __future__ import annotations
 
 import re
+import time
+from collections.abc import Callable
 from typing import Any
 
 from aptl.core.deployment.realization import (
@@ -17,6 +19,45 @@ _COMPOSE_PROJECT_LABEL = "com.docker.compose.project"
 _COMPOSE_NETWORK_LABEL = "com.docker.compose.network"
 _REALIZATION_NETWORK_LABEL = "org.aptl.realization.network"
 _REALIZATION_NETWORK_LABEL_VALUE = "true"
+
+# When a restart policy fires, Docker reports the container as restarting,
+# with its endpoints kept but no IPv4 address, until the next start. Docker
+# waits 100 ms before a restart and doubles that delay on quick repeats, so
+# the window lasts about 0.1 s and reaches seconds (issue #1423). Waiting out
+# that window keeps reconciliation from reading it as a missing address or an
+# IP drift; a container still restarting after the budget is judged as before.
+_RESTART_WINDOW_BUDGET = 5.0
+_RESTART_WINDOW_FIRST_DELAY = 0.1
+_RESTART_WINDOW_MAX_DELAY = 1.0
+
+
+def _container_restarting(container_info: dict[str, Any]) -> bool:
+    """Return whether one container inspect payload reports a restart."""
+
+    state = container_info.get("State") if isinstance(container_info, dict) else None
+    return isinstance(state, dict) and state.get("Restarting") is True
+
+
+def _inspect_past_restart(
+    inspect: Callable[[str], dict[str, Any]],
+    container_name: str,
+) -> dict[str, Any]:
+    """Inspect a container, re-inspecting with backoff while Docker restarts it.
+
+    Any other state, including exited, returns from the first inspect.
+    """
+
+    deadline = time.monotonic() + _RESTART_WINDOW_BUDGET
+    delay = _RESTART_WINDOW_FIRST_DELAY
+    info = inspect(container_name)
+    while _container_restarting(info):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(delay, remaining))
+        delay = min(delay * 2, _RESTART_WINDOW_MAX_DELAY)
+        info = inspect(container_name)
+    return info
 
 
 def _container_networks(container_info: dict[str, Any]) -> set[str]:

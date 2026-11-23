@@ -11,8 +11,9 @@ from pathlib import Path
 
 import yaml
 
+from aptl.core.deployment._compose_node_generation import render_realization_compose
 from aptl.core.deployment.realization import DeploymentRealizationSpec
-from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.deployment.errors import BackendTimeoutError, CaptureReconciliationError
 from aptl.core.deployment._compose_capture_config import (
     KALI_CAPTURE_CONTAINER,
     KALI_CAPTURE_SERVICE,
@@ -86,20 +87,20 @@ class ComposeCaptureApparatusMixin:
     """Add the exact admitted capture sidecar to a realization file set."""
 
     def _capture_apparatus_preflight(
-        self, realization: DeploymentRealizationSpec, scenario_root: Path
+        self, realization: DeploymentRealizationSpec
     ) -> LabResult | None:
         """Validate capture ownership, target ingress, and credential sources."""
 
         error = _capture_declaration_error(realization)
         if error is None and _capture_requested(realization):
             try:
-                error = self._capture_preflight_error(realization, scenario_root)
+                error = self._capture_preflight_error(realization)
             except (OSError, TypeError, KeyError, ValueError, yaml.YAMLError):
                 error = "aptl.capture-apparatus.config-unavailable"
         return LabResult(success=False, error=error) if error is not None else None
 
     def _capture_preflight_error(
-        self, realization: DeploymentRealizationSpec, scenario_root: Path
+        self, realization: DeploymentRealizationSpec
     ) -> str | None:
         """Return a stable error after validating capture-specific resources."""
 
@@ -118,12 +119,7 @@ class ComposeCaptureApparatusMixin:
             self.realization_root,
             require_files=False,
         )
-        source = scenario_root / "docker-compose.yml"
-        model = (
-            yaml.safe_load(source.read_text(encoding="utf-8"))
-            if source.exists()
-            else {}
-        )
+        model = render_realization_compose(realization)
         services = model.get("services") or {}
         volumes = model.get("volumes") or {}
         collision = KALI_CAPTURE_SERVICE in services or KALI_CAPTURE_VOLUME in volumes
@@ -192,11 +188,17 @@ class ComposeCaptureApparatusMixin:
         return result.returncode == 0
 
     def activate_capture_apparatus(
-        self, *, plan_id: str, run_id: str
+        self, *, plan_id: str, run_id: str, binding_id: str | None = None
     ) -> dict[str, object] | None:
-        """Bind the dormant broker to one admitted run, then prove it is serving."""
+        """Bind the dormant broker to one admitted run, then prove it is serving.
 
-        if not _safe_capture_id(plan_id) or not _safe_capture_id(run_id):
+        ``binding_id`` is the scenario adapter's transcript registration, which
+        finalization checks the broker's authority against; without one,
+        ``KALI_TRANSCRIPT_REGISTRATION`` applies.
+        """
+
+        binding = binding_id if binding_id is not None else KALI_TRANSCRIPT_REGISTRATION
+        if not all(_safe_capture_id(value) for value in (plan_id, run_id, binding)):
             return None
         activate = [
             "python3",
@@ -207,13 +209,13 @@ class ComposeCaptureApparatusMixin:
             "--plan-id",
             plan_id,
             "--binding-id",
-            KALI_TRANSCRIPT_REGISTRATION,
+            binding,
         ]
         authority = self._activate_capture_authority(activate)
         expected = {
             "run_id": run_id,
             "plan_id": plan_id,
-            "binding_id": KALI_TRANSCRIPT_REGISTRATION,
+            "binding_id": binding,
         }
         return (
             authority
@@ -272,7 +274,12 @@ class ComposeCaptureApparatusMixin:
         *,
         expected_session_ids: Sequence[str],
     ) -> dict[str, object] | None:
-        """Export only when broker custody matches the owner-supplied census."""
+        """Export broker custody contained in the owner-supplied census.
+
+        Returns ``None`` for an unsafe census or an unreadable export, and
+        raises :class:`CaptureReconciliationError` when the broker accepted a
+        session outside the census. Census-only gaps remain in the export.
+        """
 
         expected = tuple(expected_session_ids)
         payload = (
@@ -281,15 +288,21 @@ class ComposeCaptureApparatusMixin:
             else None
         )
         accepted = payload.get("accepted_session_ids") if payload is not None else None
-        reconciled = bool(
+        well_formed = bool(
             isinstance(accepted, list)
             and all(isinstance(value, str) for value in accepted)
             and len(accepted) == len(set(accepted))
-            and set(accepted) == set(expected)
         )
+        if well_formed and set(accepted) - set(expected):
+            raise CaptureReconciliationError(
+                census=len(expected),
+                accepted=len(accepted),
+                census_only=len(set(expected) - set(accepted)),
+                broker_only=len(set(accepted) - set(expected)),
+            )
         return (
             {**payload, "expected_session_ids": list(expected)}
-            if payload is not None and reconciled
+            if payload is not None and well_formed
             else None
         )
 
@@ -384,8 +397,10 @@ class ComposeCaptureApparatusMixin:
             else set()
         )
         expected_add = {
+            "CAP_AUDIT_WRITE",
             "CAP_CHOWN",
             "CAP_DAC_OVERRIDE",
+            "CAP_KILL",
             "CAP_NET_BIND_SERVICE",
             "CAP_SETGID",
             "CAP_SETUID",

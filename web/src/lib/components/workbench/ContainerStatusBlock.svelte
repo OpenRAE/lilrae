@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { labStatus } from '$lib/stores/lab';
-	import { stateColor } from '$lib/container-state';
-	import type { ContainerInfo } from '$lib/types';
+	import { labStatus } from '#lib/stores/lab.ts';
+	import { stateColor } from '#lib/container-state.ts';
+	import type { ContainerInfo } from '#lib/types.ts';
 
 	interface Props {
 		containers: string[];

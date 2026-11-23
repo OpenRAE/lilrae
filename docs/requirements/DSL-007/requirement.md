@@ -11,6 +11,13 @@ updated_at: 2026-10-11T00:00:00.000000Z
 
 # DSL-007: Cleanup and Rollback Definitions in Scenarios
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/DSL-007/requirement.md).
+
+
 ## Statement
 
 The APTL backend shall realize RAES-declared cleanup and rollback actions. These actions reverse scenario effects: they remove implants, restore files, and reset credentials. They return a range to a known state without full teardown. The RAES SDL owns how authors declare cleanup. The backend runs the declared actions and fails with explicit diagnostics for unsupported ones.

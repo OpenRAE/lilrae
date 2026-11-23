@@ -18,6 +18,8 @@ import uuid
 from collections.abc import Mapping
 from typing import Protocol, cast
 
+from aptl.backends.scenario_runtime_hooks import RUNTIME_OPERATION_REFUSALS
+
 _MAX_PROBE_BYTES = 64 * 1024
 _PROBE_TIMEOUT_SECONDS = 60
 
@@ -176,7 +178,13 @@ def misp_readiness_probe(
     misp_address: str,
     verifier_container: str,
 ) -> Mapping[str, object] | None:
-    """Return every MISP readiness fact, or ``None`` when any one is unproven."""
+    """Return every MISP readiness fact, or ``None`` when the probe wrote nothing.
+
+    The API step writes and deletes one event. Once it starts, the result
+    carries ``api_write_attempted``. It carries ``api_write_completed`` only
+    when the step exits 0, which needs the event delete in its cleanup to pass.
+    A failed step keeps only these two facts.
+    """
 
     marker = f"aptl-readiness-{uuid.uuid4()}"
     observed: dict[str, object] = {
@@ -189,12 +197,36 @@ def misp_readiness_probe(
         (MISP_DB_CONTAINER, _MISP_DB_SCRIPT, ()),
         (MISP_CACHE_CONTAINER, _MISP_CACHE_SCRIPT, ()),
     )
+    if _probe_executor(execute) is None:
+        return None
     for container, script, arguments in steps:
-        fields = _run_probe(execute, container, script, arguments)
+        writes = script is _MISP_API_SCRIPT
+        try:
+            fields = _run_probe(execute, container, script, arguments)
+        # broad-except: backend transport failures are implementation-specific.
+        except Exception as exc:
+            fields = None
+            # Core refused the step before the backend call, so nothing ran.
+            writes = writes and str(exc) not in RUNTIME_OPERATION_REFUSALS
+        if writes:
+            observed["api_write_attempted"] = True
         if fields is None:
-            return None
+            return _write_residue(observed)
         observed.update(fields)
+        if writes:
+            observed["api_write_completed"] = True
     return observed
+
+
+def _write_residue(observed: Mapping[str, object]) -> Mapping[str, object] | None:
+    """Keep only the write facts of an incomplete probe; drop partial facts."""
+
+    if observed.get("api_write_attempted") is not True:
+        return None
+    return {
+        "api_write_attempted": True,
+        "api_write_completed": observed.get("api_write_completed") is True,
+    }
 
 
 def _run_probe(

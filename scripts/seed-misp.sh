@@ -33,7 +33,7 @@ aptl_load_env_key "$ENV_FILE" MISP_API_KEY
 
 # The env-pack exposes MISP only on the container network (its web tier serves
 # HTTPS on :443 there; the pre-#875 host 8443 binding is gone). Reach it from
-# inside the container over loopback, mirroring the Cortex/TheHive seed paths.
+# inside the container over loopback, mirroring the other SOC seed paths.
 # The connection is container-internal (localhost -> the same container), so TLS
 # verification is moot and we use -k -- MISP's edge certificate is an env-pack
 # concern tracked in OpenRAE/env-packs#280, not this in-network seed path.

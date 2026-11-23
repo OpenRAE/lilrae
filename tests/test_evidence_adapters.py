@@ -7,27 +7,24 @@ level — never the empty-on-error collapse), and the trusted wiring seam.
 
 from __future__ import annotations
 
+import json
 import types
 
-import pytest
 
 from aptl.core.correlation.clock import FixedClockProvider
+from aptl.core.deployment._compose_log_capture import StreamExit
 from aptl.core.evidence.adapters.builtins import (
     ContainerLogSource,
     RunArchiveSource,
     soc_windowed_source,
 )
 from aptl.core.evidence.adapters.sources import SourceResult, WindowedQueryCollector
-from aptl.core.evidence.adapters.wiring import build_collectors
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.evidence.protocol import CollectorContext
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
-    CollectorRegistry,
 )
-from aptl_techvault.capture_registrations import BUILTIN_REGISTRATIONS
 from aptl.core.runstore import LocalRunStore
 
 _CLOCK = FixedClockProvider(measurement_time="2026-07-20T00:00:00Z")
@@ -55,7 +52,6 @@ def _binding(registration_id="aptl.collector.mcp-red") -> CaptureBinding:
         retention_policy="retain",
         loss_disclosure_required=True,
         visibility_class=CaptureVisibility.PARTICIPANT_VISIBLE,
-        limits=CaptureLimits(max_bytes=4096, max_artifact_count=10, max_duration_s=60),
     )
 
 
@@ -65,7 +61,7 @@ def _context(registration_id="aptl.collector.mcp-red") -> CollectorContext:
         run_id="run-1",
         attempt_id="attempt-1",
         binding=_binding(registration_id),
-        deadline_seconds=60.0,
+        progress_timeout_seconds=60.0,
         clock=_CLOCK,
     )
 
@@ -129,35 +125,59 @@ class TestRunArchiveSource:
         assert result.dropped_count == 1
 
 
+def _log_backend(
+    returncode: int, stdout: bytes = b"", stderr: bytes = b"", **flags: bool
+) -> types.SimpleNamespace:
+    """Return a backend whose log stream writes fixed output into the spools."""
+
+    def stream(name, *, since, until, stdout: object, stderr: object) -> StreamExit:
+        stdout.write(out)
+        stderr.write(err)
+        return StreamExit(
+            returncode, flags.get("timed_out", False), flags.get("failed_pipe", False)
+        )
+
+    out, err = stdout, stderr
+    return types.SimpleNamespace(container_logs_stream=stream)
+
+
+def _records(result: SourceResult) -> list[dict[str, object]]:
+    return json.loads(b"".join(result.chunks))
+
+
 class TestContainerLogSource:
     def test_nonzero_returncode_is_source_unavailable(self):
-        backend = types.SimpleNamespace(
-            container_logs_capture=lambda *a, **k: types.SimpleNamespace(
-                returncode=1, stdout=""
-            )
-        )
-        source = ContainerLogSource(backend, ["c1"])
+        source = ContainerLogSource(_log_backend(1), ["c1"])
         assert source.fetch("s", "e").status is CollectorStatus.SOURCE_UNAVAILABLE
 
     def test_empty_output_is_empty_ok(self):
-        backend = types.SimpleNamespace(
-            container_logs_capture=lambda *a, **k: types.SimpleNamespace(
-                returncode=0, stdout="  "
-            )
-        )
-        source = ContainerLogSource(backend, ["c1"])
+        source = ContainerLogSource(_log_backend(0), ["c1"])
         assert source.fetch("s", "e").status is CollectorStatus.EMPTY_OK
 
     def test_output_becomes_records(self):
-        backend = types.SimpleNamespace(
-            container_logs_capture=lambda *a, **k: types.SimpleNamespace(
-                returncode=0, stdout="line1\nline2"
-            )
-        )
-        source = ContainerLogSource(backend, ["c1"])
+        source = ContainerLogSource(_log_backend(0, b"line1\nline2"), ["c1"])
         result = source.fetch("s", "e")
         assert result.status is CollectorStatus.OK
-        assert result.records[0]["container"] == "c1"
+        assert _records(result) == [{"container": "c1", "output": "line1\nline2"}]
+
+    def test_large_output_is_retained_completely(self):
+        output = b"event\n" * 400_000
+        source = ContainerLogSource(_log_backend(0, output, b"warn"), ["c1"])
+        result = source.fetch("s", "e")
+        assert result.status is CollectorStatus.OK
+        record = _records(result)[0]
+        assert record["output"] == output.decode()
+        assert record["stderr"] == "warn"
+
+    def test_stalled_read_keeps_accepted_output_as_timeout(self):
+        source = ContainerLogSource(
+            _log_backend(None, b"accepted\n", timed_out=True), ["c1"]
+        )
+        result = source.fetch("s", "e")
+        assert result.status is CollectorStatus.TIMEOUT
+        assert _records(result) == [
+            {"container": "c1", "status": "timeout", "output": "accepted\n"}
+        ]
 
 
 class TestSocWindowedSource:
@@ -174,41 +194,3 @@ class TestSocWindowedSource:
         result = source.fetch("s", "e")
         assert result.status is CollectorStatus.OK
         assert result.records == [{"alert": 1}]
-
-
-class TestWiring:
-    def test_builds_collectors_for_known_ids(self):
-        source = _FakeSource(SourceResult(status=CollectorStatus.EMPTY_OK))
-        registry = CollectorRegistry(BUILTIN_REGISTRATIONS)
-        collectors = build_collectors(
-            {"aptl.collector.mcp-red": source}, registry=registry
-        )
-        assert (
-            collectors["aptl.collector.mcp-red"].registration_id
-            == "aptl.collector.mcp-red"
-        )
-
-    def test_unknown_registration_id_is_rejected(self):
-        source = _FakeSource(SourceResult(status=CollectorStatus.EMPTY_OK))
-        with pytest.raises(ValueError, match="unknown collector registration id"):
-            build_collectors({"aptl.collector.NOPE": source})
-
-    def test_all_builtins_are_registered(self):
-        assert frozenset(
-            registration.registration_id
-            for registration in BUILTIN_REGISTRATIONS
-        ) == frozenset(
-            {
-                "aptl.collector.mcp-red",
-                "aptl.collector.container-logs",
-                "aptl.collector.suricata-eve",
-                "aptl.collector.wazuh-alerts",
-                "aptl.collector.tempo-traces",
-                "aptl.collector.cortex-enrichment",
-                "aptl.collector.misp-authenticated-api-readiness",
-                "aptl.collector.redteam-session-transcript",
-                "aptl.collector.suricata-rule-readiness",
-                "aptl.collector.suricata-wazuh-sqli",
-                "aptl.collector.wazuh-agent-readiness",
-            }
-        )

@@ -1,5 +1,5 @@
-import { getConfig } from '$lib/api';
-import type { AppConfig } from '$lib/types';
+import { getConfig } from '#lib/api.ts';
+import type { AppConfig } from '#lib/types.ts';
 
 /**
  * Load the non-secret configuration projection for the `/config` route.

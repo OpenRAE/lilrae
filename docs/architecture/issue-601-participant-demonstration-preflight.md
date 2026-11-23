@@ -1,5 +1,13 @@
 # Issue #601: participant demonstration architecture preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-601-participant-demonstration-preflight.md).
+Its last recorded file change before this rewrite was `2901a2c8516c`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 ## Approved scope revision
 
 The implementation selects a minimal TechVault copy in OpenRAE/env-packs,

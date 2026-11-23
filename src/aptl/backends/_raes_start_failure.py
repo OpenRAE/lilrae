@@ -1,4 +1,4 @@
-"""Redacted, unretryable outcome translation for RAES scenario start."""
+"""Redacted outcome translation for RAES scenario start."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ INSTANTIATION_FAILURE_MESSAGE = (
 
 
 def start_failure_outcome(exc: Exception, resolved_scenario: Path) -> AcesStartOutcome:
-    """Map scenario-start failures to redacted, unretryable outcomes.
+    """Map scenario-start failures to redacted outcomes.
 
     Pack acquisition and runtime handoff report redacted exceptions. Variable
     binding uses a fixed message, never the rejected operator value.
@@ -45,5 +45,4 @@ def start_failure_outcome(exc: Exception, resolved_scenario: Path) -> AcesStartO
         realization_details={},
         selected_profiles=[],
         scenario_path=resolved_scenario,
-        retryable=False,
     )

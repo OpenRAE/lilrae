@@ -4,18 +4,14 @@ Provides a protocol for storing per-run experiment data and a local
 filesystem implementation. Each run is identified by a UUID and
 stored in a self-contained directory with all collected artifacts.
 
-This module is the Python persistence serialization boundary for run
-archives (ADR-029): structured writes (``write_json`` / ``write_jsonl``
-/ ``append_jsonl``) run the shared :func:`aptl.utils.redaction.redact`
-helper so control-plane/operator secrets are masked before bytes hit
-disk. ``write_file`` (opaque bytes) and ``copy_file`` (arbitrary files)
-cannot be structurally redacted and are pass-through by design —
-callers must not route control-plane secrets through them.
+Run artifacts preserve the supplied scenario content.
+
+Directories are created ``0700`` and files ``0600`` whatever the umask
+(ADR-033); see :func:`aptl.core.runstore_internals._make_private_run_dirs`.
 """
 
 import json
 import os
-import shutil
 import threading
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
@@ -27,16 +23,19 @@ except ModuleNotFoundError:
     # Windows has no POSIX flock; the per-run lock becomes in-process only.
     fcntl = None
 
+from aptl.core.evidence.deadline import DEFAULT_PROGRESS_TIMEOUT_SECONDS
 from aptl.core.runstore_internals import (
     _LOCK_REGISTRY,
     _LOCK_REGISTRY_GUARD,
     RunManifest,
     RunStoreConflictError,
     SealedRunError,
-    SecretInvariantError,
-    _assert_no_secret_drift,
     _canonicalize_payload,
+    _copy_private,
     _HeldLock,
+    _make_private_run_dirs,
+    _private_opener,
+    _private_store_entry,
     _safe_default,
     _validate_id,
     _validate_relative_path,
@@ -51,7 +50,6 @@ from aptl.utils.pathsafe import (
     open_dir_contained_nofollow,
     read_contained_nofollow,
 )
-from aptl.utils.redaction import redact
 
 __all__ = [
     "LocalRunStore",
@@ -60,7 +58,6 @@ __all__ = [
     "RunStoreConflictError",
     "SEAL_MARKER_RELPATH",
     "SealedRunError",
-    "SecretInvariantError",
     "resolve_active_run_dir",
 ]
 
@@ -123,8 +120,30 @@ class LocalRunStore:
     at the root of each run directory.
     """
 
-    def __init__(self, base_dir: Path) -> None:
+    def __init__(
+        self,
+        base_dir: Path,
+        *,
+        free_space_reserve: float = 0.10,
+        progress_timeout_seconds: float = DEFAULT_PROGRESS_TIMEOUT_SECONDS,
+    ) -> None:
+        if not 0.0 <= free_space_reserve < 1.0:
+            raise ValueError("free_space_reserve must be in [0, 1)")
+        if progress_timeout_seconds <= 0:
+            raise ValueError("progress_timeout_seconds must be positive")
         self._base_dir = base_dir.resolve()
+        self._free_space_reserve = free_space_reserve
+        self._progress_timeout_seconds = progress_timeout_seconds
+
+    @property
+    def free_space_reserve(self) -> float:
+        """Fraction of the filesystem that evidence writes must leave free."""
+        return self._free_space_reserve
+
+    @property
+    def progress_timeout_seconds(self) -> float:
+        """Seconds an evidence read for this store may go without new data."""
+        return self._progress_timeout_seconds
 
     @property
     def base_dir(self) -> Path:
@@ -146,9 +165,15 @@ class LocalRunStore:
             )
         return target
 
+    def _prepare_target_parent(self, run_id: str, relative_path: str) -> Path:
+        """Resolve a run write target and create its parents owner-only."""
+        target = self._resolve_run_target(run_id, relative_path)
+        _make_private_run_dirs(self._base_dir, run_id, self._run_dir(run_id), target.parent)
+        return target
+
     def create_run(self, run_id: str) -> Path:
         run_dir = self._run_dir(run_id)
-        run_dir.mkdir(parents=True, exist_ok=True)
+        _make_private_run_dirs(self._base_dir, run_id, run_dir)
         log.info("Created run directory: %s", run_dir)
         return run_dir
 
@@ -250,7 +275,7 @@ class LocalRunStore:
                     del _LOCK_REGISTRY[key]
 
     def _open_run_lock_fd(self, safe_run_id: str) -> int:
-        self._base_dir.mkdir(parents=True, exist_ok=True)
+        _private_store_entry(self._base_dir, _LOCKS_DIR)
         dir_fd = open_dir_contained_nofollow(self._base_dir, _LOCKS_DIR, create=True)
         try:
             return os.open(
@@ -284,26 +309,20 @@ class LocalRunStore:
     def write_file(self, run_id: str, relative_path: str, data: bytes) -> None:
         with self.finalization_lock(run_id):
             self._reject_if_sealed(run_id, relative_path)
-            target = self._resolve_run_target(run_id, relative_path)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
+            target = self._prepare_target_parent(run_id, relative_path)
+            with open(target, "wb", opener=_private_opener) as fh:
+                fh.write(data)
             log.debug("Wrote %d bytes to %s", len(data), target)
 
     def write_json(self, run_id: str, relative_path: str, obj: object) -> None:
-        # Redact at the persistence boundary (ADR-029) so individual
-        # callers do not own the policy and run-archive contents are
-        # control-plane-secret-safe by construction. ``default`` runs
-        # through redaction too — see :func:`_safe_default`.
-        safe = redact(obj)
-        data = json.dumps(safe, indent=2, default=_safe_default).encode("utf-8")
+        data = json.dumps(obj, indent=2, default=_safe_default).encode("utf-8")
         self.write_file(run_id, relative_path, data)
 
     def write_jsonl(
         self, run_id: str, relative_path: str, records: list[dict[str, Any]]
     ) -> None:
-        # Redact each record at the persistence boundary (ADR-029).
         lines = [
-            json.dumps(redact(r), separators=(",", ":"), default=_safe_default)
+            json.dumps(r, separators=(",", ":"), default=_safe_default)
             for r in records
         ]
         data = ("\n".join(lines) + "\n").encode("utf-8") if lines else b""
@@ -323,15 +342,13 @@ class LocalRunStore:
             return
         with self.finalization_lock(run_id):
             self._reject_if_sealed(run_id, relative_path)
-            target = self._resolve_run_target(run_id, relative_path)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            # Redact each record at the persistence boundary (ADR-029).
+            target = self._prepare_target_parent(run_id, relative_path)
             lines = [
-                json.dumps(redact(r), separators=(",", ":"), default=_safe_default)
+                json.dumps(r, separators=(",", ":"), default=_safe_default)
                 for r in records
             ]
             chunk = ("\n".join(lines) + "\n").encode("utf-8")
-            with open(target, "ab") as fh:
+            with open(target, "ab", opener=_private_opener) as fh:
                 fh.write(chunk)
             log.debug("Appended %d JSONL records to %s", len(records), target)
 
@@ -363,9 +380,8 @@ class LocalRunStore:
         safe_run_id = _validate_id(run_id, "run_id")
         safe_relpath = _validate_relative_path(relative_path).replace("\\", "/")
         contained_relpath = f"{safe_run_id}/{safe_relpath}"
-        canonical, normalized = _canonicalize_payload(payload)
-        _assert_no_secret_drift(normalized)
-        self._base_dir.mkdir(parents=True, exist_ok=True)
+        canonical, _ = _canonicalize_payload(payload)
+        _private_store_entry(self._base_dir, safe_run_id)
         target = self._base_dir / safe_run_id / PurePosixPath(safe_relpath)
         try:
             create_exclusive_nofollow(self._base_dir, contained_relpath, canonical)
@@ -381,9 +397,9 @@ class LocalRunStore:
     def copy_file(self, run_id: str, relative_path: str, source: Path) -> None:
         with self.finalization_lock(run_id):
             self._reject_if_sealed(run_id, relative_path)
-            target = self._resolve_run_target(run_id, relative_path)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+            target = self._prepare_target_parent(run_id, relative_path)
+            # Bytes and timestamps only: never the source's mode (#1329).
+            _copy_private(source, target)
             log.debug("Copied %s -> %s", source, target)
 
     def create_json_once(self, namespace: str, name: str, payload: object) -> Path:
@@ -398,31 +414,18 @@ class LocalRunStore:
         ``manifest.json`` and is invisible to :meth:`list_runs`.
 
         Semantics:
-          1. Canonicalize ``payload`` ONCE to RFC 8785 bytes, after a JSON
-             round-trip so both the secret-invariant comparison and the
-             persisted bytes reflect exactly the same structure (a tuple or
-             other non-JSON shape cannot silently disagree with what lands
-             on disk).
-          2. Secret invariant: if the shared ``redact()`` policy would
-             change the canonicalized structure at all, raise
-             :class:`SecretInvariantError` — never silently persist a
-             payload that differs from what was approved.
-          3. Publish with ``O_CREAT | O_EXCL`` under a descriptor-relative,
-             no-follow path (:mod:`aptl.utils.pathsafe`), so a pre-existing
-             symlink at any path component cannot redirect the write
-             outside ``base_dir``.
-          4. Idempotent: a target that already exists with byte-identical
-             canonical content is a no-op success. Different existing
-             bytes raise :class:`RunStoreConflictError`.
+          1. Canonicalize the supplied structure to RFC 8785 bytes.
+             Preserve scenario content without classification or redaction.
+          2. Publish atomically beneath the store root without following symlinks.
+          3. Accept identical existing bytes and reject conflicting bytes.
 
         Returns the absolute path written (or already present).
         """
         safe_namespace = _validate_id(namespace, "namespace")
         safe_name = _validate_id(name, "name")
-        canonical, normalized = _canonicalize_payload(payload)
-        _assert_no_secret_drift(normalized)
+        canonical, _ = _canonicalize_payload(payload)
 
-        self._base_dir.mkdir(parents=True, exist_ok=True)
+        _private_store_entry(self._base_dir, safe_namespace)
         relative_path = f"{safe_namespace}/{safe_name}.json"
         target = self._base_dir / safe_namespace / f"{safe_name}.json"
         try:

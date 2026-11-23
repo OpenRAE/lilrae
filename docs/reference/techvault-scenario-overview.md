@@ -1,143 +1,87 @@
 # TechVault Scenario Overview
 
-TechVault is APTL's default scenario: an [RAES SDL](../sdl/index.md)-authored,
-multi-tier enterprise range for a fictional company. It is built as a live-fire
-purple-team environment, with intentionally vulnerable enterprise targets on one
-side, a production-grade SOC stack on the other, and a Kali attacker positioned
-between them.
-
-This page summarizes what the running range actually contains. For the fictional
-company backstory and OSINT-facing persona detail, see the
-[TechVault Company Profile](techvault-company-profile.md). For the authoring
-boundary and curated startup slices, see
-[Curated RAES Variants](../sdl/techvault-curated-variants.md).
+TechVault is the installed enterprise scenario used for ordinary local and seat delivery.
+It models a fictional company with intentional application, identity, and infrastructure weaknesses.
+This reference describes the admitted pack boundary, not a separately maintained topology preset.
 
 ## Where the scenario is defined
 
-- The verified acquired `techvault` bundle supplies the canonical SDL, content,
-  and artifact identity used by ordinary startup.
-- The operator catalog projects that acquired identity. `scenarios/catalog.json`
-  belongs to checkout-only research fixtures and does not add startup aliases.
+The acquired `techvault` bundle gives canonical SDL, content, and artifact identities.
+`pyproject.toml` declares supported dependencies. `uv.lock` pins RAES 10.7.0 and environment packs 7.2.2.
+The bundled adapter qualifies one exact pack version and set digest in `src/aptl_techvault/pack_identity.py`.
 
-Compose profiles are realized from the nodes the SDL declares (including
-dependency closure), not from a preset keyed off the scenario name.
+The operator catalog projects acquired identities.
+`scenarios/catalog.json` belongs to explicit checkout-only research fixtures.
+It does not add normal startup aliases.
+See the [authoring boundary](../sdl/index.md) for upstream schema and pack owners.
 
 ## Fictional company
 
-*TechVault Solutions* is a cloud-security and data-management SaaS ("Securing
-your digital assets"), founded 2019, with 25 to 50 simulated employees. The
-internal domain is `techvault.local` and the Active Directory realm is
-`TECHVAULT.LOCAL`. A cast of employee personas (Sarah Mitchell as CEO, James
-Rodriguez as CTO, Emily Chen as DevOps lead, and others) carries the planted
-identity weaknesses used in the attack path.
+TechVault Solutions is the range's fictional enterprise.
+Its internal domain is `techvault.local` and its AD realm is `TECHVAULT.LOCAL`.
+Authored accounts and content give the employee personas and planted weaknesses.
+The earlier [company profile](techvault-company-profile.md) and [OSINT plan](techvault-osint-readiness.md) are historical proposals.
+They do not establish a deployed public company, domain, cloud account, or external profile.
 
 ## Topology
 
-The range spans four Docker networks:
-
-| Zone | CIDR | What lives there |
-|---|---|---|
-| Security | 172.20.0.0/24 | Wazuh (manager, indexer, dashboard), Suricata, MISP, TheHive, Cortex, Shuffle SOAR, observability, reverse-engineering host |
-| DMZ | 172.20.1.0/24 | Vulnerable webapp, mail server, DNS |
-| Internal | 172.20.2.0/24 | Samba AD DC, PostgreSQL, Samba file share, victim host, developer workstation |
-| Red Team | 172.20.4.0/24 | Kali attack platform and capture sidecar |
+The SDL declares security, DMZ, internal, and red-team networks.
+The backend derives deployment from the admitted nodes, connections, and dependency closure.
+Scenario names do not select a topology preset.
 
 ### Enterprise targets
 
-The Flask web app (served by Gunicorn), PostgreSQL 16, a Samba file share, the
-Samba Active Directory domain controller, a docker-mailserver instance, a BIND
-DNS server, a developer workstation, and a Rocky Linux victim host.
+The pack declares `webapp`, `ad`, `db`, `workstation`, `fileshare`, `dns`, and `victim`.
+It also declares the `kali` and `soc-workstation` participant nodes.
+The current pack does not declare the retired mail or reverse workstation nodes.
+Software versions and services come from the admitted runtime declarations and observed realization.
+A former PostgreSQL image version does not describe a newly materialized database.
 
 ### Defensive and SOC stack
 
-Wazuh SIEM (manager, OpenSearch indexer, and dashboard) with active response;
-Suricata IDS running passively, with prevention driven through Wazuh active
-response per [ADR-019](../adrs/adr-019-suricata-ids-only-prevention-via-wazuh-ar.md);
-MISP threat intelligence (with its MariaDB and Redis backends plus a Suricata
-IOC sync); TheHive case management (backed by Cassandra and Elasticsearch)
-alongside Cortex; Shuffle SOAR (backend, frontend, orborus, and OpenSearch); and
-an OpenTelemetry collector feeding Tempo and Grafana. Eight monitored hosts --
-the web app, domain controller, DNS, file share, victim, workstation, database,
-and Suricata -- each run their own enrolled Wazuh agent and keep their
-enrollment identity across a restart, so events stay attributable to the host
-that produced them.
+The pack declares Wazuh manager, indexer, dashboard, Suricata, MISP with database/cache support, and Shuffle services.
+Suricata gives detection. Wazuh active response gives separately enabled prevention.
+See [default defensive posture](../components/default-defensive-posture.md).
 
-MISP is reached at its scenario identity, `https://misp.techvault.local`, and
-its certificate is issued by the lab CA for that name. Its database and cache
-connections, the cache's authentication, and its administrator identity are all
-part of the admitted plan before anything starts: the lab does not start MISP
-and then reconfigure it.
+Eight declared Wazuh agents belong to webapp, AD, DNS, fileshare, victim, workstation, database, and Suricata.
+Enrollment identity survives a service restart so manager events remain attributable.
+This does not prove that every possible event is detected.
+Kali has no defensive SIEM self-reporting path.
+
+MISP uses its authored origin, `https://misp.techvault.local`, with the lab CA.
+Its database, cache authentication, and administrator identity are admitted before startup.
+Optional OTel services are backend apparatus.
+Normal TechVault native evidence does not require or admit that optional stack.
 
 ### Host-published ports
 
-| Host port | Service |
-|---|---|
-| 443 | Wazuh dashboard |
-| 8080 | TechVault web app |
-| 8443 | MISP UI |
-| 9000 | TheHive UI |
-| 9001 | Cortex UI |
-| 9200 | Wazuh indexer (OpenSearch API) |
-| 55000 | Wazuh manager API |
-| 3443, 3001 | Shuffle SOAR UI |
-| 2027 | Reverse-engineering host SSH |
-| 514/udp, 1514, 1515 | Wazuh syslog and agent enrollment |
+`lilrae lab info` reports observed runtime URLs, remapped ports, and credential-file locations.
+`lilrae lab start --json` distinguishes observed ports from an unverified start-time plan.
+A declared service listener does not itself publish a host port.
+There is no default reverse-workstation SSH publication on port 2027.
+
+The [source record](records/techvault-scenario-overview-2026-11-06.txt) keeps the earlier static port list and topology description.
+Status reviewed: 2026-11-06.
+That record is not a current endpoint inventory.
 
 ## Planted vulnerabilities
 
-Vulnerabilities are declared per node in the SDL and span the application,
-infrastructure, and identity layers.
-
-- **Web app**: SQL injection in login and search, command injection in the ping
-  tool, reflected and stored XSS, file and user IDOR, admin authorization
-  bypass, exposed `/.env` and `/debug` routes, weak JWT secret with no expiry,
-  unrestricted upload with path traversal, a hardcoded Flask secret, and verbose
-  error disclosure.
-- **Active Directory**: weak and seasonal user passwords, an over-privileged
-  contractor account, a still-enabled former-employee account, kerberoastable
-  service accounts (`svc-sql`, `svc-web`), and service accounts with Domain
-  Admin membership (`svc-backup`, and the DevOps user `emily.chen`).
-- **File share**: guest-writable SMB shares leaking PII, HR and finance data, a
-  WiFi password, and hardcoded deployment credentials.
-- **Workstation**: bash-history credentials, a `.pgpass` file, hardcoded
-  application and cloud secrets, a passwordless SSH private key, and passwordless
-  sudo (also present on the victim and reverse-engineering hosts).
+The admitted SDL and content own exact vulnerabilities and credential fixtures.
+The enterprise models SQL injection, command injection, XSS, authorization failures, credential exposure, and weak identity controls.
+The precise admitted version determines which paths are present.
+A declared vulnerability is not proof of successful exploitation or detection.
 
 ## Planted secrets
 
-By design, secret-named values in this synthetic range are scenario content, not
-real operator secrets. They remain in the exact portable content or semantic
-fixtures that need them so the range stays reproducible. They are not expressed
-as Docker environment or mount instructions when the author did not choose
-those mechanics: TechVault 6.1.0 leaves those runtime scopes unspecified, which
-RAES resolves CLOSED. The Active Directory, Flask, JWT, and workstation fixture
-secrets remain scenario content; genuine operator secrets are withheld.
+Authored `secret_fixture` credentials are synthetic scenario content.
+They are distinct from real operator, provider, signing, and control-plane secrets.
+The backend must respect admitted realization scopes when it places content or binds credentials.
+An unspecified scope does not authorize a new environment value or mount.
 
 ## Curated startup variants
 
-Startup defaults to the installed `techvault` environment pack. Three curated
-slices prove that Compose profiles are realized from declared node content rather
-than the scenario name:
-
-| Catalog id | Includes | Realized profiles |
-|---|---|---|
-| `techvault-attacker-target` | Kali, one monitored victim, Wazuh core | `kali`, `victim`, `wazuh` |
-| `techvault-enterprise-web` | Vulnerable webapp, database, AD, workstation, Wazuh core | `enterprise`, `wazuh` |
-| `techvault-defensive-min` | Wazuh manager, indexer, dashboard | `wazuh` |
-
-Capture and OTel services are backend apparatus, not scenario nodes. APTL adds
-only admitted apparatus that is necessary for required evidence and permitted
-by the scenario's realization scopes. TechVault's native evidence paths do not
-require OTel, so its normal startup omits that optional stack.
-
-From a matching source checkout, select a research fixture with
-`aptl lab start --scenario-path scenarios/<fixture-id>.sdl.yaml`. See
-[Curated RAES Variants](../sdl/techvault-curated-variants.md) for the full
-authoring and proof detail.
-
-The versioned [Guided Purple Participant Profile](participant-profile.md)
-binds `techvault-attacker-target` to one supported workshop narrative, strict
-config, participant surface, readiness suite, and qualification budget. The
-curated scenario remains general RAES content; it is not renamed or forked for
-an event. The full acquired `techvault` pack supplies ordinary startup and participant
-appliance delivery; the guided fixture is a separate research input.
+Three reduced fixtures exercise attacker/target, enterprise/web, and defensive-minimum realization.
+They remain checkout-only research inputs.
+Their [reference](../sdl/curated-variant-reference.md) owns the fixture matrix.
+Use the [fixture procedure](../sdl/techvault-curated-variants.md) for explicit selection and validation.
+Reduced-profile evidence does not qualify full TechVault or its seat delivery.

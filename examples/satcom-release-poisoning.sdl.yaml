@@ -34,7 +34,7 @@ nodes:
   security-net: {type: Switch, description: Monitoring and response systems}
 
   git-forge:
-    type: VM
+    type: compute
     os: linux
     source: git-forge
     resources: {ram: 4 gib, cpu: 2}
@@ -49,7 +49,7 @@ nodes:
         entities: [platform-blue.release-engineering]
 
   ci-runner:
-    type: VM
+    type: compute
     os: linux
     source: ci-runner
     resources: {ram: 4 gib, cpu: 4}
@@ -65,7 +65,7 @@ nodes:
         username: gitlab-runner
 
   artifact-registry:
-    type: VM
+    type: compute
     os: linux
     source: artifact-registry
     resources: {ram: 4 gib, cpu: 2}
@@ -82,7 +82,7 @@ nodes:
         entities: [platform-blue.release-engineering]
 
   signing-hsm:
-    type: VM
+    type: compute
     os: linux
     source: signing-service
     resources: {ram: 2 gib, cpu: 2}
@@ -93,7 +93,7 @@ nodes:
     roles: {signing-admin: signer}
 
   control-api:
-    type: VM
+    type: compute
     os: linux
     source: satcom-control-plane
     resources: {ram: 6 gib, cpu: 4}
@@ -113,7 +113,7 @@ nodes:
       availability: critical
 
   edge-gateway-east:
-    type: VM
+    type: compute
     os: linux
     source: satcom-edge
     resources: {ram: 2 gib, cpu: 2}
@@ -126,7 +126,7 @@ nodes:
     roles: {edge-admin: edgeeast}
 
   edge-gateway-west:
-    type: VM
+    type: compute
     os: linux
     source: satcom-edge
     resources: {ram: 2 gib, cpu: 2}
@@ -139,7 +139,7 @@ nodes:
     roles: {edge-admin: edgewest}
 
   telemetry-broker:
-    type: VM
+    type: compute
     os: linux
     source: kafka-broker
     resources: {ram: 4 gib, cpu: 2}
@@ -151,7 +151,7 @@ nodes:
     roles: {telemetry-admin: telemetry}
 
   analytics-lake:
-    type: VM
+    type: compute
     os: linux
     source: analytics-lake
     resources: {ram: 4 gib, cpu: 2}
@@ -162,7 +162,7 @@ nodes:
     roles: {lake-admin: lake}
 
   customer-portal:
-    type: VM
+    type: compute
     os: linux
     source: customer-portal
     resources: {ram: 4 gib, cpu: 2}
@@ -178,7 +178,7 @@ nodes:
         entities: [platform-blue.release-engineering]
 
   support-bastion:
-    type: VM
+    type: compute
     os: linux
     source: support-bastion
     resources: {ram: 2 gib, cpu: 2}
@@ -192,7 +192,7 @@ nodes:
         entities: [vendor-ops]
 
   siem01:
-    type: VM
+    type: compute
     os: linux
     source: siem-stack
     resources: {ram: 8 gib, cpu: 4}
@@ -210,7 +210,7 @@ nodes:
         entities: [platform-blue.soc]
 
   vendor-idp:
-    type: VM
+    type: compute
     os: linux
     source: vendor-idp
     resources: {ram: 2 gib, cpu: 1}
@@ -221,7 +221,7 @@ nodes:
     roles: {idp-admin: vendorauth}
 
   customer-idp:
-    type: VM
+    type: compute
     os: linux
     source: customer-idp
     resources: {ram: 2 gib, cpu: 1}
@@ -336,28 +336,6 @@ conditions:
   release-incident-ticketed: {command: /usr/local/bin/check-incident-ticket, interval: 60}
   vendor-federation-healthy: {command: /usr/local/bin/check-vendor-federation, interval: 30}
   customer-federation-healthy: {command: /usr/local/bin/check-customer-federation, interval: 30}
-
-vulnerabilities:
-  runner-token-reuse:
-    name: Runner token reuse
-    description: Long-lived CI token can be replayed from a compromised build workspace
-    technical: true
-    class: CWE-798
-  overbroad-registry-cred:
-    name: Overbroad registry credential
-    description: Registry service credential can both publish and promote artifacts
-    technical: true
-    class: CWE-266
-  bastion-sudo-gap:
-    name: Bastion sudo gap
-    description: Support bastion grants overly broad sudo access during incidents
-    technical: true
-    class: CWE-250
-  oidc-trust-drift:
-    name: OIDC trust drift
-    description: Customer portal accepts stale trust metadata from partner IdPs
-    technical: true
-    class: CWE-345
 
 propositions:
   edge-east-poisoned:
@@ -682,10 +660,285 @@ relationships:
     target: control-api
     properties: {protocol: "ssh", port: "22"}
 
+# Abstract action intent; backend realization and authorization remain separate.
+action_contracts:
+  abuse-support:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared AbuseSupport intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt AbuseSupport against the scenario-declared subject set.
+      target_refs:
+      - ci-runner
+      - git-forge
+      - support-bastion
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  exploit:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Exploit intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Exploit against the scenario-declared subject set.
+      target_refs:
+      - ci-runner
+      - forge-auths-ci
+      - support-bastion
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  inspect:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Inspect intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Inspect against the scenario-declared subject set.
+      target_refs:
+      - control-api
+      - edge-gateway-east
+      - telemetry-broker
+      - telemetry-replicates-analytics
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  isolate:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Isolate intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Isolate against the scenario-declared subject set.
+      target_refs:
+      - control-api
+      - edge-gateway-east
+      - telemetry-broker
+      - telemetry-replicates-analytics
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  promote:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Promote intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Promote against the scenario-declared subject set.
+      target_refs:
+      - artifact-registry
+      - git-forge
+      - signing-hsm
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  push-artifact:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared PushArtifact intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt PushArtifact against the scenario-declared subject set.
+      target_refs:
+      - artifact-registry
+      - ci-publishes-registry
+      - release-manifest
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  restore:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Restore intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Restore against the scenario-declared subject set.
+      target_refs:
+      - control-api
+      - edge-gateway-east
+      - telemetry-broker
+      - telemetry-replicates-analytics
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  review:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Review intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Review against the scenario-declared subject set.
+      target_refs:
+      - artifact-registry
+      - registry-relies-signing
+      - signing-hsm
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  revoke:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Revoke intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Revoke against the scenario-declared subject set.
+      target_refs:
+      - artifact-registry
+      - infrastructure.build-net.acls.allow-engineering-release
+      - nodes.artifact-registry.services.registry-api
+      - registry-relies-signing
+      - release-manifest
+      - signing-hsm
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  rollback:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Rollback intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Rollback against the scenario-declared subject set.
+      target_refs:
+      - artifact-registry
+      - infrastructure.build-net.acls.allow-engineering-release
+      - nodes.artifact-registry.services.registry-api
+      - release-manifest
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  steal-token:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared StealToken intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt StealToken against the scenario-declared subject set.
+      target_refs:
+      - ci-runner
+      - forge-auths-ci
+      - support-bastion
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+  validate:
+    semantic_version: 1.0.0
+    behavioral_granularity: atomic
+    procedure_basis: Scenario-declared Validate intent
+    realization_profile: abstract
+    fidelity_claim: Portable intent only; no backend procedure, successful effect, or authority is asserted.
+    preconditions:
+    - precondition_id: authorized
+      precondition_class: authority
+      description: Independent authorization is required before any realization.
+    effects:
+    - effect_id: intended
+      effect_class: intended_effect
+      description: Attempt Validate against the scenario-declared subject set.
+      target_refs:
+      - control-api
+      - edge-gateway-east
+      - telemetry-broker
+      - telemetry-replicates-analytics
+    failure_classes:
+    - authority_denied
+    - target_unavailable
+    - unknown
+
 agents:
   red-build-agent:
-    entity: red-supply-chain
-    actions: [Exploit, StealToken, PushArtifact, AbuseSupport]
+    affiliations: [red-supply-chain]
+    actions: [exploit, steal-token, push-artifact, abuse-support]
     initial_knowledge:
       hosts: [git-forge, ci-runner, support-bastion]
       subnets: [corp-eng, build-net, federation-net]
@@ -693,8 +946,8 @@ agents:
       accounts: [support-vendor]
     allowed_subnets: [corp-eng, build-net, federation-net, control-net]
   blue-release-agent:
-    entity: platform-blue.release-engineering
-    actions: [Review, Promote, Revoke, Rollback]
+    affiliations: [platform-blue.release-engineering]
+    actions: [review, promote, revoke, rollback]
     starting_accounts: [release-engineer, registry-bot]
     initial_knowledge:
       hosts: [git-forge, artifact-registry, signing-hsm]
@@ -703,8 +956,8 @@ agents:
       accounts: [ci-bot, registry-bot]
     allowed_subnets: [corp-eng, build-net, control-net]
   blue-sre-agent:
-    entity: platform-blue.sre
-    actions: [Inspect, Isolate, Restore, Validate]
+    affiliations: [platform-blue.sre]
+    actions: [inspect, isolate, restore, validate]
     starting_accounts: [satops]
     initial_knowledge:
       hosts: [control-api, edge-gateway-east, edge-gateway-west, telemetry-broker]
@@ -715,8 +968,8 @@ agents:
 
 objectives:
   red-compromise-build:
-    agent: red-build-agent
-    actions: [Exploit, StealToken]
+    assigned_participant: red-build-agent
+    actions: [exploit, steal-token]
     targets: [ci-runner, support-bastion, forge-auths-ci]
     success:
       assertions: [rogue-release-promoted]
@@ -724,8 +977,8 @@ objectives:
       stories: [release-day]
       scripts: [release-prep]
   red-poison-release:
-    agent: red-build-agent
-    actions: [PushArtifact]
+    assigned_participant: red-build-agent
+    actions: [push-artifact]
     targets: [release-manifest, artifact-registry, ci-publishes-registry]
     success:
       assertions: [rogue-release-promoted]
@@ -735,7 +988,7 @@ objectives:
       scripts: [canary-rollout]
       events: [canary-cutover-event]
   red-reach-edge:
-    entity: red-supply-chain
+    owner: red-supply-chain
     targets: [edge-gateway-east, control-manages-east]
     success:
       assertions: [edge-east-poisoned]
@@ -745,8 +998,8 @@ objectives:
       scripts: [incident-rollback]
       events: [rollback-order-event]
   blue-validate-release:
-    agent: blue-release-agent
-    actions: [Review, Revoke]
+    assigned_participant: blue-release-agent
+    actions: [review, revoke]
     targets: [artifact-registry, signing-hsm, registry-relies-signing]
     success:
       assertions: [release-signature-valid]
@@ -756,8 +1009,8 @@ objectives:
       workflows: [release-response]
       steps: [release-response.validate-release]
   blue-revoke-artifact:
-    agent: blue-release-agent
-    actions: [Revoke, Rollback]
+    assigned_participant: blue-release-agent
+    actions: [revoke, rollback]
     targets:
       - release-manifest
       - artifact-registry
@@ -773,8 +1026,8 @@ objectives:
       workflows: [release-response]
       steps: [release-response.revoke-artifact]
   blue-preserve-service:
-    agent: blue-sre-agent
-    actions: [Inspect, Isolate, Restore, Validate]
+    assigned_participant: blue-sre-agent
+    actions: [inspect, isolate, restore, validate]
     targets: [control-api, edge-gateway-east, telemetry-broker, telemetry-replicates-analytics]
     success:
       assertions: [telemetry-flowing, tenant-isolation-healthy]
@@ -819,3 +1072,62 @@ workflows:
         next: finish
       finish:
         type: end
+
+realization:
+  constraints:
+    - field_pointer: /nodes/git-forge
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/ci-runner
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/artifact-registry
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/signing-hsm
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/control-api
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/edge-gateway-east
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/edge-gateway-west
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/telemetry-broker
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/analytics-lake
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/customer-portal
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/support-bastion
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/siem01
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/vendor-idp
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/customer-idp
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}

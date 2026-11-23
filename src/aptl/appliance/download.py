@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import re
 import shutil
+import stat
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -15,12 +15,26 @@ from email.message import Message
 from pathlib import Path
 from typing import Protocol
 
+from aptl.utils.deterministic_archive import hash_file_nofollow
+
 _DIGEST = re.compile(r"^sha256:([a-f0-9]{64})$")
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
 
 
 class ApplianceDownloadError(RuntimeError):
     """A remote appliance artifact could not be staged safely."""
+
+
+class ApplianceAuthenticationRequired(ApplianceDownloadError):
+    """The server answered the requested URL with 401 and named its schemes.
+
+    ``challenges`` holds each ``WWW-Authenticate`` value as received, so a
+    caller that knows the scheme can obtain a credential and retry.
+    """
+
+    def __init__(self, challenges: tuple[str, ...]) -> None:
+        super().__init__("metadata download requires authentication")
+        self.challenges = challenges
 
 
 class DownloadResponse(Protocol):
@@ -85,20 +99,23 @@ def _open_request(request: urllib.request.Request) -> DownloadResponse:
     return opener.open(request, timeout=60)
 
 
-def _file_identity(path: Path) -> tuple[str, int]:
-    """Stream the SHA-256 identity and size of one regular file."""
+def _open_regular_output(partial: Path, flags: int) -> int:
+    """Open the partial artifact for writing, and refuse a file that is not regular.
 
-    digest = hashlib.sha256()
-    size = 0
-    flags = os.O_RDONLY | os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor = os.open(path, flags)
-    with os.fdopen(descriptor, "rb") as handle:
-        for payload in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(payload)
-            size += len(payload)
-    return f"sha256:{digest.hexdigest()}", size
+    ``O_NONBLOCK`` keeps a FIFO that replaced the partial file after its check
+    from blocking the open (#1618). A regular file goes back to blocking mode.
+    """
+    nonblock = getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(partial, flags | nonblock, 0o600)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ApplianceDownloadError("partial artifact is unsafe")
+        if nonblock:
+            os.set_blocking(descriptor, True)
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
 
 
 def _header(headers: object, name: str) -> str | None:
@@ -136,12 +153,56 @@ def _admit_response(
         raise ApplianceDownloadError("artifact response length did not match")
 
 
+def _read_metadata(
+    response: DownloadResponse, *, max_bytes: int, require_length: bool
+) -> bytes:
+    """Read one admitted metadata response without exceeding ``max_bytes``."""
+
+    final_url = urllib.parse.urlparse(response.geturl())
+    length = _header(response.headers, "Content-Length")
+    if (
+        response.status != 200
+        or final_url.scheme != "https"
+        or (length is None and require_length)
+        or (
+            length is not None
+            and (not length.isdecimal() or not 0 < int(length) <= max_bytes)
+        )
+    ):
+        raise ApplianceDownloadError("metadata response is invalid")
+    payload = response.read(max_bytes + 1)
+    if not 0 < len(payload) <= max_bytes or (
+        length is not None and len(payload) != int(length)
+    ):
+        raise ApplianceDownloadError("metadata response length did not match")
+    return payload
+
+
+def _http_error(exc: urllib.error.HTTPError, url: str) -> ApplianceDownloadError:
+    """Map one HTTP error, keeping the challenges of a 401 for ``url`` itself.
+
+    A challenge from a redirect target is not the requested server's, so it
+    is reported as an ordinary failure.
+    """
+
+    try:
+        # The redirect policy raises HTTPError without headers.
+        values = exc.headers.get_all("WWW-Authenticate") if exc.headers else None
+    finally:
+        exc.close()
+    challenges = tuple(value for value in values or () if isinstance(value, str))
+    if exc.code == 401 and exc.geturl() == url and challenges:
+        return ApplianceAuthenticationRequired(challenges)
+    return ApplianceDownloadError("metadata download failed")
+
+
 def fetch_https_metadata(
     url: str,
     *,
     max_bytes: int,
     headers: Mapping[str, str] | None = None,
     open_request: OpenRequest = _open_request,
+    require_length: bool = True,
 ) -> bytes:
     """Fetch one bounded HTTPS metadata document before authenticating it.
 
@@ -149,6 +210,12 @@ def fetch_https_metadata(
     signature has been verified.  This narrow fetch therefore applies the
     same HTTPS/redirect constraints as artifact staging, requires an exact
     response length, and refuses to retain an oversized response.
+
+    ``require_length=False`` admits a response without ``Content-Length``
+    (a chunked reply, as some registry token services send); it is still
+    read only up to ``max_bytes``, and a declared length must still match.
+    A 401 for ``url`` raises :class:`ApplianceAuthenticationRequired` with
+    the server's challenges.
     """
 
     parsed = urllib.parse.urlparse(url)
@@ -164,22 +231,13 @@ def fetch_https_metadata(
     request = urllib.request.Request(url, headers=dict(headers or {}), method="GET")
     try:
         with open_request(request) as response:
-            final_url = urllib.parse.urlparse(response.geturl())
-            length = _header(response.headers, "Content-Length")
-            if (
-                response.status != 200
-                or final_url.scheme != "https"
-                or length is None
-                or not length.isdecimal()
-                or not 0 < int(length) <= max_bytes
-            ):
-                raise ApplianceDownloadError("metadata response is invalid")
-            payload = response.read(max_bytes + 1)
-            if len(payload) != int(length) or len(payload) > max_bytes:
-                raise ApplianceDownloadError("metadata response length did not match")
-            return payload
+            return _read_metadata(
+                response, max_bytes=max_bytes, require_length=require_length
+            )
     except ApplianceDownloadError:
         raise
+    except urllib.error.HTTPError as exc:
+        raise _http_error(exc, url) from exc
     except (OSError, ValueError) as exc:
         raise ApplianceDownloadError("metadata download failed") from exc
 
@@ -215,7 +273,7 @@ def stage_https_artifact(
     destination = destination_dir / filename
     if destination.exists() or destination.is_symlink():
         try:
-            actual_digest, actual_size = _file_identity(destination)
+            actual_digest, actual_size = hash_file_nofollow(destination)
         except OSError as exc:
             raise ApplianceDownloadError("cached artifact is unsafe") from exc
         if (actual_digest, actual_size) != (sha256, size_bytes):
@@ -240,7 +298,7 @@ def stage_https_artifact(
             output_flags |= os.O_NOFOLLOW
         with open_request(request) as response:
             _admit_response(response, offset=offset, expected_size=size_bytes)
-            descriptor = os.open(partial, output_flags, 0o600)
+            descriptor = _open_regular_output(partial, output_flags)
             with os.fdopen(descriptor, "ab" if offset else "wb") as output:
                 written = offset
                 while payload := response.read(1024 * 1024):
@@ -252,7 +310,7 @@ def stage_https_artifact(
                     output.write(payload)
                 output.flush()
                 os.fsync(output.fileno())
-        actual_digest, actual_size = _file_identity(partial)
+        actual_digest, actual_size = hash_file_nofollow(partial)
         if (actual_digest, actual_size) != (sha256, size_bytes):
             raise ApplianceDownloadError("downloaded artifact identity does not match")
         partial.chmod(0o444)

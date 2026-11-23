@@ -186,6 +186,20 @@ describe('telemetry', () => {
       expect(argsAttr).toContain('labadmin@victim');
     });
 
+    it('records the tool result size and truncation on the tool span', async () => {
+      const { recordToolResultSize, traceToolCall } = await import('../src/telemetry.js');
+
+      await traceToolCall('indexer_query', 'aptl-indexer', {}, async () => {
+        recordToolResultSize({ originalChars: 51200, returnedChars: 15990, truncated: true });
+        return { content: [] };
+      });
+
+      const attributes = exporter.getFinishedSpans()[0].attributes;
+      expect(attributes['aptl.tool.response_original_chars']).toBe(51200);
+      expect(attributes['aptl.tool.response_chars']).toBe(15990);
+      expect(attributes['aptl.tool.response_truncated']).toBe(true);
+    });
+
     it('redacts secret-shaped values in tool response attribute', async () => {
       const { traceToolCall } = await import('../src/telemetry.js');
 

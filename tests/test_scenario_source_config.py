@@ -23,12 +23,12 @@ def _write(tmp_path, payload):
     return path
 
 
-def test_default_selects_the_techvault_env_pack():
-    """The default is the TechVault env-pack, resolved by identity + digest (#875)."""
+def test_default_requires_an_explicit_scenario():
+    """Initialization does not choose a scenario for the operator."""
 
     config = AptlConfig()
 
-    assert config.scenario.identity == "techvault"
+    assert config.scenario.identity is None
     assert config.scenario.source == "env-pack"
     assert config.scenario.root is None
 
@@ -37,12 +37,12 @@ def test_an_operator_can_select_a_scenario_and_its_root(tmp_path):
     config = load_config(
         _write(
             tmp_path,
-            {"scenario": {"identity": "bounded-participant-agency-techvault",
+            {"scenario": {"identity": "fixture-operational",
                           "root": "environments/bounded-participant"}},
         )
     )
 
-    assert config.scenario.identity == "bounded-participant-agency-techvault"
+    assert config.scenario.identity == "fixture-operational"
     assert config.scenario.root == "environments/bounded-participant"
 
 
@@ -87,12 +87,12 @@ def test_the_configured_scenario_is_what_the_start_path_resolves(tmp_path):
     from aptl.backends.raes import _resolve_scenario_path
 
     config = AptlConfig.model_validate(
-        {"scenario": {"identity": "bounded-participant-agency-techvault"}}
+        {"scenario": {"identity": "fixture-operational"}}
     )
 
     resolved = _resolve_scenario_path(tmp_path, None, config)
 
-    assert resolved.name == "bounded-participant-agency-techvault.sdl.yaml"
+    assert resolved.name == "fixture-operational.sdl.yaml"
 
 
 def test_an_explicit_scenario_path_still_wins(tmp_path):
@@ -129,3 +129,30 @@ def test_no_implicit_project_tree_default_without_config(tmp_path):
 
     with pytest.raises(ValueError, match="explicit scenario path or configuration"):
         _resolve_scenario_path(tmp_path, None, None)
+
+
+def test_configured_release_directory_is_loaded(tmp_path):
+    config = load_config(_write(tmp_path, {"scenario": {
+        "identity": "third-party", "pack_directory": "releases/third-party",
+    }}))
+    assert config.scenario.pack_directory == "releases/third-party"
+    assert AptlConfig().scenario.pack_directory is None
+
+
+@pytest.mark.parametrize("directory", [
+    "", " ", "/etc", "../pack", "packs/../pack", "packs//pack",
+    "packs/./pack", "packs/pack/", "a\x00b", "~", "~/pack", "$PACK",
+    ".aptl/staged-packs/pack", ".aptl", "packs\\pack",
+])
+def test_unsafe_release_locator_is_rejected(tmp_path, directory):
+    config_path = _write(tmp_path, {"scenario": {"pack_directory": directory}})
+    with pytest.raises(ValueError):
+        load_config(config_path)
+
+
+@pytest.mark.parametrize("selection", [
+    {"source": "project-tree"}, {"root": "scenarios"},
+])
+def test_release_directory_cannot_be_combined_with_development_root(selection):
+    with pytest.raises(ValueError):
+        AptlConfig(scenario={**selection, "pack_directory": "releases/pack"})

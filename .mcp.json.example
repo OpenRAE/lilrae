@@ -35,13 +35,6 @@
         "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318"
       }
     },
-    "aptl-casemgmt": {
-      "command": "node",
-      "args": ["./mcp/mcp-casemgmt/build/index.js"],
-      "env": {
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318"
-      }
-    },
     "aptl-soar": {
       "command": "node",
       "args": ["./mcp/mcp-soar/build/index.js"],

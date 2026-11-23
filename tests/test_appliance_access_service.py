@@ -147,7 +147,7 @@ def test_dispatcher_ca_access_preserves_private_signing_keys(tmp_path):
     key = ca / "lab-ca.key"
     key.write_bytes(b"private fixture")
     key.chmod(0o600)
-    service = ca / "thehive"
+    service = ca / "misp"
     service.mkdir(mode=0o700)
     access_service._prepare_dispatch_ca(tmp_path, gid=os.getgid())
     assert ca.stat().st_mode & 0o777 == 0o710
@@ -189,8 +189,9 @@ def test_guest_qualification_builds_every_profile_mcp_registration(
     )
     captured = {}
 
-    def run(observed_profile, registrations):
+    def run(observed_profile, registrations, *, admission):
         captured.update(registrations)
+        captured["admission"] = admission
         assert observed_profile is profile
         return (
             QualificationCheckEvidence(
@@ -211,12 +212,73 @@ def test_guest_qualification_builds_every_profile_mcp_registration(
             "aptl.appliance.access_service.shutil.which", return_value="/usr/bin/node"
         ),
     ):
-        result = access_service._qualification_checks(project)
+        result = access_service._qualification_checks(project, "run-1")
 
     assert result[0].status == "passed"
+    assert captured.pop("admission") is None
     assert set(captured) == {"aptl", "scenario"}
     assert captured["aptl"].argv == ("/usr/bin/node", str(project / "mcp/aptl.js"))
     assert captured["aptl"].env["APTL_MODE"] == "offline"
+
+
+def test_guest_qualification_registers_only_run_admitted_servers(
+    tmp_path: Path,
+) -> None:
+    from aptl.validation import participant_mcp_smoke, participant_profile
+
+    project = tmp_path / "project"
+    project.mkdir()
+    # The selected-out server has no run configuration and must not be required.
+    (project / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"aptl": {"env": {}}}})
+    )
+    profile = SimpleNamespace(
+        mcp_server_ids=("aptl", "scenario"),
+        workbench_profiles=(
+            SimpleNamespace(
+                servers=(
+                    SimpleNamespace(server_id="aptl", artifact_ref="mcp/aptl.js"),
+                    SimpleNamespace(
+                        server_id="scenario", artifact_ref="mcp/scenario.js"
+                    ),
+                )
+            ),
+        ),
+    )
+    admission = SimpleNamespace(server_ids=("aptl",))
+    captured = {}
+
+    def run(_profile, registrations, *, admission):
+        captured["registrations"] = registrations
+        captured["admission"] = admission
+        return (
+            QualificationCheckEvidence(
+                check_id="live-check",
+                status="passed",
+                summary="live qualification passed",
+            ),
+        )
+
+    with (
+        patch.object(
+            participant_profile, "load_participant_profile", return_value=profile
+        ),
+        patch.object(
+            participant_mcp_smoke, "run_participant_mcp_smoke", side_effect=run
+        ),
+        patch(
+            "aptl.appliance.access_service.load_run_admission",
+            return_value=admission,
+        ) as load,
+        patch(
+            "aptl.appliance.access_service.shutil.which", return_value="/usr/bin/node"
+        ),
+    ):
+        access_service._qualification_checks(project, "run-7")
+
+    load.assert_called_once_with(project, "run-7")
+    assert set(captured["registrations"]) == {"aptl"}
+    assert captured["admission"] is admission
 
 
 def test_guest_qualification_retries_failed_semantics_before_publishing(
@@ -247,6 +309,7 @@ def test_guest_qualification_retries_failed_semantics_before_publishing(
     ) as attempt:
         result = access_service._qualification_checks(
             tmp_path,
+            "run-1",
             timeout_seconds=10,
             retry_interval_seconds=0,
         )
@@ -282,6 +345,7 @@ def test_guest_qualification_fails_closed_after_semantic_deadline(
     ):
         access_service._qualification_checks(
             tmp_path,
+            "run-1",
             timeout_seconds=1,
             retry_interval_seconds=0,
         )
@@ -444,3 +508,18 @@ def test_access_supervisor_publishes_then_revokes_stopped_listener(
     assert published.seat_id == request.seat_id
     assert published.runtime_evidence == bundle.runtime_evidence
     assert call_order == ["qualify", "prepare"]
+
+
+def test_guest_forced_command_uses_the_lilrae_executable() -> None:
+    """New guest policy names ``lilrae`` (#1402); ``aptl`` is only an alias."""
+    with patch(
+        "aptl.appliance.access_service.shutil.which",
+        side_effect=lambda name: f"/opt/bin/{name}",
+    ) as which:
+        assert access_service._cli_executable() == Path("/opt/bin/lilrae")
+    which.assert_called_once_with("lilrae")
+
+
+def test_guest_forced_command_falls_back_to_the_managed_lilrae_launcher() -> None:
+    with patch("aptl.appliance.access_service.shutil.which", return_value=None):
+        assert access_service._cli_executable() == Path("/usr/local/bin/lilrae")

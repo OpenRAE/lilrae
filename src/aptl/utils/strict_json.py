@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
-from typing import NoReturn, TypeAlias, TypeVar
+import math
+from typing import NoReturn
 
 from pydantic import BaseModel
 
-JsonValue: TypeAlias = (
-    None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
+type JsonValue = (
+    None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
 )
-ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
 def _closed_object(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
     """Build one object while rejecting ambiguous duplicate member names."""
 
@@ -28,6 +30,15 @@ def _reject_constant(value: str) -> NoReturn:
     raise ValueError(f"invalid JSON constant: {value}")
 
 
+def _finite_float(text: str) -> float:
+    """Reject a JSON number that overflows to a non-finite float."""
+
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError("JSON number out of range")
+    return value
+
+
 def loads_strict(payload: bytes | str) -> JsonValue:
     """Decode JSON while rejecting duplicate keys and non-finite numbers."""
 
@@ -35,10 +46,11 @@ def loads_strict(payload: bytes | str) -> JsonValue:
         payload,
         object_pairs_hook=_closed_object,
         parse_constant=_reject_constant,
+        parse_float=_finite_float,
     )
 
 
-def model_validate_json_strict(
+def model_validate_json_strict[ModelT: BaseModel](
     model_type: type[ModelT], payload: bytes | str
 ) -> ModelT:
     """Reject ambiguous JSON, then retain Pydantic's JSON-aware strict coercion."""

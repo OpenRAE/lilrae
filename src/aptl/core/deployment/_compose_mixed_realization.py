@@ -9,13 +9,12 @@ from typing import cast
 from aptl.core.appliance_boundary import ApplianceBoundaryPolicy
 from aptl.core.deployment._compose_base_container_realization import (
     _base_container_node_addresses,
-    _base_container_service_names,
     _strip_base_container_published_ports,
 )
-from aptl.core.deployment._compose_node_generation import STATIC_COMPOSE_FILENAME
 from aptl.core.deployment._compose_runtime_orchestration import (
     realization_has_docker_authority,
 )
+from aptl.core.deployment._companion_realization import with_companion_services
 from aptl.core.deployment.realization import DeploymentRealizationSpec
 from aptl.core.deployment.observation import DeploymentObservationContext
 from aptl.core.lab_types import LabResult
@@ -68,11 +67,9 @@ class ComposeMixedRealizationMixin:
             failure = self._prepare_capture_target(realization)
         if failure is not None:
             return failure, realization, ()
-        excluded_services = (
-            _base_container_service_names(realization, addresses)
-            if (scenario_root / STATIC_COMPOSE_FILENAME).exists()
-            else ()
-        )
+        # Generated models contain only image-backed services; base containers
+        # never need legacy Compose stubs scaled to zero.
+        excluded_services: tuple[str, ...] = ()
         legacy_content = tuple(
             item for item in realization.content if item.target_address not in addresses
         )
@@ -138,8 +135,6 @@ class ComposeMixedRealizationMixin:
 
         compose_files: tuple[Path, ...] | None = None
         failure = self._validate_stateful_realization(realization)
-        if failure is None:
-            failure = self._validate_stateful_compose_capability(realization)
         if failure is None:
             failure = self._realize_stateful_prerequisites(
                 realization,
@@ -245,7 +240,7 @@ class ComposeMixedRealizationMixin:
                 build=build and not self._offline_staged,
                 compose_files=compose_files,
                 exclude_services=excluded_services,
-                only_services=services,
+                only_services=with_companion_services(realization, services),
                 scenario_root=scenario_root,
             )
             result = None if started.success else started

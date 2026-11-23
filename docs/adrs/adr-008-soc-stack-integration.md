@@ -2,11 +2,22 @@
 
 ## Status
 
-accepted
+superseded in part by ADR-063
+
+[ADR-063](adr-063-remove-thehive-and-cortex.md) supersedes the TheHive and
+Cortex decisions in this record. The MISP, Shuffle, and Suricata decisions
+remain in force.
 
 ## Date
 
 2026-02-22
+
+## Applicability
+
+This record explains the original SOC selection.
+Its TheHive and Cortex sections are historical under ADR-063.
+The current [MCP reference](../reference/mcp.md) identifies supported servers.
+Historical timings, resource estimates, and integration outcomes keep their original scope.
 
 ## Context
 
@@ -14,15 +25,15 @@ APTL's original blue team capability was Wazuh alone ([ADR-002](adr-002-wazuh-si
 
 ### Gaps in Wazuh-Only SOC
 
-1. **No threat intelligence**: Wazuh alerts contain raw event data but no context about whether an IP, domain, or file hash is a known threat. Analysts (human or AI agent) must manually research each indicator.
+1. **No threat intelligence**: Wazuh alerts contain raw event data. The early design needed more context to identify known hostile IPs, domains, and file hashes. Analysts (human or AI agent) must manually research each indicator.
 
-2. **No case management**: Alerts fire and scroll. There's no way to group related alerts into an investigation, track progress, assign ownership, document findings, or close a case. For an agentic SOC where AI agents investigate incidents, case management provides the structured workflow they need.
+2. **No case management**: Alerts alone did not supply a case workflow. The design needed grouping, ownership, progress, findings, and closure. For an agentic SOC where AI agents investigate incidents, case management provides the structured workflow they need.
 
 3. **No automated response**: Wazuh has active response (block IPs, run scripts) but no orchestration layer. Complex response workflows—"if critical alert AND known IOC AND business hours, then isolate host AND create case AND notify Slack"—require a SOAR platform.
 
 4. **No network detection**: Wazuh sees host-level logs but is blind to network traffic. Command-and-control channels, lateral movement over the wire, data exfiltration, and DNS tunneling are invisible without network IDS.
 
-The design question from `notes/team-review-synthesis.md` captures the gap: Wazuh alone provides alerting, but an agentic SOC needs structured workflows, enrichment, and automated response to give AI agents real investigative work.
+`notes/team-review-synthesis.md` identified a gap beyond Wazuh alerting. The proposed SOC needed structured workflows, enrichment, and automated response for agent investigations.
 
 ### Tool Selection Criteria
 
@@ -43,7 +54,7 @@ Add five SOC tools under the `soc` Docker Compose profile ([ADR-005](adr-005-doc
 **Chosen over Zeek**. Suricata provides signature-based network IDS with the ET Open ruleset, JSON output (Eve JSON) that integrates cleanly with Wazuh, and simpler deployment. Zeek offers richer metadata extraction and scripting but has a steeper learning curve and less direct Wazuh integration. For a training lab focused on detection rule writing and alert investigation, Suricata's approach is more accessible.
 
 - Deployed in IDS mode with pcap capture on Docker networks (dmz, internal, security)
-- Initially configured in `network_mode: host` but switched to Docker networks with pcap capture after the host interface (`eth0`) wasn't available in container mode
+- Initially configured in `network_mode: host` but switched to Docker networks with pcap capture after the host interface (`eth0`) was not available in container mode
 - Custom local rules for lab-specific detection (for example, detecting attack patterns in the TechVault scenario)
 - Requires `NET_ADMIN`, `NET_RAW`, `SYS_NICE` capabilities for packet capture
 - MCP server: `mcp-network`—query alerts, manage rules, search flow data
@@ -71,6 +82,8 @@ TheHive 5 provides case management with alert escalation, observable tracking, a
 - MCP server: `mcp-casemgmt`—create cases, add observables, run Cortex analyzers, update case status, generate reports
 - Known issue: TheHive-ES JVM memory starvation—256MB heap in 512MB container caused Cassandra query timeouts. Fixed by doubling heap to 512MB and container limit to 1GB (v4.1.0).
 
+> **Update (ADR-063, 2026-10-30):** TheHive 5 is proprietary StrangeBee software, not open source. After its 14-day trial, it needs a license for each instance. ADR-063 removes TheHive from the TechVault SOC stack. See [ADR-063](adr-063-remove-thehive-and-cortex.md).
+
 #### 4. Cortex Enrichment (`aptl-cortex`, 172.20.0.22)
 
 Cortex provides automated observable enrichment—analyzing IPs, domains, hashes, and emails against external sources (VirusTotal, abuse.ch, WHOIS). Tightly integrated with TheHive; analyzers are triggered from case observables.
@@ -78,9 +91,11 @@ Cortex provides automated observable enrichment—analyzing IPs, domains, hashes
 - Shares TheHive's Elasticsearch backend
 - Accessible via TheHive's MCP server (no separate MCP server)
 
+> **Update (ADR-063, 2026-10-30):** ADR-063 removes Cortex from the TechVault SOC stack together with TheHive. See [ADR-063](adr-063-remove-thehive-and-cortex.md).
+
 #### 5. Shuffle SOAR (`aptl-shuffle-backend` 172.20.0.20, `aptl-shuffle-frontend` 172.20.0.21)
 
-**Chosen over n8n**. Shuffle is purpose-built for security orchestration with pre-built security app integrations (Wazuh, TheHive, MISP, email, HTTP). n8n is a more general workflow automation tool with a better UI but lacks security-specific integrations. For a SOC stack, Shuffle's domain focus outweighs n8n's polish.
+**Chosen over n8n**. Shuffle supplies security-specific integrations for Wazuh, TheHive, MISP, email, and HTTP. n8n supplies general workflow automation. The decision preferred security integrations over n8n's interface. For a SOC stack, Shuffle's domain focus outweighs n8n's polish.
 
 - Pre-built playbooks seeded via `scripts/seed-shuffle.sh`:
   - Alert-to-Case: Wazuh alert → TheHive case creation

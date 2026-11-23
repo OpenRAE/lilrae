@@ -4,7 +4,7 @@ Renders credentialized service configuration from the checked-in
 ``config/`` baseline files into the project's ignored ``.aptl/config/``
 state tree. The checked-in source files are never written — they are
 source-owned templates (see ADR-028: Runtime-Rendered Service Config).
-``aptl lab start`` mounts the rendered copies into the containers.
+``lilrae lab start`` mounts the rendered copies into the containers.
 
 The render functions own construction of both their canonical
 project-relative *source* path and *output* path, and validate
@@ -51,7 +51,7 @@ _RENDERED_CONFIG_ROOT = Path(".aptl/config")
 # is the real access control for local users, since nobody but the owner
 # can traverse into it. The files themselves are ``0o644`` deliberately:
 # each is bind-mounted into a container whose process may run under a UID
-# that does not match the host UID that ran ``aptl lab start`` (the Wazuh
+# that does not match the host UID that ran ``lilrae lab start`` (the Wazuh
 # Dashboard image runs as a non-root user), so an owner-only file would
 # leave the container unable to read its own config. ``0o644`` under a
 # ``0o700`` parent is still unreadable by other local users, and ``.aptl/``

@@ -175,7 +175,7 @@ def bundle_realization(
         backend=_NoStartBackend(),
         bundle=bundle,
     )
-    from aptl.backends.raes_planning_compat import (
+    from aptl.backends.raes_runtime import (
         AptlPlanningOptions,
         plan_aptl_scenario,
     )
@@ -183,7 +183,6 @@ def bundle_realization(
 
     execution_plan = plan_aptl_scenario(
         target=target,
-        bundle=bundle,
         scenario=scenario,
         options=AptlPlanningOptions(parameters=resolve_runtime_parameters(bundle)),
     )

@@ -25,7 +25,7 @@ def _dockerfile_cmd_flags() -> list[str]:
     match = re.search(r"^CMD\s+(\[.*\])\s*$", text, re.MULTILINE)
     assert match, "web/Dockerfile.api has no single-line JSON CMD array"
     argv = json.loads(match.group(1))
-    assert argv[:3] == ["aptl", "web", "serve"], argv
+    assert argv[:3] == ["lilrae", "web", "serve"], argv
     return [arg for arg in argv[3:] if arg.startswith("--")]
 
 

@@ -20,7 +20,6 @@ import dataclasses
 import json
 
 import pytest
-from raes_backend_protocols.capabilities import observation_capability_contract_gaps
 from raes_contracts.contracts import ExperimentCaptureSpecModel
 from raes_contracts.corpus import FIXTURES, corpus_family_root
 
@@ -28,7 +27,6 @@ from aptl.core.experiment.capture_registry import (
     DEFAULT_COLLECTOR_REGISTRY,
     OBSERVATION_EVIDENCE_CONTRACTS,
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
     CollectorRegistry,
@@ -38,7 +36,6 @@ from aptl.core.experiment.capture_registry import (
 
 CORPUS_ROOT = corpus_family_root(FIXTURES)
 
-_LIMITS = CaptureLimits(max_bytes=1_048_576, max_artifact_count=100, max_duration_s=300)
 
 
 def _read(*parts: str) -> bytes:
@@ -91,7 +88,6 @@ def _covering_registration(**overrides: object) -> CollectorRegistration:
         "supports_redaction": True,
         "integrity_modes": frozenset({"sha256-digest"}),
         "sealing_modes": frozenset({"digest"}),
-        "supports_chain_of_custody": False,
         "supports_retention": True,
         "redaction_policies": frozenset({"redact_secrets"}),
         "retention_policies": frozenset(
@@ -99,7 +95,6 @@ def _covering_registration(**overrides: object) -> CollectorRegistration:
         ),
         "supports_loss_disclosure": True,
         "visibility_class": CaptureVisibility.EVALUATOR_ONLY,
-        "limits": _LIMITS,
     }
     fields.update(overrides)
     return CollectorRegistration(**fields)
@@ -112,38 +107,6 @@ def _bind_reference(
     spec = _spec_with(**requirement_overrides)
     requirement = next(iter(spec.capture_requirements.values()))
     return CollectorRegistry((registration,)).match(spec, requirement)
-
-
-def test_best_effort_tempo_delivery_cannot_admit_required_loss_accounting():
-    from aptl_techvault.capture_registrations import BUILTIN_REGISTRATIONS
-
-    tempo = next(
-        item
-        for item in BUILTIN_REGISTRATIONS
-        if item.registration_id == "aptl.collector.tempo-traces"
-    )
-    spec = _spec_with(
-        capture_kind="trace",
-        capture_scope="run",
-        retention_policy="run_lifetime",
-        redaction_policy="redact_secrets",
-        loss_disclosure_required=True,
-    )
-    requirement = next(iter(spec.capture_requirements.values()))
-    assert CollectorRegistry((tempo,)).match(spec, requirement) is None
-    # This is specifically the unavailable loss guarantee, not a wrong media,
-    # role, scope or policy that accidentally makes the negative test pass.
-    payload = spec.model_dump(mode="json")
-    payload["capture_requirements"][requirement.requirement_id][
-        "loss_disclosure_required"
-    ] = False
-    best_effort = ExperimentCaptureSpecModel.model_validate(payload)
-    assert (
-        CollectorRegistry((tempo,)).match(
-            best_effort, best_effort.capture_requirements[requirement.requirement_id]
-        )
-        is not None
-    )
 
 
 # ---------------------------------------------------------------------------

@@ -7,15 +7,15 @@
         "source": "env-pack"
     },
     "containers": {
-        "wazuh": true,
-        "victim": true,
-        "kali": true,
-        "reverse": false,
-        "enterprise": true,
-        "soc": true,
-        "mail": false,
-        "fileshare": true,
-        "dns": true
+        "profiles": [
+            "wazuh",
+            "victim",
+            "kali",
+            "enterprise",
+            "soc",
+            "fileshare",
+            "dns"
+        ]
     },
     "run_storage": {
         "backend": "local",

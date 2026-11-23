@@ -8,7 +8,7 @@ module free of owner imports.
 
 Every built-in is policy-required in the default profile. That is deliberate:
 requiring a provider does not assert it must succeed, it asserts that its
-outcome must be STATED. A plain ``aptl lab start`` has no admitted experiment
+outcome must be STATED. A plain ``lilrae lab start`` has no admitted experiment
 plan and no installed participants, so those two providers report
 ``UNAVAILABLE`` and appear as declared limitations — which is the honest
 record, and exactly what "missing/denied provenance is explicit" requires.
@@ -19,9 +19,11 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import replace
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from aptl.core.evidence.deadline import DEFAULT_PROGRESS_TIMEOUT_SECONDS
 from aptl.core.provenance.coordinator import ProvenanceCollection, collect_provenance
 from aptl.core.provenance.protocol import MonotonicClock, ProvenanceProvider
 from aptl.core.provenance.providers.apparatus import (
@@ -68,16 +70,20 @@ log = logging.getLogger(__name__)
 _IMPLEMENTATION_VERSION = "1.0.0"
 
 
+#: One time bound for every built-in provider: the run store's default
+#: evidence progress timeout. ``run_storage.capture_progress_timeout_seconds``
+#: overrides it for a run.
+PROVIDER_TIMEOUT_SECONDS = int(DEFAULT_PROGRESS_TIMEOUT_SECONDS)
+
+
 def _registration(
     provider_id: str,
     provenance_kind: str,
     owner_adapter: str,
     *,
-    max_bytes: int,
-    max_entries: int,
-    timeout_s: int,
+    timeout_s: int = PROVIDER_TIMEOUT_SECONDS,
 ) -> ProvenanceProviderRegistration:
-    """Build one built-in registration with its declared bounds."""
+    """Build one built-in registration with the shared provider time bound."""
     return ProvenanceProviderRegistration(
         provider_id=provider_id,
         implementation_version=_IMPLEMENTATION_VERSION,
@@ -85,81 +91,68 @@ def _registration(
         owner_adapter=owner_adapter,
         seal_point=SealPoint.RUN_READY_TO_SEAL,
         requiredness_policy_key=f"{provider_id}-required",
-        limits=ProvenanceLimits(
-            max_bytes=max_bytes, max_entries=max_entries, timeout_s=timeout_s
-        ),
+        limits=ProvenanceLimits(timeout_s=timeout_s),
     )
 
 
 #: The detection-content registration, named so callers that need only this
-#: provider's declared limits (for example the snapshot adapter) can reference
+#: provider's declaration (for example the snapshot adapter) can reference
 #: it directly instead of looking it up and handling an impossible miss.
 DETECTION_REGISTRATION = _registration(
     DETECTION_PROVIDER_ID,
     "detection-content",
     "provenance.providers.detection",
-    max_bytes=64_000_000,
-    max_entries=1024,
-    timeout_s=60,
 )
 
-#: The declared built-in fleet. Limits are sized to the real surfaces: the
-#: detection roots hold on the order of a dozen small text artifacts, while a
-#: trial plan can carry many planned trials.
+#: The declared built-in fleet.
 BUILTIN_REGISTRATIONS: tuple[ProvenanceProviderRegistration, ...] = (
     _registration(
         APPARATUS_PROVIDER_ID,
         "apparatus-manifest",
         "raes_manifest/raes_processor",
-        max_bytes=4_000_000,
-        max_entries=8,
-        timeout_s=30,
     ),
     _registration(
         EXPERIMENT_PROVIDER_ID,
         "admitted-experiment",
         "experiment.trial_plan",
-        max_bytes=4_000_000,
-        max_entries=1024,
-        timeout_s=30,
     ),
     _registration(
         PARTICIPANT_PROVIDER_ID,
         "participant-apparatus",
         "raes_participant_apparatus",
-        max_bytes=1_000_000,
-        max_entries=64,
-        timeout_s=30,
     ),
     DETECTION_REGISTRATION,
     _registration(
         CONFIG_PROVIDER_ID,
         "effective-config",
         "core.config",
-        max_bytes=1_000_000,
-        max_entries=8,
-        timeout_s=15,
     ),
     _registration(
         RUNTIME_PROVIDER_ID,
         "runtime-facts",
         "core.snapshot",
-        max_bytes=8_000_000,
-        max_entries=256,
-        timeout_s=30,
     ),
     _registration(
         ARTIFACTS_PROVIDER_ID,
         "dependency-artifacts",
         "provenance.providers.artifacts",
-        max_bytes=32_000_000,
-        max_entries=128,
-        timeout_s=30,
     ),
 )
 
 #: The production registry.
 DEFAULT_PROVENANCE_REGISTRY = ProvenanceProviderRegistry(BUILTIN_REGISTRATIONS)
+
+
+def _configured_registry(config: object | None) -> ProvenanceProviderRegistry:
+    """Apply the configured progress timeout to every built-in provider."""
+    storage = getattr(config, "run_storage", None)
+    seconds = getattr(storage, "capture_progress_timeout_seconds", None)
+    if not isinstance(seconds, int) or seconds == PROVIDER_TIMEOUT_SECONDS:
+        return DEFAULT_PROVENANCE_REGISTRY
+    limits = ProvenanceLimits(timeout_s=seconds)
+    return ProvenanceProviderRegistry(
+        tuple(replace(item, limits=limits) for item in BUILTIN_REGISTRATIONS)
+    )
 
 #: The default run-scoped seal profile: every built-in outcome must be stated.
 DEFAULT_SEAL_PROFILE = SealProfile(
@@ -216,7 +209,7 @@ def collect_run_provenance(
     )
     return collect_provenance(
         providers=providers,
-        registry=DEFAULT_PROVENANCE_REGISTRY,
+        registry=_configured_registry(config),
         profile=DEFAULT_SEAL_PROFILE,
         monotonic=monotonic,
     )

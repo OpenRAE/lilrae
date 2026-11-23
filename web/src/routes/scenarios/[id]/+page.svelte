@@ -1,13 +1,13 @@
 <script lang="ts">
-	import type { ScenarioDetail } from '$lib/types';
-	import WorkbenchStatusBar from '$lib/components/workbench/WorkbenchStatusBar.svelte';
-	import NarrativeBlock from '$lib/components/workbench/NarrativeBlock.svelte';
-	import ContainerStatusBlock from '$lib/components/workbench/ContainerStatusBlock.svelte';
-	import SectionDivider from '$lib/components/workbench/SectionDivider.svelte';
-	import ObjectiveBlock from '$lib/components/workbench/ObjectiveBlock.svelte';
-	import StepBlock from '$lib/components/workbench/StepBlock.svelte';
-	import SiemQueryBlock from '$lib/components/workbench/SiemQueryBlock.svelte';
-	import TerminalBlock from '$lib/components/workbench/TerminalBlock.svelte';
+	import type { ScenarioDetail } from '#lib/types.ts';
+	import WorkbenchStatusBar from '#lib/components/workbench/WorkbenchStatusBar.svelte';
+	import NarrativeBlock from '#lib/components/workbench/NarrativeBlock.svelte';
+	import ContainerStatusBlock from '#lib/components/workbench/ContainerStatusBlock.svelte';
+	import SectionDivider from '#lib/components/workbench/SectionDivider.svelte';
+	import ObjectiveBlock from '#lib/components/workbench/ObjectiveBlock.svelte';
+	import StepBlock from '#lib/components/workbench/StepBlock.svelte';
+	import SiemQueryBlock from '#lib/components/workbench/SiemQueryBlock.svelte';
+	import TerminalBlock from '#lib/components/workbench/TerminalBlock.svelte';
 
 	let { data }: { data: { scenario: ScenarioDetail } } = $props();
 

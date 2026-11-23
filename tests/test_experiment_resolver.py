@@ -37,29 +37,29 @@ from aptl.core.experiment.resolver import (
 
 class TestParseLocatorHappyPath:
     def test_bare_relative_path(self):
-        locator = parse_locator("scenarios/techvault.sdl.yaml")
+        locator = parse_locator("scenarios/fixture-range.sdl.yaml")
 
         assert locator == ProjectFileLocator(
-            relative_path="scenarios/techvault.sdl.yaml",
+            relative_path="scenarios/fixture-range.sdl.yaml",
             declared_size=None,
             declared_digest=None,
             media_type=None,
         )
 
     def test_explicit_file_scheme(self):
-        locator = parse_locator("file:scenarios/techvault.sdl.yaml")
+        locator = parse_locator("file:scenarios/fixture-range.sdl.yaml")
 
-        assert locator.relative_path == "scenarios/techvault.sdl.yaml"
+        assert locator.relative_path == "scenarios/fixture-range.sdl.yaml"
 
     def test_declared_size_digest_and_media_type_query_fields(self):
         locator = parse_locator(
-            "file:scenarios/techvault.sdl.yaml"
+            "file:scenarios/fixture-range.sdl.yaml"
             "?size=1234&digest=sha256:"
             + ("a" * 64)
             + "&media_type=application/yaml"
         )
 
-        assert locator.relative_path == "scenarios/techvault.sdl.yaml"
+        assert locator.relative_path == "scenarios/fixture-range.sdl.yaml"
         assert locator.declared_size == 1234
         assert locator.declared_digest == "sha256:" + ("a" * 64)
         assert locator.media_type == "application/yaml"

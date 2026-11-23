@@ -35,7 +35,7 @@ def check_account_provisioner_parity(
     TechVault Operational Standup Addendum, issue #689). This never runs
     Docker or ``samba-tool``: it compares each authored account against the
     admitted provisioning realization, so SDL<->realization drift is caught
-    before ``aptl lab start`` rather than discovered live.
+    before ``lilrae lab start`` rather than discovered live.
 
     Each SDL account (``scenario.accounts``) must have an admitted
     account placement on its declared node whose ``username``, ``groups``,

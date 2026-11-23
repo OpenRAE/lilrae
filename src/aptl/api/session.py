@@ -36,7 +36,7 @@ header; an XSS payload gets the header but not the cookie; neither alone
 triggers injection. The forgeable Fetch-Metadata/Origin headers remain a CSRF
 signal only, never a credential.
 
-The master secret is per-serve-process. The ``aptl web serve`` CLI generates it
+The master secret is per-serve-process. The ``lilrae web serve`` CLI generates it
 and exports it via the environment so all uvicorn workers derive the same tags
 (module-level generation would differ per worker and reject each other's
 credentials). The environment is readable only by the operator's own uid — the
@@ -75,7 +75,7 @@ _HEADER_LABEL = b"aptl-session-header-v1"
 # Set once the launch token has been redeemed for a session cookie, so the
 # bootstrap URL is genuinely one-time and cannot be replayed from terminal
 # scrollback, container logs, or browser history. This is per-process state;
-# `aptl web serve` therefore runs a single worker (the CLI warns otherwise),
+# `lilrae web serve` therefore runs a single worker (the CLI warns otherwise),
 # since the launch token and ticket stores are not shared across workers.
 _launch_consumed: bool = False
 
@@ -88,7 +88,7 @@ def generate_secret() -> str:
 def _get_or_create(env_name: str) -> str:
     """Return the secret in *env_name*, generating and storing one if absent.
 
-    The ``aptl web serve`` CLI sets both env vars before starting uvicorn so
+    The ``lilrae web serve`` CLI sets both env vars before starting uvicorn so
     every worker inherits the same value. When they are absent (tests, or a
     direct ``uvicorn`` invocation) a fresh value is generated once per process.
     """

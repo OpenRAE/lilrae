@@ -8,6 +8,14 @@ accepted
 
 2026-05-18
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [CLI Reference](../reference/cli.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 `src/aptl/core/snapshot.py` builds `RangeSnapshot.services` and
@@ -17,10 +25,7 @@ same host-port facts are owned by Docker Compose and are already visible to
 snapshot capture through `ContainerSnapshot.ports`, populated by
 `DeploymentBackend.host_list_lab_containers` per ADR-023.
 
-The change requested by issue #261 is architectural, not just mechanical:
-deduplicating endpoint metadata must not accidentally create a second source of
-truth for Docker Compose port mappings, runtime secrets, API terminal routing,
-or first-party configuration.
+Issue #261 consolidates endpoint metadata. It must not create competing owners for Compose publications, secrets, terminal routing, or first-party configuration.
 
 Relevant incumbents:
 
@@ -52,16 +57,9 @@ stable display metadata and protocol expectations such as:
 
 Host-facing published ports must be derived from the runtime
 `ContainerSnapshot.ports` data returned by the deployment backend. The registry
-must not carry host-published port numbers that duplicate Docker Compose. When a
-running registered container has no matching published port, snapshot capture
-should omit that endpoint or represent it as unavailable; it must not fall back
-to a stale hardcoded host port.
+must not carry host-published port numbers that duplicate Docker Compose. A running container without a matching publication has no available host endpoint. Snapshot capture should omit it or report unavailability. It must never substitute a hardcoded port.
 
-Credentials remain out of scope for endpoint deduplication. Issue #261 may move
-the existing snapshot credential literals into the endpoint registry only to
-avoid local duplication in `snapshot.py`, but it must not redesign credential
-storage, move `.env` secrets into `aptl.json`, expose generated config, or make
-the endpoint registry a secret-management layer. Any credential-shaped value in
+Credentials remain out of scope for endpoint deduplication. Issue #261 allowed moving existing literals into the registry to remove snapshot duplication. It did not authorize secret-storage redesign, `.env` migration, or generated-secret disclosure. Any credential-shaped value in
 snapshot output remains subject to ADR-029 redaction through
 `RangeSnapshot.to_dict()`.
 
@@ -100,10 +98,7 @@ annotations into user configuration.
 ## Extensibility
 
 The extensibility seam is the registry entry's expected container target port,
-not the host-published port. A future service should be addable by registering
-its container name, display metadata, endpoint kind, protocol, and target port;
-changing the host-published port should require only a Docker Compose change
-because snapshots derive the host side from runtime inventory.
+not the host-published port. A service registers its container, display metadata, endpoint kind, protocol, and target port. Runtime inventory supplies host publications, so changing them does not require another registry value.
 
 If a future deployment backend exposes richer structured port data, adapt the
 backend-to-`ContainerSnapshot` normalization first so all snapshot consumers see

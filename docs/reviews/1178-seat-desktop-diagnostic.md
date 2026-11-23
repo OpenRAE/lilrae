@@ -1,5 +1,13 @@
 # Issue #1178: VM desktop diagnostic
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/reviews/1178-seat-desktop-diagnostic.md).
+Its last recorded file change before this rewrite was `124911951e96`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This records an earlier diagnostic image. Its HTTPS-only proxy was removed
 after the owner selected ordinary outbound access with no default seat filter;
 see [ADR-061](../adrs/adr-061-gateless-vm-seat-access.md). The network results

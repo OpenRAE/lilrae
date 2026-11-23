@@ -3,27 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-import hashlib
 from pathlib import Path, PurePosixPath
 
-from aptl.core.credentials import RENDERED_MANAGER_RELPATH
-from aptl.core.deployment._flag_signing_keys import FLAG_SIGNING_PROFILE_V2
-from aptl.core.deployment._misp_cache_credential import (
-    MISP_CACHE_CREDENTIAL_PROFILE,
-)
-from aptl.core.deployment._misp_server_tls import MISP_SERVER_TLS_PROFILE
-from aptl.core.deployment._cortex_service_credentials import (
-    CORTEX_SERVICE_CREDENTIALS_PROFILE,
-    CORTEX_SERVICE_CREDENTIALS_ROOT_RELPATH,
+from aptl.core.deployment._compose_artifact_paths import (
+    artifact_environment_file_path,
+    artifact_source_path,
 )
 from aptl.core.deployment._compose_stateful_constants import (
-    CERTIFICATE_ROOT_RELPATH,
-    FLAG_SIGNING_ROOT_RELPATH,
-    MISP_CACHE_CREDENTIAL_ROOT_RELPATH,
-    MISP_SERVER_TLS_ROOT_RELPATH,
-    SOC_CERT_PROFILE,
-    SOC_CERTS_ROOT_RELPATH,
-    SSH_KEY_BUNDLE_ROOT_RELPATH,
     WAZUH_MANAGER_CONFIG_PROVENANCES,
 )
 from aptl.core.deployment._compose_stateful_services import (
@@ -96,54 +82,6 @@ def effective_stateful_model_errors(
         )
     )
     return errors
-
-
-def artifact_source_path(
-    scenario_root: Path,
-    artifact: DeploymentGeneratedArtifactRealization,
-) -> Path:
-    """Return the canonical host source for a supported artifact provider.
-
-    A generated artifact is scenario-local: it is produced and read back under
-    the scenario bundle root, not the engine checkout. For an in-tree scenario
-    the two coincide (issue #874).
-    """
-
-    provenance = getattr(artifact, "provenance", None)
-    if provenance == SOC_CERT_PROFILE:
-        relative = Path(SOC_CERTS_ROOT_RELPATH)
-    elif artifact.generator == "certificate_bundle":
-        relative = Path(CERTIFICATE_ROOT_RELPATH)
-    elif artifact.generator == "ssh_key_bundle":
-        relative = Path(SSH_KEY_BUNDLE_ROOT_RELPATH) / artifact.name
-    elif provenance == FLAG_SIGNING_PROFILE_V2:
-        relative = Path(FLAG_SIGNING_ROOT_RELPATH) / artifact.name
-    elif provenance == CORTEX_SERVICE_CREDENTIALS_PROFILE:
-        relative = Path(CORTEX_SERVICE_CREDENTIALS_ROOT_RELPATH)
-    elif provenance == MISP_CACHE_CREDENTIAL_PROFILE:
-        relative = Path(MISP_CACHE_CREDENTIAL_ROOT_RELPATH)
-    elif provenance == MISP_SERVER_TLS_PROFILE:
-        relative = Path(MISP_SERVER_TLS_ROOT_RELPATH)
-    else:
-        relative = Path(RENDERED_MANAGER_RELPATH)
-    return scenario_root.resolve() / relative
-
-
-def artifact_environment_file_path(
-    scenario_root: Path,
-    artifact: DeploymentGeneratedArtifactRealization,
-    service_name: str,
-) -> Path:
-    """Return a contained opaque path for one generated environment delivery."""
-
-    artifact_key = hashlib.sha256(artifact.address.encode()).hexdigest()[:20]
-    service_key = hashlib.sha256(service_name.encode()).hexdigest()[:20]
-    return (
-        scenario_root.resolve()
-        / ".aptl/realization/generated-environment"
-        / artifact_key
-        / f"{service_key}.env"
-    )
 
 
 def _consumer_output_names(

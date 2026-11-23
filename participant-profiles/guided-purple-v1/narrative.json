@@ -78,7 +78,7 @@
       "classification": "facilitator-only",
       "capability_id": "research.full-soc",
       "channel": "browser",
-      "expected_result": "MISP, TheHive, Cortex, Shuffle, and Suricata remain full-stack facilitator material."
+      "expected_result": "MISP, Shuffle, and Suricata remain full-stack facilitator material."
     }
   ]
 }

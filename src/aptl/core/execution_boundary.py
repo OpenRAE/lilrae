@@ -43,24 +43,32 @@ class ExecutionBoundaryObservation(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["aptl.execution-boundary/v1"] = (
-        "aptl.execution-boundary/v1"
-    )
+    schema_version: Literal["aptl.execution-boundary/v1"] = "aptl.execution-boundary/v1"
     transport: Literal[
         "local-unix", "local-npipe", "remote-ssh", "remote-tcp", "unknown"
     ]
     override_source: Literal[
-        "none", "docker-host", "docker-context", "active-context", "conflicting-overrides"
+        "none",
+        "docker-host",
+        "docker-context",
+        "active-context",
+        "conflicting-overrides",
     ]
     daemon_runtime: Literal["native-linux", "docker-vm", "unknown"]
     host_containment: Literal[
-        "native-docker", "docker-vm-unverified", "remote-unverified",
-        "seat-guest-unverified", "unknown"
+        "native-docker",
+        "docker-vm-unverified",
+        "remote-unverified",
+        "seat-guest-unverified",
+        "unknown",
     ]
     observation_status: Literal["observed", "partial", "unknown", "mismatch"]
     host_os: Literal["linux", "macos", "windows", "unknown"]
     host_kernel: str = Field(default="", max_length=80)
     docker_version: str = Field(default="", max_length=80)
+    range_egress_policy: Literal["unverified", "default-deny"] = "unverified"
+    range_host_access_policy: Literal["unverified", "deny"] = "unverified"
+    range_policy_digest: str = ""
     containment_verified: bool = False
     profile_ref: str = Field(default="", max_length=80)
     evidence_refs: tuple[str, ...] = ()
@@ -131,7 +139,7 @@ def _context_endpoint(backend: BoundaryProbeBackend) -> str | None:
         return None
     try:
         endpoint = json.loads(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         endpoint = None
     return endpoint if isinstance(endpoint, str) and len(endpoint) <= 2048 else None
 
@@ -186,7 +194,7 @@ def _daemon_info(backend: BoundaryProbeBackend) -> dict[str, object] | None:
         return None
     try:
         parsed = json.loads(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return parsed if isinstance(parsed, dict) else None
 
@@ -196,12 +204,13 @@ def _transport_environment(backend: BoundaryProbeBackend) -> dict[str, str]:
 
     try:
         environment = backend.docker_transport_environment()
-    except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+    except AttributeError, OSError, RuntimeError, TypeError, ValueError:
         environment = {}
     if not isinstance(environment, Mapping):
         environment = {}
     return {
-        key: value for key, value in environment.items()
+        key: value
+        for key, value in environment.items()
         if key in {"DOCKER_HOST", "DOCKER_CONTEXT"} and isinstance(value, str)
     }
 
@@ -211,12 +220,15 @@ def _is_docker_vm(system: str, transport: str, daemon_os: object) -> bool:
 
     desktop = isinstance(daemon_os, str) and daemon_os.startswith("Docker Desktop")
     local_desktop_host = system in {"macos", "windows"} and transport in {
-        "local-unix", "local-npipe"
+        "local-unix",
+        "local-npipe",
     }
     return desktop or local_desktop_host
 
 
-def _is_native_linux(system: str, transport: str, daemon_kernel: str, kernel: str) -> bool:
+def _is_native_linux(
+    system: str, transport: str, daemon_kernel: str, kernel: str
+) -> bool:
     """Require a matching local Unix daemon before reporting native Docker."""
 
     return (
@@ -275,7 +287,9 @@ def capture_execution_boundary(
     system = host_system or _host_os()
     if system not in {"linux", "macos", "windows"}:
         system = "unknown"
-    kernel = _safe_version(host_kernel if host_kernel is not None else platform.release())
+    kernel = _safe_version(
+        host_kernel if host_kernel is not None else platform.release()
+    )
     endpoint, source = _endpoint(backend, _transport_environment(backend))
     transport = _transport(endpoint)
     info = _daemon_info(backend) if transport != "unknown" else None
@@ -441,14 +455,28 @@ def disclosed_execution_boundary(
     """Read the latest attempt-scoped disclosure without probing again."""
 
     observed = getattr(backend, "_execution_boundary_disclosure", None)
-    return observed if isinstance(observed, ExecutionBoundaryObservation) else None
+    if not isinstance(observed, ExecutionBoundaryObservation):
+        return None
+    receipt = getattr(backend, "_boundary_receipts", {}).get("native-range")
+    if (
+        receipt
+        and observed.host_containment == "native-docker"
+        and observed.observation_status == "observed"
+    ):
+        return observed.model_copy(
+            update={
+                "range_egress_policy": "default-deny",
+                "range_host_access_policy": "deny",
+                "range_policy_digest": receipt["enforcement_digest"],
+            }
+        )
+    return observed
 
 
 def has_bound_daemon_identity(backend: BoundaryProbeBackend) -> bool:
     """A required seat cannot depend on an endpoint or daemon that went unread."""
 
     selected = getattr(backend, "_execution_boundary_selection", None)
-    return (
-        isinstance(selected, BoundarySelection)
-        and bool(selected.endpoint_digest and selected.daemon_digest)
+    return isinstance(selected, BoundarySelection) and bool(
+        selected.endpoint_digest and selected.daemon_digest
     )

@@ -8,9 +8,11 @@ reaches the victims over the Docker networks. The webapp proxy's publication
 went with issue #1006, and the dns stub's all-interface publication with issue
 #1004.
 
-This test parses the base and backend-observability Compose assets and pins that
-boundary, so a future edit cannot silently re-expose a SOC management port or
-add a host publication nobody classified.
+This test pins that boundary on the base and backend-observability Compose
+assets, which an explicit project-tree scenario starts as written, so a future
+edit cannot silently re-expose a SOC management port or add a host publication
+nobody classified. The released-pack tests check the same boundary on the
+publications the planner renders for a released pack (#954, #1700).
 """
 
 import re
@@ -45,10 +47,8 @@ MANAGEMENT_SURFACES = [
     ("wazuh.indexer", 9200),
     ("wazuh.dashboard", 443),
     ("misp", 8443),
-    ("thehive", 9000),
     ("shuffle-frontend", 3443),
     ("shuffle-frontend", 3001),
-    ("cortex", 9001),
     ("aptl-otel-collector", 4317),
     ("aptl-otel-collector", 4318),
     ("aptl-tempo", 3200),
@@ -58,16 +58,16 @@ MANAGEMENT_SURFACES = [
     # exposed host becomes an open, known-cred relay (issue #668). The in-range
     # phishing path (kali -> victims) uses the docker networks, not these host
     # publishes, so loopback binding does not reduce attack realism.
-    ("mailserver", 25),
-    ("mailserver", 143),
-    ("mailserver", 587),
-    ("mailserver", 993),
     # The web API and UI are the operator's own control plane (ADR-039).
     ("aptl-web-api", 8400),
     ("aptl-web-ui", 3000),
     # The reverse-engineering workstation is defender tooling, not a target.
-    ("reverse", 2027),
 ]
+
+# Each checked model's fixture name, with the surfaces classified on it.
+SURFACES_BY_MODEL = {
+    "compose": MANAGEMENT_SURFACES,
+}
 
 
 def _parse_port(entry) -> tuple[str | None, int | None, str]:
@@ -109,7 +109,7 @@ def compose() -> dict:
 
 
 def _published_for(compose: dict, service: str, host_port: int):
-    svc = compose["services"][service]
+    svc = compose["services"].get(service, {})
     matches = []
     for entry in svc.get("ports", []):
         host_ip, parsed_port, _proto = _parse_port(entry)
@@ -118,9 +118,9 @@ def _published_for(compose: dict, service: str, host_port: int):
     return matches
 
 
-@pytest.mark.parametrize("service,host_port", MANAGEMENT_SURFACES)
-def test_management_surface_is_loopback_bound(compose, service, host_port):
-    matches = _published_for(compose, service, host_port)
+def assert_loopback_bound(model: dict, service: str, host_port: int) -> None:
+    """Fail unless ``service`` publishes ``host_port`` on loopback only."""
+    matches = _published_for(model, service, host_port)
     assert matches, f"{service} no longer publishes host port {host_port}"
     for host_ip, entry in matches:
         assert host_ip == "127.0.0.1", (
@@ -129,23 +129,47 @@ def test_management_surface_is_loopback_bound(compose, service, host_port):
         )
 
 
-def test_every_published_port_is_classified(compose):
+def unclassified_publications(model: dict, classified: set) -> list:
+    """Return each host publication of ``model`` outside ``classified``."""
+    # A publication with no fixed host port gets an ephemeral one on its
+    # host_ip, so it is reported too rather than skipped.
+    return sorted(
+        (
+            (service, host_port)
+            for service, definition in model["services"].items()
+            for entry in definition.get("ports", []) or []
+            for _host_ip, host_port, _proto in [_parse_port(entry)]
+            if (service, host_port) not in classified
+        ),
+        key=str,
+    )
+
+
+@pytest.mark.parametrize(
+    "model,service,host_port",
+    [
+        (model, service, host_port)
+        for model, surfaces in SURFACES_BY_MODEL.items()
+        for service, host_port in surfaces
+    ],
+)
+def test_management_surface_is_loopback_bound(request, model, service, host_port):
+    assert_loopback_bound(request.getfixturevalue(model), service, host_port)
+
+
+@pytest.mark.parametrize("model", sorted(SURFACES_BY_MODEL))
+def test_every_published_port_is_classified(request, model):
     """A host publication nobody classified is one nobody checked.
 
     The management list was hand-maintained, so the web API, web UI and reverse
     workstation publications were never checked — and reverse was published on
     all interfaces (issue #1006). Every host-published port must now appear in
-    MANAGEMENT_SURFACES, which pins it to loopback.
+    its model's management surfaces, which pin it to loopback.
     """
-    classified = set(MANAGEMENT_SURFACES)
-    unclassified = sorted(
-        (service, host_port)
-        for service, definition in compose["services"].items()
-        for entry in definition.get("ports", []) or []
-        for _host_ip, host_port, _proto in [_parse_port(entry)]
-        if host_port is not None and (service, host_port) not in classified
+    unclassified = unclassified_publications(
+        request.getfixturevalue(model), set(SURFACES_BY_MODEL[model])
     )
     assert not unclassified, (
         f"host-published ports with no exposure classification: {unclassified}; "
-        "add each to MANAGEMENT_SURFACES"
+        f"add each to SURFACES_BY_MODEL[{model!r}]"
     )

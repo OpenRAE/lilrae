@@ -27,7 +27,6 @@ docker run --rm \
       docker.io=29.1.3-0ubuntu4.1 \
       docker-buildx=0.30.1-0ubuntu1 \
       docker-compose-v2=2.40.3+ds1-0ubuntu1 \
-      nodejs=22.22.1+dfsg+~cs22.19.15-1ubuntu1 \
       xrdp=0.10.1-4.1 \
       xorgxrdp=1:0.10.2-1build1 \
       xfce4=4.20.1 \

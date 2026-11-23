@@ -24,6 +24,8 @@ export default [
     },
     rules: {
       ...tseslint.configs.recommended.rules,
+      // TypeScript checks names, including type-only NodeJS namespaces.
+      'no-undef': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/explicit-function-return-type': 'off',

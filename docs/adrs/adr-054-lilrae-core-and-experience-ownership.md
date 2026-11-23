@@ -8,6 +8,14 @@ proposed
 
 2026-09-05
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [pack-boundary explanation](../architecture/pack-boundary-design.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 [Review #962](https://github.com/Brad-Edwards/aptl/issues/962) assesses the

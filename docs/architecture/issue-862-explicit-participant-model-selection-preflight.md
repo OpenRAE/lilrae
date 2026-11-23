@@ -1,5 +1,21 @@
 # Issue #862 Explicit Participant Model Selection Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-862-explicit-participant-model-selection-preflight.md).
+Its last recorded file change before this rewrite was `ece3505c919e`.
+Current interfaces and successor decisions take precedence for present use.
+
+
+> Successor: [issue #1419](issue-1419-participant-manifests-preflight.md)
+> supersedes this note's model-factor exclusion, project-wide-only selection
+> authority and immutable-name admission rule. It adds owner-validated
+> per-participant request and scoped prompt targets. The isolation, credential
+> and action-admission guardrails below remain in force.
+> The [current request contract](participant-request-manifests.md) documents
+> native retry limitations and qualification.
+
 > Historical scope: issue #601 removed the checkout-only `aptl lab participant-readiness` command and its dedicated qualification runner. The TechVault participant study now authors its participant deliveries in SDL; normal `aptl lab start` executes them through the participant's authenticated host CLI.
 
 This note fixes the architecture boundaries for explicit model selection by

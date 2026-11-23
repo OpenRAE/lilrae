@@ -8,6 +8,13 @@ accepted
 
 2026-03-22
 
+## Applicability
+
+This record explains the original deployment abstraction.
+The current [node realization reference](../components/node-realization.md) describes supported routes.
+[ADR-046](adr-046-dynamic-raes-scenario-realization.md) and [ADR-051](adr-051-component-level-raes-realization.md) define later scenario realization.
+Original protocol examples do not establish support for every future backend.
+
 ## Context
 
 From v2.0 onward, all lab lifecycle operations (start, stop, status, kill) were implemented as direct subprocess calls to `docker compose` in `lab.py` and `kill.py`. This coupling was appropriate when APTL ran exclusively on a single developer machine ([ADR-001](adr-001-docker-compose-deployment.md)), but it prevents deploying the lab to:
@@ -23,9 +30,9 @@ The coupling was isolated to the **deployment lifecycle**—scenario definitions
 
 1. **Kubernetes-first**: Replace Docker Compose entirely with Kubernetes manifests. Over-engineered for the current scale (5-19 containers). Adds operational complexity without clear benefit for single-user labs.
 
-2. **Terraform provider**: Use Terraform to manage Docker Compose and cloud deployments. Heavy dependency, slow feedback loop, and the lab doesn't need infrastructure-as-code semantics.
+2. **Terraform provider**: Use Terraform to manage Docker Compose and cloud deployments. Heavy dependency, slow feedback loop, and the lab does not need infrastructure-as-code semantics.
 
-3. **Ansible playbooks**: SSH-based deployment automation. Good for multi-host but introduces a new tool dependency and doesn't integrate with the Python CLI.
+3. **Ansible playbooks**: SSH-based deployment automation. Good for multi-host but introduces a new tool dependency and does not integrate with the Python CLI.
 
 4. **Protocol-based abstraction with multiple backends**: Define a Python Protocol for deployment operations and implement concrete backends for each target. Follows the existing `RunStorageBackend` pattern in `runstore.py`.
 
@@ -107,7 +114,7 @@ The public functions `start_lab()`, `stop_lab()`, `lab_status()`, and `kill_lab_
 ### Risks
 
 - The SSH backend has not been tested against all Docker versions. The `DOCKER_HOST=ssh://` feature was introduced in Docker 18.09 and has edge cases around context handling and compose file paths.
-- Future backends (Kubernetes) may need a richer Protocol interface—for example, namespace management, resource quotas, or pod scheduling constraints that don't map cleanly to the current `profiles` concept.
+- A future Kubernetes backend may need namespaces, quotas, or scheduling constraints. Those concepts do not necessarily fit the original `profiles` interface.
 
 ## Subsequent Changes
 

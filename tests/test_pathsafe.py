@@ -9,6 +9,7 @@ can be swapped underneath a check.
 """
 
 import os
+import threading
 
 import pytest
 
@@ -193,6 +194,37 @@ class TestRejectsNonFileTargets:
         with pytest.raises(PathContainmentError) as excinfo:
             open_contained_nofollow(tmp_path, "missing.txt")
         assert excinfo.value.reason == "not_found"
+
+    @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFOs")
+    @pytest.mark.parametrize("read", [open_contained_nofollow, read_contained_nofollow])
+    def test_rejects_a_fifo_leaf_without_blocking(self, tmp_path, read):
+        """#1615: a FIFO without a writer never blocks the contained read."""
+        fifo = tmp_path / "fifo"
+        os.mkfifo(fifo)
+        reasons: list[str] = []
+
+        def attempt() -> None:
+            try:
+                read(tmp_path, "fifo")
+            except PathContainmentError as exc:
+                reasons.append(exc.reason)
+
+        reader = threading.Thread(target=attempt, daemon=True)
+        reader.start()
+        reader.join(timeout=10)
+        blocked = reader.is_alive()
+        if blocked:
+            # A writer releases a blocked open, so that the thread ends.
+            writer = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+            reader.join(timeout=10)
+            os.close(writer)
+        assert not blocked, "the contained read blocked on a FIFO"
+        assert reasons == ["not_regular_file"]
+
+    def test_a_regular_file_handle_is_in_blocking_mode(self, tmp_path):
+        (tmp_path / "f.txt").write_bytes(b"x")
+        with open_contained_nofollow(tmp_path, "f.txt") as handle:
+            assert os.get_blocking(handle.fileno())
 
 
 class TestRejectsSymlinkedComponents:
@@ -609,3 +641,15 @@ class TestReplacePrivateNofollow:
         monkeypatch.undo()
         assert leaf.read_bytes() == b"OLD=1\n"
         assert list((tmp_path / "env").glob(".node.env*")) == []
+
+
+def test_private_state_requires_ownership_of_every_ancestor(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    (tmp_path / "state").mkdir(mode=0o755)
+    actual_uid = os.geteuid()
+    monkeypatch.setattr(os, "geteuid", lambda: actual_uid + 1)
+    with pytest.raises(PathContainmentError) as error:
+        pathsafe.open_private_dir_contained_nofollow(tmp_path, Path("state/packs"))
+    assert error.value.reason == pathsafe.REASON_NOT_PRIVATE
+    assert not (tmp_path / "state" / "packs").exists()

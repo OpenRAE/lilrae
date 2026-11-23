@@ -31,7 +31,7 @@ class TestRaesRecord:
         summary = summarize_manifest(manifest)
         assert summary.is_raes is True
         assert summary.run_id == context.attempt_id
-        assert summary.scenario_id == "scenario-techvault"
+        assert summary.scenario_id == context.scenario_snapshot_ref.ref_id
         assert summary.status == "completed"
         assert summary.outcome == "succeeded"
         assert summary.duration_seconds == 30 * 60  # 00:10:00 -> 00:40:00
@@ -45,12 +45,12 @@ class TestLegacyReproducibilityRecord:
             "started_at": "2026-05-26T00:00:00Z",
             "finished_at": "2026-05-26T00:30:00Z",
             "outcome": "success",
-            "raes": {"scenario": {"display_name": "TechVault"}},
+            "raes": {"scenario": {"display_name": "Fixture Range"}},
         }
         assert not is_raes_run_record(manifest)
         summary = summarize_manifest(manifest)
         assert summary.is_raes is False
-        assert summary.scenario_name == "TechVault"
+        assert summary.scenario_name == "Fixture Range"
         assert summary.outcome == "success"
 
     def test_v1_record_reads_aces_section(self):

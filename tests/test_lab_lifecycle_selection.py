@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from aptl.backends._raes_scenario_queries import AdmittedStartSurface
+from aptl.backends.scenario_startup import ContainerEnvironmentBinding
 from aptl.core.scenario_bundle import ScenarioSourceKind
 import pytest
 
@@ -88,6 +89,92 @@ def test_startup_plan_rejects_unknown_capability() -> None:
     )
     with pytest.raises(ScenarioStartupProviderError):
         _validated_plan(plan)
+
+
+def test_seeded_startup_plan_keeps_its_script_and_profiles() -> None:
+    from aptl.backends.scenario_startup import ScenarioStartupPlan, _validated_plan
+
+    plan = _validated_plan(
+        ScenarioStartupPlan("scripts/seed.sh", ("soc", "wazuh"), ("soc",))
+    )
+
+    assert plan.seed_script == "scripts/seed.sh"
+    assert plan.required_profiles == ("soc", "wazuh")
+    assert plan.activation_profiles == ("soc",)
+
+
+@pytest.mark.parametrize(
+    "seed_field",
+    [
+        {"required_profiles": ("soc",), "activation_profiles": ("soc",)},
+        {"seed_environment_keys": ("MISP_API_KEY",)},
+        {"container_environment": (ContainerEnvironmentBinding("MISP", "misp"),)},
+    ],
+)
+def test_startup_plan_rejects_seed_fields_without_a_script(seed_field: dict) -> None:
+    from aptl.backends.scenario_startup import (
+        ScenarioStartupPlan,
+        ScenarioStartupProviderError,
+        _validated_plan,
+    )
+
+    plan = ScenarioStartupPlan(**seed_field)
+    with pytest.raises(ScenarioStartupProviderError):
+        _validated_plan(plan)
+
+
+def _unseeded_stack_selection(run_seed: bool) -> SimpleNamespace:
+    from aptl.backends.scenario_startup import (
+        ScenarioStartupPlan,
+        ScenarioStartupSelection,
+        StartupHook,
+        StartupPreparationPhase,
+        _validated_plan,
+    )
+
+    class Provider:
+        def prepare_stack_environment(self, context):
+            if (
+                context.preparation_phase
+                is StartupPreparationPhase.POST_START_CONFIGURATION
+                and not run_seed
+            ):
+                return None
+            return context.run_operation()
+
+    plan = _validated_plan(
+        ScenarioStartupPlan(startup_hooks=frozenset({StartupHook.STACK_ENVIRONMENT}))
+    )
+    return SimpleNamespace(
+        provider_selection=ScenarioStartupSelection(None, Provider(), plan)
+    )
+
+
+def test_installed_plan_without_seeding_skips_the_seed_stage(tmp_path: Path) -> None:
+    from aptl.core.lab import _LabStartContext, _run_start_stage, _step_seed_soc
+
+    ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False)
+    ctx.start_selection = _unseeded_stack_selection(run_seed=False)
+    ctx.scenario_startup = ctx.start_selection.provider_selection.plan
+
+    result = _run_start_stage(ctx, _step_seed_soc)
+
+    assert ctx.scenario_startup.seed_script is None
+    assert result.error is None
+    assert result.diagnostics == ()
+
+
+def test_selected_seed_operation_without_a_script_fails(tmp_path: Path) -> None:
+    from aptl.core.config import AptlConfig
+    from aptl.core.lab import _LabStartContext, _run_start_stage, _step_seed_soc
+
+    ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False, config=AptlConfig())
+    ctx.start_selection = _unseeded_stack_selection(run_seed=True)
+    ctx.scenario_startup = ctx.start_selection.provider_selection.plan
+
+    result = _run_start_stage(ctx, _step_seed_soc)
+
+    assert result.error == "Scenario seeding was selected without a seed script."
 
 
 def test_tiny_pack_environment_does_not_require_stack_templates(
@@ -254,20 +341,6 @@ def test_coordinator_stage_result_carries_diagnostics_and_fatal_error(
     assert result.error == "bounded failure"
     assert len(result.diagnostics) == 1
     assert result.diagnostics[0].message == "bounded warning"
-
-
-def test_tiny_pack_cannot_trigger_legacy_soc_retry(tmp_path: Path) -> None:
-    from aptl.core.lab import _LabStartContext, _backend_retry_callback
-
-    ctx = _LabStartContext(project_dir=tmp_path, skip_seed=False)
-    ctx.admitted_surface = AdmittedStartSurface(
-        bundle_root=tmp_path,
-        source_kind=ScenarioSourceKind.ENV_PACK,
-        selected_profiles=("soc",),
-        stateful_artifact_ownership=frozenset(),
-    )
-
-    assert _backend_retry_callback(ctx) is None
 
 
 def test_non_wazuh_adapter_can_bind_alias_without_stack_credentials(
@@ -442,7 +515,7 @@ def test_adapter_supplies_mcp_key_targets(tmp_path: Path) -> None:
     policy = _mcp_startup_policy(ctx)
 
     assert policy["tiny-tools"] == ("TINY_KEY",)
-    assert "aptl-casemgmt" not in policy
+    assert "aptl-threatintel" not in policy
 
 
 def test_adapter_mcp_keys_do_not_refresh_legacy_clients() -> None:
@@ -451,21 +524,21 @@ def test_adapter_mcp_keys_do_not_refresh_legacy_clients() -> None:
     config = {
         "mcpServers": {
             "tiny-tools": {"env": {}},
-            "aptl-casemgmt": {"env": {}},
+            "aptl-threatintel": {"env": {}},
         }
     }
 
     updated = _refresh_mcp_server_keys(
         config,
-        {"TINY_KEY": "tiny-value", "THEHIVE_API_KEY": "legacy-value"},
+        {"TINY_KEY": "tiny-value", "MISP_API_KEY": "legacy-value"},
         server_keys={"tiny-tools": ("TINY_KEY",)},
     )
 
     assert updated == ["tiny-tools.TINY_KEY"]
-    assert config["mcpServers"]["aptl-casemgmt"]["env"] == {}
+    assert config["mcpServers"]["aptl-threatintel"]["env"] == {}
     assert (
         _refresh_mcp_server_keys(
-            config, {"THEHIVE_API_KEY": "legacy-value"}, server_keys={}
+            config, {"MISP_API_KEY": "legacy-value"}, server_keys={}
         )
         == []
     )

@@ -8,6 +8,14 @@ proposed
 
 2026-09-05
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [seat-containment explanation](../reference/seat-containment.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 The workbench minimizes child environments and disables provider tools for
@@ -76,8 +84,5 @@ credentials; [#491](https://github.com/Brad-Edwards/aptl/issues/491) owns local
 isolation profile selection/qualification. #455 and #456 must consume the
 portable and broker authority decisions instead of creating parallel semantics.
 
-Required tests use synthetic files, credentials and endpoints: forbidden reads
-and writes, Unix sockets, private and external destinations, descendant escape,
-output/input exhaustion, cancellation, missing sandbox support, reset and
-provider-version drift. Optional gVisor/Kata/microVM trials must include the
+Synthetic qualification covers forbidden files, sockets/destinations, process escape, resource exhaustion, cancellation, missing isolation support, reset, and provider drift. Optional gVisor/Kata/microVM trials must include the
 scenario's actual raw networking, service-manager, capture and filesystem needs.

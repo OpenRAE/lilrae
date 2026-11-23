@@ -34,6 +34,7 @@ from pathlib import Path
 import pytest
 
 from aptl.backends.raes_base_substrate import BaseContainerSpec, InitRequirements
+from aptl.core._doctor_common import node_version_supported
 from aptl.core.deployment import DockerComposeBackend
 from aptl.core.deployment._compose_substrate_gate import SUBSTRATE_MIN_DOCKER_ENGINE
 
@@ -108,8 +109,11 @@ def started_node(tmp_path):
             native_ids = [
                 line
                 for line in _docker(
-                    "ps", "-aq", "--no-trunc",
-                    "--filter", f"label=aptl.node.address={spec.node_address}",
+                    "ps",
+                    "-aq",
+                    "--no-trunc",
+                    "--filter",
+                    f"label=aptl.node.address={spec.node_address}",
                 ).stdout.split()
                 if line
             ]
@@ -134,7 +138,10 @@ def _wait_for_systemd(name: str, timeout: int = 120) -> str:
         state = result.stdout.strip()
         if state in {"running", "degraded"}:
             return state
-        if _docker("inspect", "-f", "{{.State.Running}}", name).stdout.strip() != "true":
+        if (
+            _docker("inspect", "-f", "{{.State.Running}}", name).stdout.strip()
+            != "true"
+        ):
             return f"exited({_docker('inspect', '-f', '{{.State.ExitCode}}', name).stdout.strip()})"
         time.sleep(2)
     return state or "timeout"
@@ -156,6 +163,17 @@ def test_substrate_boots_systemd_cleanly_without_privilege(started_node, image_k
         "exec", name, "systemctl", "--failed", "--no-legend", "--plain"
     ).stdout.strip()
     assert failed == "", f"unexpected failed units: {failed}"
+
+
+@pytest.mark.integration
+@requires_daemon
+def test_node22_substrate_runs_a_patched_node22_release(started_node):
+    """Read the effective runtime, not only the Dockerfile's reviewed tag."""
+
+    name, _info = started_node("node22")
+    observed = _docker("exec", name, "node", "--version").stdout.strip()
+
+    assert node_version_supported(observed, allowed_majors={22}), observed
 
 
 @pytest.mark.integration
@@ -191,7 +209,9 @@ def test_pid1_is_seccomp_filtered_and_holds_no_extra_capability(started_node):
     name, _info = started_node("debian")
     assert _wait_for_systemd(name) == "running"
 
-    status = _docker("exec", name, "sh", "-c", "grep -E '^(Seccomp|CapEff):' /proc/1/status").stdout
+    status = _docker(
+        "exec", name, "sh", "-c", "grep -E '^(Seccomp|CapEff):' /proc/1/status"
+    ).stdout
     seccomp = next(line for line in status.splitlines() if line.startswith("Seccomp:"))
     assert seccomp.split()[1] != "0", "PID 1 must run under a seccomp filter"
 
@@ -199,7 +219,9 @@ def test_pid1_is_seccomp_filtered_and_holds_no_extra_capability(started_node):
     # rather than comparing the whole mask, which varies with the daemon's
     # default capability set.
     cap_eff = int(
-        next(line for line in status.splitlines() if line.startswith("CapEff:")).split()[1],
+        next(
+            line for line in status.splitlines() if line.startswith("CapEff:")
+        ).split()[1],
         16,
     )
     assert not cap_eff & (1 << 21), "PID 1 must not hold CAP_SYS_ADMIN"
@@ -220,7 +242,10 @@ def test_the_container_cannot_see_the_host_cgroup_tree(started_node):
     assert _wait_for_systemd(name) == "running"
 
     visible = _docker(
-        "exec", name, "sh", "-c",
+        "exec",
+        name,
+        "sh",
+        "-c",
         "ls /sys/fs/cgroup/system.slice 2>/dev/null | grep -c docker || true",
     ).stdout.strip()
     assert visible == "0", "the container must not see the host's container scopes"
@@ -242,12 +267,30 @@ def test_a_retired_recipe_container_is_not_reused(started_node, tmp_path):
 
     name = f"aptl-955-stale-{int(time.time() * 1000)}"
     created = _docker(
-        "run", "-d", "--name", name,
-        "--cgroupns=host", "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw",
-        "--cap-add", "SYS_ADMIN", "--cap-add", "SYS_NICE", "--cap-add", "SYS_RESOURCE",
-        "--security-opt", "seccomp:unconfined",
-        "--tmpfs", "/run", "--tmpfs", "/run/lock", "--tmpfs", "/tmp",
-        "-e", "container=docker", image,
+        "run",
+        "-d",
+        "--name",
+        name,
+        "--cgroupns=host",
+        "-v",
+        "/sys/fs/cgroup:/sys/fs/cgroup:rw",
+        "--cap-add",
+        "SYS_ADMIN",
+        "--cap-add",
+        "SYS_NICE",
+        "--cap-add",
+        "SYS_RESOURCE",
+        "--security-opt",
+        "seccomp:unconfined",
+        "--tmpfs",
+        "/run",
+        "--tmpfs",
+        "/run/lock",
+        "--tmpfs",
+        "/tmp",
+        "-e",
+        "container=docker",
+        image,
     )
     try:
         backend = DockerComposeBackend(project_dir=tmp_path, project_name="aptl955")

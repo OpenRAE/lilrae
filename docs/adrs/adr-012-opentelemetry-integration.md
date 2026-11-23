@@ -5,6 +5,13 @@
 **Updated:** 2026-09-11
 **Deciders:** Brad Edwards
 
+## Applicability
+
+This record explains tracing and its later admission restrictions.
+Dated pack requirements, including Cortex references, describe their original release.
+[ADR-063](adr-063-remove-thehive-and-cortex.md) removes TheHive and Cortex from current TechVault delivery.
+The presence of tracing code does not prove that an admitted scenario starts the OTel stack.
+
 ## Context
 
 APTL had two custom JSONL tracing systems:
@@ -72,17 +79,12 @@ to scope and minimum-intrusion admission, superseding the earlier unconditional
 All services run under the `otel` Docker Compose profile. The local deployment
 backend owns their Compose definition and lifecycle, independently of whether
 an env-pack has a Compose file or image-backed nodes. They are not scenario
-nodes. The backend's default profile selection is filtered by evidence and
-scope admission; it is neither unconditional authority to add apparatus nor a
-reason to make scenario data the topology authority for these services.
+nodes. Evidence and scope admission filter backend profile selection. A default profile does not authorize extra apparatus. Scenario data does not acquire topology authority over these services.
 
 Host-published observability surfaces are operator/control-plane infrastructure,
 not target attack surface. Per ADR-034 and ADR-039, the default Compose host
 publishes for the Collector OTLP receivers, Tempo HTTP API, and Grafana UI bind
-to `127.0.0.1`. Container-side listeners may remain wildcard-bound for
-Docker-network peers; remote OTLP ingestion or Tempo access requires an explicit
-documented deployment mode with authentication or network controls rather than
-scattered `0.0.0.0` host publishes.
+to `127.0.0.1`. Container listeners can bind all interfaces for Docker peers. Remote OTLP or Tempo access needs an explicit deployment mode with authentication or network controls.
 
 Loopback is a reachability boundary, not producer authentication. The local
 OTLP receivers and the Collector-to-Tempo hop are unauthenticated, so this
@@ -114,9 +116,7 @@ scenario evidence intent through RAES 4.1's public
 `compile_scenario_capture_demands()` boundary, preserving its distinct
 vocabulary and references. This ADR does not claim that arbitrary retention
 semantics are implemented beyond the exact registered policies.
-The Tempo trace adapter is one trusted source behind that boundary; the
-presence of the OTel stack must not make it match a different channel or media
-contract. Scenario evidence intent and experiment capture contracts remain
+The Tempo adapter is one trusted capture source. Its availability cannot satisfy a different channel or media contract. Scenario evidence intent and experiment capture contracts remain
 RAES-owned shapes and must not be copied into a local OTel schema.
 
 Redaction occurs at the shared producer/serialization and evidence-persistence
@@ -142,11 +142,11 @@ same-daemon stack visible despite its private network. Its `raes-env-packs`
 6.0.0 requirements cover Cortex enrichment readback, Suricata local-rule
 readiness, correlated Suricata/Wazuh SQLi evidence, and the red-team session
 transcript. They have native source boundaries and do not activate OTel. Omit
-the stack even in an open scope and report the absent operator view. This does
+the stack even in an open scope and report the absent operator view.
+
+This does
 not permit permanent rejection as a substitute for implementing those required
-native sources. Report every actual observability addition through runtime
-observation, including anything not explicitly requested by the SDL, with
-native evidence of what was realized rather than a plan echo.
+native sources. Runtime observation must report every added observability service, including unauthored additions. Native evidence must describe actual realization rather than repeat the plan.
 The [issue #992 preflight](../architecture/issue-992-backend-observability-ownership-preflight.md)
 records the cross-cutting guardrails and remaining contract gaps.
 
@@ -160,9 +160,7 @@ attribute conventions: `gen_ai.operation.name`, `gen_ai.tool.name`,
 
 Telemetry and run archives are analysis artifacts, not credential stores. Values
 written to OTel span attributes, `snapshot.json`, CLI JSON output, or exported
-run archives must be redacted before serialization. File permissions such as
-`0600` are defense in depth, not a substitute for redaction, because run
-artifacts are routinely viewed, exported, copied, and attached to issue reports.
+run archives must be redacted before serialization. Private file permissions such as `0600` provide additional protection. They cannot replace redaction because operators can view, export, copy, or attach run artifacts.
 
 Use one shared redaction policy per language boundary rather than ad hoc
 call-site filtering:
@@ -190,9 +188,7 @@ call-site filtering:
 - Distributed tracing links Python CLI and TypeScript MCP server spans
 - Real-time visibility into running scenarios (not just post-hoc)
 - Run archives contain complete trace data in `traces/spans.json`
-- Best-effort tracing can remain available when the Collector is unreachable;
-  admitted evidence capture must instead report the resulting unavailability
-  or loss through the evidence outcome contract
+- Best-effort tracing can tolerate an unreachable Collector. Admitted capture must report unavailability or loss through its evidence outcome contract
 
 ### Negative
 

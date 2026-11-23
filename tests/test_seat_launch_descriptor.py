@@ -6,19 +6,20 @@ import hashlib
 from pathlib import Path
 
 import pytest
+import rfc8785
 
-from aptl.appliance.policy import write_full_techvault_boundary_policy
 from aptl.appliance.seat.launch_descriptor import (
     SeatLaunchDescriptor,
     SeatLaunchError,
     canonical_launch_bytes,
     verify_seat_launch,
 )
+from tests.seat_policy_fixture import protected_seat_policy
 
 
 def test_duplicate_launch_key_is_refused(tmp_path: Path) -> None:
     policy_path = tmp_path / "boundary-policy.json"
-    write_full_techvault_boundary_policy(policy_path)
+    policy_path.write_bytes(rfc8785.dumps(protected_seat_policy().model_dump(mode="json")))
     descriptor = SeatLaunchDescriptor(
         schema_version="aptl.appliance-launch/v2",
         image_reference="ghcr.io/owner/seat:latest",

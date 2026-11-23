@@ -80,9 +80,9 @@ class ServiceCert:  # NOSONAR python:S5663 - Python 3 dataclass; no need for exp
             detected and emitted as IPAddress SAN entries.
         cert_filename: PEM cert filename inside ``<output>/<name>/``.
         key_filename: PEM private-key filename inside ``<output>/<name>/``.
-        needs_keystore: ``True`` for Play-framework services (TheHive,
-            Cortex) which consume a PKCS#12 keystore alongside the PEM
-            files. Adds ``keystore.p12`` and ``keystore.p12.password``.
+        needs_keystore: ``True`` for a service that consumes a PKCS#12
+            keystore alongside the PEM files. Adds ``keystore.p12`` and
+            ``keystore.p12.password``.
     """
 
     name: str
@@ -97,7 +97,7 @@ class ServiceCert:  # NOSONAR python:S5663 - Python 3 dataclass; no need for exp
 # certificate set from the declared certificate-bundle *outputs* (see
 # ``derive_soc_service_certs``) so APTL never decides which services exist or
 # what identities they carry — that is authored in the SDL. This table is kept
-# solely for the in-tree ``aptl lab start`` path that has no realization spec to
+# solely for the in-tree ``lilrae lab start`` path that has no realization spec to
 # derive from; it is never the primary decision source (issue #875, SDL-authority
 # class remediation).
 SOC_SERVICE_REGISTRY: tuple[ServiceCert, ...] = (
@@ -105,18 +105,6 @@ SOC_SERVICE_REGISTRY: tuple[ServiceCert, ...] = (
         name="misp",
         subject_cn="aptl-misp",
         sans=("misp", "localhost", "127.0.0.1"),
-    ),
-    ServiceCert(
-        name="thehive",
-        subject_cn="aptl-thehive",
-        sans=("thehive", "localhost", "127.0.0.1"),
-        needs_keystore=True,
-    ),
-    ServiceCert(
-        name="cortex",
-        subject_cn="aptl-cortex",
-        sans=("cortex", "localhost", "127.0.0.1"),
-        needs_keystore=True,
     ),
     ServiceCert(
         name="shuffle-frontend",
@@ -134,7 +122,7 @@ def derive_soc_service_certs(
 
     The SDL authors *which* SOC services get certificates and *what* each needs
     as the certificate-bundle artifact's declared outputs — e.g.
-    ``misp/server.pem``, ``thehive/keystore.p12``. APTL derives the request set
+    ``misp/server.pem``, ``<service>/keystore.p12``. APTL derives the request set
     from those paths instead of a hardcoded service registry, so it never decides
     the range's service identity (issue #875):
 
@@ -246,7 +234,7 @@ def ensure_soc_certs(
 
     ``services`` is the set of per-service certificate requests to issue. An
     env-pack realization passes the set derived from the SDL's declared bundle
-    outputs (:func:`derive_soc_service_certs`); the in-tree ``aptl lab start``
+    outputs (:func:`derive_soc_service_certs`); the in-tree ``lilrae lab start``
     path, which has no realization spec, falls back to
     :data:`SOC_SERVICE_REGISTRY` (issue #875).
 
@@ -331,18 +319,14 @@ def _generate_with_error_envelope(
     # converts to a fatal CertResult (see docstring catalog).
     except Exception as exc:
         layer = _classify_failure_layer(exc)
-        log.exception(
-            "soc_cert_generation: %s failed: %s",
-            layer, exc.__class__.__name__,
-        )
+        failure = exc.__class__.__name__
+        # No traceback: it would carry the message this layer drops.
+        log.error("soc_cert_generation: %s failed: %s", layer, failure)
         return CertResult(
             success=False,
             generated=False,
             certs_dir=output_dir,
-            error=(
-                f"SOC certificate generation failed in {layer}: "
-                f"{exc.__class__.__name__}"
-            ),
+            error=f"SOC certificate generation failed in {layer}: {failure}",
         )
     return CertResult(success=True, generated=True, certs_dir=output_dir)
 
@@ -356,10 +340,17 @@ def _classify_failure_layer(exc: BaseException) -> str:
     always surface the outer ``ensure_soc_certs`` wrapper. Iterate in
     reverse so we report the actual failing inner phase (e.g.
     ``_build_server_cert``, ``_atomic_write``, ``_safe_service_subdir``)
-    that operators need to inspect.
+    that operators need to inspect. The phases live in ``soc_ca.py`` and
+    its ``_soc_ca_*`` split modules.
     """
     frames = traceback.extract_tb(exc.__traceback__)
     for frame in reversed(frames):
-        if frame.filename.endswith("soc_ca.py") and frame.name:
+        if _is_soc_ca_module(frame.filename) and frame.name:
             return frame.name.lstrip("_")
     return "soc_ca"
+
+
+def _is_soc_ca_module(filename: str) -> bool:
+    """Return whether a traceback frame comes from a SOC CA module."""
+    name = Path(filename).name
+    return name == "soc_ca.py" or name.startswith("_soc_ca_")

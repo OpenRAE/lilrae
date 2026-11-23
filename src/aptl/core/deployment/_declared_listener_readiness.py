@@ -3,8 +3,8 @@
 ``compose up -d`` proves a container was created, and a container health wait
 proves whatever its own healthcheck claims — but a node realized from declared
 facts carries no healthcheck of its own, so "healthy" is vacuously true the
-moment it starts. Slow services (TheHive needs well over a minute to bind 9000)
-were therefore observed before they listened, and the exact `service-listeners`
+moment it starts. Slow services (TheHive, since removed by ADR-063, needed well
+over a minute to bind 9000) were therefore observed before they listened, and the exact `service-listeners`
 requirement failed nondeterministically: the same lab booted or failed on
 timing alone (issue #1006).
 
@@ -27,10 +27,11 @@ if TYPE_CHECKING:
 
 log = get_logger("deployment.listener_readiness")
 
-# TheHive is the slowest declared listener in the reference scenario: its own
-# Compose healthcheck allows 120s of start period plus 5 retries at 30s, so it
-# can legitimately take ~270s to bind. This is that bound plus margin, since a
-# first boot also competes with every other service starting at once.
+# This bound was sized for TheHive, the slowest declared listener before
+# ADR-063 removed it: its Compose healthcheck allowed 120s of start period plus
+# 5 retries at 30s, so it could take ~270s to bind. The bound adds margin
+# because a first boot competes with every other service starting at once.
+# Keep it until first-boot data for the current stack supports a smaller one.
 LISTENER_READY_TIMEOUT = 420
 LISTENER_READY_INTERVAL = 5
 

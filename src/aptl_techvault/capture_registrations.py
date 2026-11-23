@@ -23,24 +23,13 @@ from dataclasses import dataclass
 from raes_backend_protocols.capabilities import ObservationCaptureOffer
 
 from aptl.core.experiment.capture_registry import (
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
 )
 
-#: Shared limits for the built-in windowed sources: 8 MiB / 5 minutes / 4096
-#: artifacts per capture. Generous but bounded — the coordinator truncates a
-#: source that exceeds the byte quota and discloses it.
-_LIMITS = CaptureLimits(
-    max_bytes=8 * 1024 * 1024, max_artifact_count=4096, max_duration_s=300
-)
 _CAPTURE_SPEC_CONTRACT = "experiment-capture-spec/v1"
 _JSON_MEDIA_TYPE = "application/json"
 
-_CORTEX_SCOPE = (
-    "Exact analyzer inventory, successful TechVaultScenarioContext_1_0 execution "
-    "for 172.20.1.30, and TheHive Cortex connector status OK."
-)
 _TRANSCRIPT_SCOPE = (
     "Every interactive shell session on the red-team workstation, with the "
     "commands issued and the responses returned, attributable to a session and "
@@ -127,28 +116,12 @@ def _offer(offer_id: str, spec: _OfferSpec) -> ObservationCaptureOffer:
     )
 
 
-_TECHVAULT_LIMITS = {
-    "cortex": CaptureLimits(1024 * 1024, 32, 300),
-    "readiness": CaptureLimits(256 * 1024, 1, 300),
-    "sqli": CaptureLimits(2 * 1024 * 1024, 256, 300),
-    "transcript": CaptureLimits(32 * 1024 * 1024, 4096, 24 * 60 * 60),
-    # One bounded status document per readiness capture. MISP reports three
-    # subjects (application, database, cache); the Wazuh agent capture reports
-    # one row per monitored host plus the manager, so it carries a larger byte
-    # budget while staying a single artifact.
-    "misp-readiness": CaptureLimits(256 * 1024, 1, 300),
-    "wazuh-agent-readiness": CaptureLimits(512 * 1024, 1, 300),
-}
-
-
 def _techvault_registration(
     registration_id: str,
     *,
     offer: ObservationCaptureOffer,
-    limits: CaptureLimits,
-    chain_of_custody: bool = False,
 ) -> CollectorRegistration:
-    """Bind one TechVault offer to its implementation and runtime limits."""
+    """Bind one TechVault offer to its implementation."""
 
     return CollectorRegistration(
         registration_id=registration_id,
@@ -164,11 +137,9 @@ def _techvault_registration(
         supports_redaction=True,
         integrity_modes=offer.integrity_modes,
         sealing_modes=frozenset({"digest"}),
-        supports_chain_of_custody=chain_of_custody,
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
-        limits=limits,
         redaction_policies=frozenset({offer.redaction_policy or ""}),
         retention_policies=offer.retention_policy_refs,
         capture_offer=offer,
@@ -205,40 +176,13 @@ def _builtin(
         supports_redaction=True,
         integrity_modes=frozenset({"sha256-digest"}),
         sealing_modes=frozenset({"digest"}),
-        supports_chain_of_custody=False,
         supports_retention=True,
         redaction_policies=frozenset({"redact_secrets"}),
         retention_policies=frozenset({"run_lifetime"}),
         supports_loss_disclosure=supports_loss_disclosure,
         visibility_class=visibility_class,
-        limits=_LIMITS,
     )
 
-
-_CORTEX_ENRICHMENT = _techvault_registration(
-    "aptl.collector.cortex-enrichment",
-    offer=_offer(
-        "aptl.collector.cortex-enrichment",
-        _OfferSpec(
-            artifact_role="service_materialization_readback",
-            media_type=_JSON_MEDIA_TYPE,
-            capture_kind="observation",
-            source_refs=frozenset(
-                {
-                    "nodes.cortex.runtime.platform_applications.cortex-enrichment",
-                    "nodes.thehive.runtime.platform_applications.thehive-case-management",
-                }
-            ),
-            scope=_CORTEX_SCOPE,
-            scope_refs=frozenset({"nodes.cortex", "nodes.thehive"}),
-            channel_kind="participant-observation",
-            window_kinds=frozenset({"system_under_test"}),
-            integrity_mode="checksum",
-            redaction_policy="redact_secrets",
-        ),
-    ),
-    limits=_TECHVAULT_LIMITS["cortex"],
-)
 
 _REDTEAM_SESSION_TRANSCRIPT = _techvault_registration(
     "aptl.collector.redteam-session-transcript",
@@ -255,13 +199,11 @@ _REDTEAM_SESSION_TRANSCRIPT = _techvault_registration(
             window_kinds=frozenset(
                 {"the full run, from range readiness through teardown"}
             ),
-            integrity_mode="chain_of_custody",
+            integrity_mode="checksum",
             redaction_policy="redact_secrets",
             source_class="apparatus",
         ),
     ),
-    limits=_TECHVAULT_LIMITS["transcript"],
-    chain_of_custody=True,
 )
 
 _SURICATA_RULE_READINESS = _techvault_registration(
@@ -292,7 +234,6 @@ _SURICATA_RULE_READINESS = _techvault_registration(
             redaction_policy="redact_sensitive",
         ),
     ),
-    limits=_TECHVAULT_LIMITS["readiness"],
 )
 
 _SURICATA_WAZUH_SQLI = _techvault_registration(
@@ -323,7 +264,6 @@ _SURICATA_WAZUH_SQLI = _techvault_registration(
             redaction_policy="redact_sensitive",
         ),
     ),
-    limits=_TECHVAULT_LIMITS["sqli"],
 )
 
 _MISP_AUTHENTICATED_API_READINESS = _techvault_registration(
@@ -349,7 +289,6 @@ _MISP_AUTHENTICATED_API_READINESS = _techvault_registration(
             redaction_policy="redact_secrets",
         ),
     ),
-    limits=_TECHVAULT_LIMITS["misp-readiness"],
 )
 
 _WAZUH_AGENT_READINESS = _techvault_registration(
@@ -393,14 +332,12 @@ _WAZUH_AGENT_READINESS = _techvault_registration(
             redaction_policy="redact_secrets",
         ),
     ),
-    limits=_TECHVAULT_LIMITS["wazuh-agent-readiness"],
 )
 
 
 #: The trusted built-in fleet — one per source owner, covering the acceptance
 #: criterion's synchronized red / container / network / defensive evidence.
 BUILTIN_REGISTRATIONS: tuple[CollectorRegistration, ...] = (
-    _CORTEX_ENRICHMENT,
     _MISP_AUTHENTICATED_API_READINESS,
     _REDTEAM_SESSION_TRANSCRIPT,
     _SURICATA_RULE_READINESS,
@@ -469,10 +406,8 @@ SERVICE_INDEX_READBACK_REGISTRATION = CollectorRegistration(
     redaction_policies=frozenset({"redact_secrets"}),
     integrity_modes=frozenset({"sha256-digest"}),
     sealing_modes=frozenset({"digest"}),
-    supports_chain_of_custody=False,
     supports_retention=True,
     retention_policies=frozenset({"run_lifetime"}),
     supports_loss_disclosure=True,
     visibility_class=CaptureVisibility.APPARATUS_ONLY,
-    limits=_LIMITS,
 )

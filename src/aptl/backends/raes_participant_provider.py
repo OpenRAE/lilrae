@@ -13,6 +13,15 @@ if TYPE_CHECKING:
     from aptl.workbench.runtime import ManagedAgentAdapter
 
 
+class ParticipantProviderFailure(RuntimeError):
+    """A selection provider stopped early for a reason that is stable between runs.
+
+    The message names the cause without timings or process ids. This boundary
+    defines the failure so that the participant runtime can report it without
+    importing the optional workbench.
+    """
+
+
 @dataclass(frozen=True)
 class ParticipantDecisionSolicitation:
     """The only material made available to an installed participant agent."""
@@ -102,12 +111,20 @@ class ManagedAgentSelectionProvider:
         return self._implementation_version
 
     def select(self, solicitation: ParticipantDecisionSolicitation) -> str:
+        # A managed adapter needs the workbench, so its runner error is
+        # imported here and not when the core startup path loads this module.
+        from aptl.workbench.process import BoundedProcessError
+
         prompt, aliases = _compact_selection_prompt(solicitation)
-        raw_selection = self._adapter.respond(
-            self._handle,
-            prompt,
-            response_schema=_compact_selection_schema(len(aliases)),
-        )
+        try:
+            raw_selection = self._adapter.respond(
+                self._handle,
+                prompt,
+                response_schema=_compact_selection_schema(len(aliases)),
+            )
+        except BoundedProcessError as exc:
+            # Timings and process ids vary between runs: only the report keeps them.
+            raise ParticipantProviderFailure(exc.stable_summary()) from exc
         candidate_number = _parse_compact_selection(
             raw_selection,
             candidate_count=len(aliases),

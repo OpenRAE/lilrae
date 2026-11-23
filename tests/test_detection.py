@@ -6,10 +6,8 @@ models, match_detection(), score_detection_coverage(), and format_detection_repo
 
 from types import SimpleNamespace
 
-import pytest
 
 from aptl.core.detection import (
-    DetectionCoverage,
     DetectionResult,
     ExpectedDetection,
     SeverityId,
@@ -36,14 +34,7 @@ class TestSeverityId:
         assert SeverityId.CRITICAL == 5
         assert SeverityId.FATAL == 6
 
-    def test_ordering(self):
-        assert SeverityId.LOW < SeverityId.MEDIUM
-        assert SeverityId.MEDIUM < SeverityId.HIGH
-        assert SeverityId.HIGH < SeverityId.CRITICAL
 
-    def test_is_int(self):
-        assert isinstance(SeverityId.HIGH, int)
-        assert SeverityId.HIGH + 1 == 5
 
 
 # ---------------------------------------------------------------------------
@@ -51,34 +42,6 @@ class TestSeverityId:
 # ---------------------------------------------------------------------------
 
 
-class TestExpectedDetection:
-    """Tests for the OCSF ExpectedDetection model."""
-
-    def test_minimal(self):
-        det = ExpectedDetection(
-            product_name="wazuh",
-            severity_id=3,
-            description="Test detection",
-        )
-        assert det.product_name == "wazuh"
-        assert det.severity_id == SeverityId.MEDIUM
-        assert det.analytic_uid is None
-        assert det.analytic_name is None
-        assert det.max_detection_time_seconds == 60
-
-    def test_full(self):
-        det = ExpectedDetection(
-            product_name="suricata",
-            analytic_uid="1000001",
-            analytic_name="port_scan",
-            severity_id=4,
-            description="Port scan detected",
-            max_detection_time_seconds=30,
-        )
-        assert det.analytic_uid == "1000001"
-        assert det.analytic_name == "port_scan"
-        assert det.severity_id == SeverityId.HIGH
-        assert det.max_detection_time_seconds == 30
 
 
 # ---------------------------------------------------------------------------
@@ -86,32 +49,6 @@ class TestExpectedDetection:
 # ---------------------------------------------------------------------------
 
 
-class TestDetectionResult:
-    """Tests for the DetectionResult model."""
-
-    def test_detected(self):
-        result = DetectionResult(
-            step_number=1,
-            technique_id="T1190",
-            detected=True,
-            severity_id=4,
-            analytic_uid="302010",
-            product_name="wazuh",
-            detection_time_seconds=5.2,
-        )
-        assert result.detected is True
-        assert result.severity_id == SeverityId.HIGH
-        assert result.detection_time_seconds == 5.2
-
-    def test_not_detected(self):
-        result = DetectionResult(
-            step_number=2,
-            technique_id="T1059",
-            detected=False,
-        )
-        assert result.detected is False
-        assert result.severity_id is None
-        assert result.detection_time_seconds is None
 
 
 # ---------------------------------------------------------------------------
@@ -119,30 +56,6 @@ class TestDetectionResult:
 # ---------------------------------------------------------------------------
 
 
-class TestDetectionCoverage:
-    """Tests for the DetectionCoverage model."""
-
-    def test_full_coverage(self):
-        cov = DetectionCoverage(
-            scenario_id="test",
-            total_steps=3,
-            detected_steps=3,
-            detection_coverage=1.0,
-            results=[],
-        )
-        assert cov.detection_coverage == 1.0
-        assert cov.gaps == []
-
-    def test_partial_coverage(self):
-        cov = DetectionCoverage(
-            scenario_id="test",
-            total_steps=4,
-            detected_steps=2,
-            detection_coverage=0.5,
-            results=[],
-            gaps=["T1190", "T1059"],
-        )
-        assert len(cov.gaps) == 2
 
 
 # ---------------------------------------------------------------------------

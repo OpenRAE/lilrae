@@ -8,6 +8,14 @@ accepted
 
 2026-06-28
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [deployment guide](../deployment.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 DEP-003 asks the platform to support "automated provisioning and teardown of
@@ -16,15 +24,9 @@ auto-teardown, idle detection, scheduled provisioning)."
 
 The on-demand half already exists. RNG-001 owns the destructive clean-boot seam
 through `orchestrate_lab_start()`, `stop_lab()`, and `clean_boot_lab()` in
-`src/aptl/core/lab.py`. What DEP-003 adds is a decision layer that chooses *when*
-to call those operations: tear a range down once it has lived past its TTL or
-gone idle, and provision a range on a schedule.
+`src/aptl/core/lab.py`. DEP-003 adds decisions about when to invoke lifecycle operations. TTL or inactivity can trigger teardown, and a schedule can request provisioning.
 
-The [DEP-003 preflight note](../architecture/dep-003-ephemeral-lifecycle-preflight.md)
-sets the binding guardrails: policy is a control-plane layer above lab
-operations, a "range instance" is the configured deployment project, lifecycle
-state is narrow data, and automated execution needs one owner per project so
-concurrent or restarted processes never double-run a destructive action.
+The [preflight](../architecture/dep-003-ephemeral-lifecycle-preflight.md) places policy above lab operations. A range instance is the configured project. Narrow state and one execution owner prevent duplicate destructive work.
 
 The open question the preflight leaves to this decision is the **process model**
 that drives enforcement. The pure policy evaluation (compare timestamps against a
@@ -55,11 +57,8 @@ The decision has four parts:
   (the timer) and keeps the codebase to pure evaluation plus a thin shell.
 - **The lab start path is unchanged.** Enforcement imports `lab_status()`,
   `stop_lab()`, and `clean_boot_lab()`; it adds no step to `_LAB_START_STEPS`.
-  Each tick reconciles provisioning time against the observed running state, so
-  a range started by hand and a range started by a schedule age the same way.
-  The cost is that TTL counts from the first tick that observed the range
-  running rather than the exact start instant—bounded by one tick interval and
-  acceptable for teardown decisions measured in minutes to hours.
+  Each tick compares recorded provisioning time with observed running state. Scheduled and manually started ranges therefore use the same aging rule.
+  TTL begins at the first running observation, not the exact start time. The uncertainty is at most one tick interval for minute-to-hour teardown decisions.
 - **Idle uses capture recency.** The idle signal is the most recent evidence
   written under the active run directory (`resolve_active_run_dir`), falling back
   to provisioning time when no scenario is active. Capture recency is a narrow
@@ -72,11 +71,7 @@ The decision has four parts:
   per-day fired-schedule markers. Every value passes through `redact()` at the
   persist boundary (ADR-029).
 
-Policy is authored in `aptl.json` as a strict Pydantic model
-(`LabLifecyclePolicyConfig`, ADR-025): bounded positive `ttl_minutes` and
-`idle_timeout_minutes`, a `teardown_remove_volumes` cleanup flag, and a
-`schedule` list of `HH:MM` UTC times with an optional weekday filter and
-scenario id. `aptl lab policy show` renders the resolved policy and current
+`LabLifecyclePolicyConfig` in `aptl.json` defines strict policy under ADR-025. It bounds positive TTL and idle minutes, volume-removal choice, and UTC `HH:MM` schedules. Schedules can select weekdays and a scenario ID. `aptl lab policy show` renders the resolved policy and current
 state.
 
 ## Consequences

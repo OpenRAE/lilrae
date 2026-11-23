@@ -40,6 +40,7 @@ from __future__ import annotations
 import errno
 import itertools
 import os
+import shutil
 import stat
 from pathlib import Path
 
@@ -90,7 +91,56 @@ __all__ = [
     "remove_contained_nofollow",
     "replace_private_nofollow",
     "write_all",
+    "validate_relative_path",
+    "remove_tree_contained_nofollow",
+    "open_private_dir_contained_nofollow",
 ]
+
+
+def validate_relative_path(value: str) -> str:
+    """Validate a locator before pathlib can normalize ambiguous components."""
+    _split_components(value)
+    return value
+
+
+def remove_tree_contained_nofollow(base_dir: Path, relative_path: Path) -> None:
+    """Remove a tree through its checked parent; never follow ancestor links."""
+    components = _split_components(relative_path)
+    base_fd = _open_base_fd(base_dir)
+    parent_fd = base_fd
+    try:
+        parent_fd = _walk_to_parent(
+            components[:-1], base_fd, open_dir=_open_dir_nofollow,
+        )
+        shutil.rmtree(components[-1], dir_fd=parent_fd)
+    finally:
+        if parent_fd != base_fd:
+            os.close(parent_fd)
+        os.close(base_fd)
+
+
+def open_private_dir_contained_nofollow(base_dir: Path, relative_path: Path) -> int:
+    """Create/open private state with non-writable ancestors beneath a trusted root."""
+    components = _split_components(relative_path)
+    base_fd = _open_base_fd(base_dir)
+    result_fd = base_fd
+    try:
+        result_fd = _walk_to_parent(
+            components,
+            base_fd,
+            open_dir=lambda component, parent: _open_restricted_dir(
+                component, parent, owned=True
+            ),
+        )
+        _restrict_directory(result_fd, _GROUP_OR_OTHER_ACCESS, owned=True)
+        return result_fd
+    except BaseException:
+        if result_fd != base_fd:
+            os.close(result_fd)
+        raise
+    finally:
+        os.close(base_fd)
+
 
 #: Per-process monotonic counter for unique temporary publish names. Combined
 #: with the PID it makes create-once temp inodes collision-free without needing
@@ -230,12 +280,12 @@ def replace_private_nofollow(
         os.close(base_fd)
 
 
-def _open_restricted_dir(component: str, parent_fd: int) -> int:
+def _open_restricted_dir(component: str, parent_fd: int, *, owned: bool = False) -> int:
     """Open or create one directory component that only its owner can rename in."""
 
     fd = _open_dir_nofollow_or_create(component, parent_fd)
     try:
-        _restrict_directory(fd, _GROUP_OR_OTHER_WRITE, owned=False)
+        _restrict_directory(fd, _GROUP_OR_OTHER_WRITE, owned=owned)
     except BaseException:
         os.close(fd)
         raise

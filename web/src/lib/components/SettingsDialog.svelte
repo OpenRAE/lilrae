@@ -1,8 +1,8 @@
 <script lang="ts">
-	import Dialog from '$lib/components/kit/Dialog.svelte';
-	import Button from '$lib/components/kit/Button.svelte';
-	import Field from '$lib/components/kit/Field.svelte';
-	import Select from '$lib/components/kit/Select.svelte';
+	import Dialog from '#lib/components/kit/Dialog.svelte';
+	import Button from '#lib/components/kit/Button.svelte';
+	import Field from '#lib/components/kit/Field.svelte';
+	import Select from '#lib/components/kit/Select.svelte';
 	import {
 		preferences,
 		setPreference,
@@ -23,7 +23,7 @@
 		type Motion,
 		type TimeDisplay,
 		type SiemTimeRange
-	} from '$lib/stores/preferences';
+	} from '#lib/stores/preferences.ts';
 
 	interface Props {
 		/** Open state. Bindable so the parent (app shell) can also close it. */

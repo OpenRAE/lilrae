@@ -1,29 +1,8 @@
-"""The live execution controller (#437/#459) that drives admitted trials to a
-sealed terminal record (EXP-009 / ADR-050).
+"""Legacy terminal-record composition for existing archival consumers.
 
-:class:`ExperimentExecutor` is the production terminal-attempt authority ADR-050
-reserves for #437/#459. For each planned trial it:
-
-1. allocates a distinct ``attempt_id`` (the portable ``run_id``);
-2. runs the injected workload (participant actions + evaluation) as the evidence
-   coordinator's ``trial_body``, so collectors are live during the trial;
-3. normalizes the terminal cause from the workload signal and the acquisition
-   disposition (a ``finally`` boundary maps an exception/cancellation to an
-   interruption);
-4. always records the attempt's own terminal attestation as lifecycle evidence,
-   so the RAES run's mandatory evidence/traceability/result fields are satisfied
-   even when an authored collector never started;
-5. assembles the owner-native :class:`TerminalAttemptContext` and calls
-   :func:`finalize_terminal_attempt` exactly once.
-
-The workload and collectors are injected — participant execution and evaluation
-are lab/RAES-runtime concerns, the same seam ``acquire_evidence`` already uses
-for ``trial_body``. The executor itself does the real archival work; it defines
-no metrics and derives no results.
-
-The terminal-attempt value types and the context-assembly builders live in
-:mod:`aptl.core.execution.assembly`; they are re-exported here for the
-controller's public API.
+Assigned RAES trials use ``aptl.backends.trial_serving`` and
+``aptl.backends.trial_recovery``. This compatibility executor does not recover
+runtime assignments or establish authority to reuse their native resources.
 """
 
 from __future__ import annotations
@@ -34,7 +13,7 @@ from dataclasses import dataclass
 from aptl.core.archival.coordinator import SealResult, finalize_terminal_attempt
 from aptl.core.archival.status import TerminalCause
 from aptl.core.correlation.clock import ClockProvider
-from aptl.core.evidence.coordinator import AcquisitionResult, acquire_evidence
+from aptl.core.evidence.coordinator import acquire_evidence
 from aptl.core.evidence.outcomes import AcquisitionDisposition
 from aptl.core.evidence.protocol import Collector, RunScope
 from aptl.core.execution.assembly import (
@@ -56,7 +35,7 @@ from aptl.utils.logging import get_logger
 log = get_logger("execution.executor")
 
 #: Run-relative path of the durable attempt-intent journal, written create-once
-#: before the workload so an interrupted attempt is recoverable.
+#: before the legacy workload, for archival provenance.
 _ATTEMPT_INTENT_RELPATH = "attempt-intent.json"
 
 __all__ = [
@@ -127,10 +106,6 @@ class ExperimentExecutor:
         lambda trial, ordinal: f"{trial.planned_trial_id}-attempt-{ordinal}"
     )
 
-    def execute(self, admitted: AdmittedExperiment) -> list[SealResult]:
-        """Execute every planned trial once, returning one seal result per attempt."""
-        return [self.execute_trial(admitted, trial) for trial in admitted.plan.trials]
-
     def execute_trial(
         self, admitted: AdmittedExperiment, planned_trial: PlannedTrial, *, attempt_ordinal: int = 1
     ) -> SealResult:
@@ -145,8 +120,8 @@ class ExperimentExecutor:
         started_at = self.clock.now()
         # Durably bind the attempt to its admitted trial BEFORE running the
         # workload, so a crash / host restart / non-returning cancellation leaves
-        # a recoverable intent (recover_interrupted_attempt) rather than an
-        # untracked run.
+        # a retained admission commitment rather than an untracked run.
+        # Recovery of assigned trials belongs to the original RAES runtime.
         self._write_attempt_intent(admitted, planned_trial, attempt_id, started_at)
 
         trial_context = TrialExecutionContext(attempt_id, planned_trial, scope)
@@ -227,46 +202,3 @@ class ExperimentExecutor:
                 "started_at": started_at,
             },
         )
-
-    def recover_interrupted_attempt(
-        self, admitted: AdmittedExperiment, planned_trial: PlannedTrial, attempt_id: str
-    ) -> SealResult | None:
-        """Convert an unfinished attempt into a sealed interruption record.
-
-        Returns ``None`` when the attempt has no intent (never started) or is
-        already sealed (nothing to recover). Otherwise it seals an
-        infrastructure-interruption terminal record for the attempt from its
-        durable admitted inputs — the restart path a crash requires.
-        """
-        if self.store.is_sealed(attempt_id):
-            return None
-        if self.store.read_run_json(attempt_id, _ATTEMPT_INTENT_RELPATH) is None:
-            return None
-        scope = RunScope(
-            run_id=attempt_id,
-            planned_trial_id=planned_trial.planned_trial_id,
-            attempt_id=attempt_id,
-        )
-        now = self.clock.now()
-        context = assemble_context(
-            self.store,
-            self.clock,
-            AssemblyInputs(
-                admitted=admitted,
-                planned_trial=planned_trial,
-                attempt_id=attempt_id,
-                scope=scope,
-                acquisition=AcquisitionResult(
-                    disposition=AcquisitionDisposition.INCONCLUSIVE,
-                    records=(),
-                    refs=(),
-                    reports=(),
-                    diagnostics=(),
-                ),
-                outcome=None,
-                resolution=normalize_terminal_cause(None, AcquisitionDisposition.INCONCLUSIVE),
-                started_at=now,
-                ended_at=now,
-            ),
-        )
-        return finalize_terminal_attempt(context, store=self.store)

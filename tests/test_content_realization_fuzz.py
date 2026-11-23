@@ -1,6 +1,6 @@
 """Property-based fuzz tests for content-placement path containment (#689).
 
-Guards the ADR-046 TechVault addendum's fail-closed rule: a content
+Guards the ADR-046 content addendum's fail-closed rule: a content
 placement whose declared source path escapes the project root must never
 be realized, at either the RAES interpreter boundary
 (`raes_content_realization.resolve_content_placement`) or the backend seed

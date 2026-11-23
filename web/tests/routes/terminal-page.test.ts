@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
-import { readable, get } from 'svelte/store';
+import { get } from 'svelte/store';
 import { resetPreferences, acknowledgeNotice } from '../../src/lib/stores/preferences';
 import { noticeOpen } from '../../src/lib/stores/ui';
 
-// The route reads the container from $app/stores' page store.
-vi.mock('$app/stores', () => ({ page: readable({ params: { container: 'kali' } }) }));
+// The route reads the container from the $app/state page object.
+vi.mock('$app/state', () => ({ page: { params: { container: 'kali' } } }));
 
 // Stub heavy DOM-canvas dependencies that jsdom cannot handle (mirrors the
 // Terminal component test).

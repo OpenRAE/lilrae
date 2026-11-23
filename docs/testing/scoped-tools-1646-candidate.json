@@ -1,0 +1,18 @@
+{
+  "schema": "lilrae-scoped-tool-candidate/v1",
+  "source_baseline_commit": "0edbfdacd1de5a401f7b338c757807836934c30d",
+  "source_snapshot_tree": "85b675dae78e7136511527541e07d2637bb9475c",
+  "capability_path": "src/aptl/backends/_lilrae_participant_capabilities.py",
+  "capability_sha256": "682a3b3730cb1993c55169b23a825a1ad26ad934db4a440542ed0f8d01122daa",
+  "wheel": "lilrae-9.0.0-py3-none-any.whl",
+  "wheel_sha256": "83facfd8b9cb77c8e6c63a9891fdd804e496a2abe20a9c11878e0e6d4c19a4bb",
+  "lilrae": "9.0.0",
+  "python": "3.14.7",
+  "raes": ["10.6.0", "10.6.1"],
+  "raes-env-packs": "7.2.2",
+  "policy": "participant-autonomous-execution/v1",
+  "tool_semantics": "participant-tool-profile/v1",
+  "backend_manifest_digest": "sha256:6c1520ac19fa80c30752e718e70d6a2e0ba919cd4a913967b3ec825488d67aaf",
+  "implementation_manifest_digest": "sha256:222514fb14dc4ee88f63c757433338bfc8da9b77a49f587a6df8110cf0d2117b",
+  "scenario_digest": "sha256:36721b28d4f14400270c9b5c5894a00a8d176261b1bd65add700eae6828c5424"
+}

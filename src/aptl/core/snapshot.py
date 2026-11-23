@@ -121,7 +121,7 @@ def _get_software_versions(
     try:
         from importlib.metadata import PackageNotFoundError, version
 
-        versions.aptl_version = version("aptl-labs")
+        versions.aptl_version = version("lilrae")
     except PackageNotFoundError:
         versions.aptl_version = "dev"
 

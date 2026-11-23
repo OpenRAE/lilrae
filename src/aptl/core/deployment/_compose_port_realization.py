@@ -27,6 +27,7 @@ from pathlib import Path
 
 import yaml
 
+from aptl.core.deployment._compose_runtime_config import compose_literal
 from aptl.core.deployment.realization import (
     DeploymentNodeRealization,
     DeploymentPublishedPort,
@@ -78,12 +79,8 @@ def published_port_conflicts(
 
     ``owned_host_ports`` carries the ``(host_ip, host_port, protocol)`` triples
     this compose project's own containers already publish. A probe cannot tell
-    a foreign holder from one of ours, and the RAES handoff retries a retryable
-    backend-start failure by re-applying the same plan *without* tearing the
-    range down -- the usual cause is a SOC dependency still initializing. On
-    that pass every declared port is held by our own container, which Compose
-    is about to reconcile, so treating it as a conflict failed the retry every
-    time and reported failure over a lab that had come up.
+    a foreign holder from one of ours. A port that our own container holds is
+    one Compose is about to reconcile, so it is not a conflict.
     """
 
     conflicts: list[str] = []
@@ -136,6 +133,8 @@ def write_port_override(
 
     Returns ``None`` when no realized node declares a published port, so the
     caller adds no override file and the checked-in compose stack is untouched.
+    Every string is written as a Compose literal, so an authored host address
+    is never interpolated (issue #965).
     """
 
     # Only an image-backed node becomes a Compose service. A base-container node
@@ -156,7 +155,7 @@ def write_port_override(
     override_path = project_dir / _PORT_OVERRIDE_RELATIVE_PATH
     override_path.parent.mkdir(parents=True, exist_ok=True)
     override_path.write_text(
-        yaml.safe_dump({"services": services}, sort_keys=True),
+        yaml.safe_dump(compose_literal({"services": services}), sort_keys=True),
         encoding="utf-8",
         newline="\n",
     )

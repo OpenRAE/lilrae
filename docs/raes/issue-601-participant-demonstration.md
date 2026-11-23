@@ -1,5 +1,10 @@
 # Issue 601: TechVault participant demonstration
 
+> Source record: Its runs date from 2026-09-25 through 2026-10-04. Its status review date is 2026-11-06.
+> The original commands, versions, outcomes, and limitations below are historical evidence.
+> They do not qualify the current dependency tuple or authorize another provider run.
+> See [current participant contracts](../reference/participant-request-manifests.md).
+
 ## Selected scenario
 
 The study uses the `techvault-participant-study` environment pack in

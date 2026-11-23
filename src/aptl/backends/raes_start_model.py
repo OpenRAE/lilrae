@@ -7,21 +7,43 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from raes_contracts.runtime_state import RuntimeSnapshot
+from raes_contracts.contracts import ExperimentCaptureSpecModel
 
 from aptl.core.lab_types import LabResult
 from aptl.core.experiment.capture_plan import CapturePlan, empty_capture_plan
 
 if TYPE_CHECKING:
+    from aptl.backends.lilrae_runtime_evidence import LilraeRuntimeEvidence
+    from aptl.backends.lilrae_participant_execution import LilraeParticipantBinding
     from raes_processor.models import ExecutionPlan
     from raes_runtime.registry import RuntimeTarget
     from raes_runtime.manager import RuntimeManager
 
     from aptl.backends.raes_participant_delivery import ParticipantDeliveryPlan
     from aptl.backends.raes_realization_model import AptlRealization
+    from aptl.backends.scenario_family import FamilyTrialInput
     from aptl.backends.scenario_startup import ScenarioStartupSelection
     from aptl.backends.scenario_capture import ResolvedScenarioCapture
     from aptl.core.runstore import RunStorageBackend
     from aptl.core.scenario_bundle import ScenarioBundle
+
+
+@dataclass(frozen=True)
+class ScenarioAdmissionSource:
+    """Preselected scenario, startup adapter, and native participant bindings."""
+
+    bundle: ScenarioBundle | None = None
+    startup_selection: ScenarioStartupSelection | None = field(default=None, repr=False)
+    autonomous_bindings: tuple[LilraeParticipantBinding, ...] = ()
+
+
+@dataclass(frozen=True)
+class ScenarioAdmissionRun:
+    """Run identity that one scenario admission plans for."""
+
+    run_id: str | None = None
+    trial: FamilyTrialInput | None = None
+    trial_capture_specs: tuple[ExperimentCaptureSpecModel, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -41,11 +63,13 @@ class AdmittedScenarioStart:
     execution_plan: ExecutionPlan
     realization: AptlRealization | None
     capture_plan: CapturePlan = field(default_factory=empty_capture_plan)
+    trial_capture_plan: CapturePlan | None = None
     runtime_materialization_failure: LabResult | None = None
     startup_selection: ScenarioStartupSelection | None = None
     capture_selection: ResolvedScenarioCapture | None = None
     scenario: object | None = None
     participant_delivery_plan: ParticipantDeliveryPlan | None = None
+    mcp_server_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -54,6 +78,17 @@ class AcesRunTarget:
 
     run_store: RunStorageBackend
     run_id: str
+
+
+@dataclass(frozen=True)
+class StartedTrialRuntime:
+    """The startup owner's exact runtime and admitted inputs for its trial."""
+
+    admitted: AdmittedScenarioStart
+    runtime: RuntimeManager = field(repr=False)
+    backend: object = field(repr=False)
+    run_store: RunStorageBackend = field(repr=False)
+    initial_evidence: tuple[object, ...] = field(default=(), repr=False)
 
 
 @dataclass
@@ -68,6 +103,6 @@ class AcesStartOutcome:
     manifest_payload: dict[str, Any] = field(default_factory=dict)
     pack_interaction_evidence: dict[str, Any] = field(default_factory=dict)
     scenario_runtime_selections: list[dict[str, str]] = field(default_factory=list)
-    retryable: bool = False
     capture_plan: CapturePlan | None = None
     runtime_manager: RuntimeManager | None = None
+    native_evidence: LilraeRuntimeEvidence | None = None

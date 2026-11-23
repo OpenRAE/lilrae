@@ -134,6 +134,41 @@ def test_the_build_backend_is_hash_pinned_in_every_export() -> None:
         )
 
 
+def _dependency_selection(args: list[str]) -> set[tuple[str, ...]]:
+    """The group and extra flags of a uv command line, each with its value."""
+    selection: set[tuple[str, ...]] = set()
+    for index, arg in enumerate(args):
+        if arg in {"--group", "--extra"}:
+            selection.add((arg, args[index + 1]))
+        elif arg == "--no-default-groups":
+            selection.add((arg,))
+    return selection
+
+
+def test_the_local_test_runner_syncs_what_ci_installs() -> None:
+    """The local runner gets the dependencies of requirements/dev.txt.
+
+    The installed-artifact tests build wheels with `python -m build
+    --no-isolation`. Without the build group, the local environment has no
+    hatchling backend and those tests fail locally while they pass in CI.
+    """
+    hook = next(
+        hook
+        for hook in _uv_hook_repo()["hooks"]
+        if hook.get("alias") == "uv-export-dev"
+    )
+    script = (REPO_ROOT / "tools" / "run-targeted-tests.sh").read_text(encoding="utf-8")
+    declared = re.search(r"^uv_test_env=\((.*)\)$", script, re.MULTILINE)
+    assert declared, "run-targeted-tests.sh declares no uv_test_env selection"
+
+    assert _dependency_selection(declared.group(1).split()) == _dependency_selection(
+        hook["args"]
+    )
+    runs = re.findall(r"\buv run\b.*", script)
+    assert runs
+    assert all('"${uv_test_env[@]}"' in run for run in runs)
+
+
 def test_uv_lock_hook_keeps_the_lock_current() -> None:
     """Without this hook the exports would faithfully reflect a stale lock."""
     ids = {hook["id"] for hook in _uv_hook_repo()["hooks"]}

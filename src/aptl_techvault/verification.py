@@ -37,24 +37,15 @@ from aptl.validation.scenario_verification import (
     VerificationStatus,
 )
 
+from aptl_techvault.pack_identity import (
+    TECHVAULT_PACK_SET_DIGEST,
+    TECHVAULT_PACK_VERSION,
+)
+
 if TYPE_CHECKING:
     from aptl.validation.scenario_verification import VerificationContext
 
 __version__ = "0.2.0"
-
-#: Exact content identity of the TechVault 0.1.1 pack this release qualified,
-#: as ``raes-env-packs`` admits it through ``env_pack_bundle()``. A pack release
-#: that changes these bytes is a pack this verifier has not been qualified
-#: against, and it takes a verifier release -- not a wider declaration -- to
-#: admit one. An empty claim is not a wildcard for future scenario content.
-TECHVAULT_PACK_SET_DIGEST = (
-    "sha256:1229f94f31bd35d3997d47ef8316ffebb3d2d2919c995838e458420b70456fcf"
-)
-
-#: The pack release these bytes belong to. Version and digest are declared as
-#: one atomic pair below, never as parallel lists: a release qualifies content,
-#: not a version number that content might later change under.
-TECHVAULT_PACK_VERSION = "0.1.1"
 
 _QUALIFIED_SCENARIO = ScenarioIdentity(
     identity="techvault",

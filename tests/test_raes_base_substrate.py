@@ -45,7 +45,7 @@ def _runtime_with_service() -> RuntimeConfiguration:
 class TestBaseContainerSpec:
     def test_image_and_name_derive_from_os_and_address_only(self):
         spec = base_container_spec(
-            "techvault.wazuh-manager", os="linux", os_version="", runtime=None
+            "range.wazuh-manager", os="linux", os_version="", runtime=None
         )
         assert (
             spec.image_ref
@@ -279,7 +279,7 @@ class TestBaseContainerSpec:
 class TestPlanNode:
     def test_spec_and_ops_are_coherent(self):
         spec, ops = plan_node(
-            "techvault.wazuh-manager",
+            "range.wazuh-manager",
             os="linux",
             os_version="",
             runtime=_runtime_with_service(),
@@ -318,9 +318,19 @@ class TestPlanNode:
             options=NodePlanningOptions(
                 backend_base_image_ref="aptl/generic-samba-ad-base:latest",
                 backend_base_use_image_command=True,
-                backend_run_capabilities=("SYS_ADMIN",),
             ),
         )
 
         assert spec.use_image_command is True
-        assert spec.backend_run_capabilities == ("SYS_ADMIN",)
+        assert spec.backend_run_capabilities == ()
+
+    @pytest.mark.parametrize("capability", ["SYS_ADMIN", "NET_ADMIN"])
+    def test_backend_provider_cannot_select_any_capability(self, capability):
+        # Issue #976 removed the last backend-selected grant; the allowlist is empty.
+        runtime = RuntimeConfiguration()
+        options = NodePlanningOptions(
+            backend_base_image_ref="aptl/generic-samba-ad-base:latest",
+            backend_run_capabilities=(capability,),
+        )
+        with pytest.raises(UnauthorizedCapabilityError, match=capability):
+            plan_node("n.ad", os="linux", os_version="", runtime=runtime, options=options)

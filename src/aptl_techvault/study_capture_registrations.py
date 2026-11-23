@@ -1,6 +1,6 @@
 """Exact capture offers for the TechVault participant study."""
 
-from aptl.core.experiment.capture_registry import CaptureLimits, CollectorRegistration
+from aptl.core.experiment.capture_registry import CollectorRegistration
 from aptl_techvault.capture_registrations import (
     _JSON_MEDIA_TYPE,
     _OfferSpec,
@@ -8,7 +8,6 @@ from aptl_techvault.capture_registrations import (
     _techvault_registration,
 )
 
-_PARTICIPANT_DELIVERY_LIMITS = CaptureLimits(2 * 1024 * 1024, 1, 600)
 _RED_NODE = "nodes.kali"
 
 
@@ -50,13 +49,11 @@ def participant_delivery_registrations() -> tuple[CollectorRegistration, ...]:
                     scope_refs=frozenset({node, "entities.study-control"}),
                     channel_kind="participant-observation",
                     window_kinds=frozenset({window}),
-                    integrity_mode="chain_of_custody",
+                    integrity_mode="checksum",
                     redaction_policy="redact_secrets",
                     source_class="apparatus",
                 ),
             ),
-            limits=_PARTICIPANT_DELIVERY_LIMITS,
-            chain_of_custody=True,
         )
         for role, phase, node, window in specifications
     )

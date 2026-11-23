@@ -1,5 +1,13 @@
 # Issue #970 Generic Lab Lifecycle Boundary Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-970-generic-lab-lifecycle-preflight.md).
+Its last recorded file change before this rewrite was `cdccff41ccb3`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes the architecture boundary for decomposing lab startup. It is
 guidance, not an implementation plan. At this preflight's baseline
 (`4d55a949`), `src/aptl/core/lab.py` is 3,743 lines and has 25 ordered start

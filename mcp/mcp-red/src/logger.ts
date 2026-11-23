@@ -39,6 +39,7 @@ import {
 } from './classifier.js';
 import { extractMetadata, type ExtractedFields, type OcsfEndpoint } from './extractor.js';
 import { ocsfFilePath } from './capture.js';
+import { parseResultEnvelope } from './result-envelope.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -192,6 +193,18 @@ export interface CommandOutcome {
   signal?: string;
 }
 
+function outcomeFromNestedOutput(out: unknown): CommandOutcome | null {
+  if (typeof out !== 'object' || out === null) return null;
+  const outObj = out as Record<string, unknown>;
+  const signal = typeof outObj.signal === 'string' ? outObj.signal : undefined;
+  const code = typeof outObj.code === 'number' ? outObj.code : undefined;
+  if (signal) {
+    return { success: false, ...(code === undefined ? {} : { exit_code: code }), signal };
+  }
+  if (code === undefined) return null;
+  return { success: code === 0, exit_code: code };
+}
+
 /**
  * Derive command outcome from a tool result envelope.
  *
@@ -211,40 +224,13 @@ export interface CommandOutcome {
  *   - top-level `success: false` → failure
  *   - default (unknown) → success (best-effort: never invent failures)
  */
-function parseEnvelope(toolResult: unknown): Record<string, unknown> | null {
-  const content = (toolResult as { content?: { text?: string }[] } | undefined)?.content;
-  const text = content?.[0]?.text;
-  if (typeof text !== 'string') return null;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (typeof parsed === 'object' && parsed !== null) {
-      return parsed as Record<string, unknown>;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function outcomeFromNestedOutput(out: unknown): CommandOutcome | null {
-  if (typeof out !== 'object' || out === null) return null;
-  const outObj = out as Record<string, unknown>;
-  const signal = typeof outObj.signal === 'string' ? outObj.signal : undefined;
-  const code = typeof outObj.code === 'number' ? outObj.code : undefined;
-  if (signal) {
-    return { success: false, ...(code === undefined ? {} : { exit_code: code }), signal };
-  }
-  if (code === undefined) return null;
-  return { success: code === 0, exit_code: code };
-}
-
 export function deriveCommandOutcome(
   toolResult: unknown,
   error: Error | undefined,
 ): CommandOutcome {
   if (error) return { success: false };
   try {
-    const obj = parseEnvelope(toolResult);
+    const obj = parseResultEnvelope(toolResult);
     if (obj === null) return { success: null };
     if (typeof obj.exit_code === 'number') {
       return { success: obj.exit_code === 0, exit_code: obj.exit_code };

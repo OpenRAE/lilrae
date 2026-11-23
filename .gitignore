@@ -421,6 +421,7 @@ config/wazuh_indexer_ssl_certs/*
 .cursor/mcp.json
 .mcp.json
 .mcp.json.bak
+.mcp.json.~1~
 
 # Purple-loop archive directories (per-run state moved aside before fresh runs)
 .aptl_archive_*

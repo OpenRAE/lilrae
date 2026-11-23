@@ -2,119 +2,32 @@
 
 from __future__ import annotations
 
-import ipaddress
 from dataclasses import dataclass
-from typing import Literal, Self
-
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import Literal
 
 from aptl.core.appliance_boundary import (
     ApplianceBoundaryBinding,
     ApplianceBoundaryPolicy,
-    Digest,
+)
+from aptl.core.appliance_boundary_observation import (
+    BoundaryEndpoint as _BoundaryEndpoint,
+    BoundaryEnforcementObservation,
+    BoundaryProbeObservation,
+    DockerAuthorityHolder as _DockerAuthorityHolder,
+    GuestBoundaryObservation,
+    HostBoundaryObservation,
+    RangeWorkloadObservation,
+)
+from aptl.core._appliance_boundary_inventory_render import (
+    render_boundary_inventory,
 )
 from aptl.utils.redaction import redact
 
 _INCOMPLETE_ENFORCEMENT = "boundary.guest-enforcement-incomplete"
 
-
-class _StrictObservation(BaseModel):
-    """Base for immutable, closed boundary-observation records."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-
-class BoundaryEndpoint(_StrictObservation):
-    """One physical-host endpoint attributed to an approved audience."""
-
-    audience: Literal["participant", "recovery", "host-mcp"]
-    address: str
-    port: int = Field(ge=1, le=65535)
-    protocol: Literal["tcp", "udp"]
-
-    guest_address: str | None = None
-    guest_port: int | None = Field(default=None, ge=1, le=65535)
-
-    @model_validator(mode="after")
-    def validate_mapping(self) -> Self:
-        """Require a complete guest endpoint for mapped host listeners."""
-        if (self.guest_address is None) != (self.guest_port is None):
-            raise ValueError("guest mapping requires both address and port")
-        for address in (self.address, self.guest_address):
-            if address is not None and not ipaddress.ip_address(address).is_loopback:
-                raise ValueError("boundary endpoints must bind loopback")
-        if self.audience == "host-mcp" and self.guest_port is None:
-            raise ValueError("host MCP requires an explicit guest endpoint mapping")
-        return self
-
-
-class HostBoundaryObservation(_StrictObservation):
-    """Authenticated outer observation produced by the #824 adapter."""
-
-    observation_id: str = Field(min_length=1, max_length=128)
-    policy_digest: Digest
-    payload_digest: Digest
-    boot_id: str = Field(min_length=1, max_length=128)
-    complete: bool
-    listeners: tuple[BoundaryEndpoint, ...]
-    forbidden_reachability_passed: bool
-
-
-class BoundaryEnforcementObservation(_StrictObservation):
-    """Kernel readback evidence for one independent policy authority."""
-
-    authority: Literal["raes", "platform"]
-    source_digest: Digest
-    enforcement_digest: Digest
-    families: tuple[Literal["bridge", "inet"], ...]
-    default_deny_observed: bool
-
-
-class BoundaryProbeObservation(_StrictObservation):
-    """One positive or negative reachability proof."""
-
-    identity: str = Field(min_length=1, max_length=128)
-    authority: Literal["raes", "platform"]
-    source: str = Field(min_length=1, max_length=160)
-    destination: str = Field(min_length=1, max_length=160)
-    protocol: Literal["any", "tcp", "udp", "icmp"]
-    port: int | None = Field(default=None, ge=1, le=65535)
-    expectation: Literal["reachable", "blocked"]
-    passed: bool
-
-    @model_validator(mode="after")
-    def validate_transport_port(self) -> BoundaryProbeObservation:
-        """Require ports only for TCP and UDP boundary probes."""
-        if (self.protocol in {"tcp", "udp"}) != (self.port is not None):
-            raise ValueError("probe port must match its transport")
-        return self
-
-
-class DockerAuthorityHolder(_StrictObservation):
-    """Observed guest-daemon authority held by one workload."""
-
-    identity: str = Field(min_length=1, max_length=128)
-    label_selector: str = Field(min_length=1, max_length=160)
-    daemon_id: str = Field(min_length=1, max_length=128)
-    access: Literal["socket", "api"]
-    privileged: bool
-    host_pid_namespace: bool
-    host_network_namespace: bool
-    device_count: int = Field(ge=0)
-
-
-class GuestBoundaryObservation(_StrictObservation):
-    """Normalized selected-daemon and kernel observation."""
-
-    policy_digest: Digest
-    raes_plan_digest: Digest
-    boot_id: str = Field(min_length=1, max_length=128)
-    guest_daemon_id: str = Field(min_length=1, max_length=128)
-    workbench_policy_version: str = Field(min_length=1, max_length=128)
-    enforcements: tuple[BoundaryEnforcementObservation, ...]
-    observation_complete: bool
-    probes: tuple[BoundaryProbeObservation, ...]
-    docker_authority_holders: tuple[DockerAuthorityHolder, ...]
+# Preserve the established import surface while keeping observation models separate.
+BoundaryEndpoint = _BoundaryEndpoint
+DockerAuthorityHolder = _DockerAuthorityHolder
 
 
 @dataclass(frozen=True)
@@ -142,7 +55,7 @@ def qualify_appliance_boundary(
     else:
         _append_host_findings(policy, binding, host, findings)
     _append_guest_findings(policy, binding, guest, findings)
-    inventory = _inventory(policy, binding, host, guest, findings, phase)
+    inventory = render_boundary_inventory(policy, binding, host, guest, findings, phase)
     return BoundaryQualificationResult(
         passed=not findings,
         findings=tuple(findings),
@@ -207,6 +120,10 @@ def _append_guest_findings(
             "boundary.guest-raes-plan-digest-mismatch",
         ),
         (
+            guest.raes_boundary_required != binding.raes_boundary_required,
+            "boundary.guest-raes-requirement-mismatch",
+        ),
+        (
             guest.boot_id != (binding.guest_boot_id or binding.boot_id),
             "boundary.guest-boot-identity-mismatch",
         ),
@@ -226,8 +143,17 @@ def _append_guest_findings(
     findings.extend(code for failed, code in comparisons if failed)
     _append_enforcement_findings(policy, binding, guest, findings)
     _append_probe_findings(policy, binding, guest, findings)
+    _append_range_workload_findings(policy, guest, findings)
     allowed = set(policy.docker_authority.allowed_holder_labels)
-    if {holder.label_selector for holder in guest.docker_authority_holders} - allowed:
+    unapproved = (
+        any(not holder.admitted for holder in guest.docker_authority_holders)
+        if policy.seat_component_protection
+        else bool(
+            {holder.label_selector for holder in guest.docker_authority_holders}
+            - allowed
+        )
+    )
+    if unapproved:
         findings.append("boundary.guest-docker-authority-unapproved")
     if any(
         holder.daemon_id != binding.guest_daemon_id
@@ -261,11 +187,43 @@ def _append_enforcement_findings(
         _append_platform_enforcement_findings(platform, binding.policy_digest, findings)
     elif platform is not None:
         findings.append("boundary.guest-unexpected-platform-enforcement")
+    seat = by_authority.get("seat-protection")
+    if policy.seat_component_protection:
+        _append_seat_enforcement_findings(seat, binding.policy_digest, findings)
+    elif seat is not None:
+        findings.append("boundary.guest-unexpected-seat-protection-enforcement")
     raes = by_authority.get("raes")
     if binding.raes_boundary_required and raes is None:
         findings.append("boundary.guest-raes-enforcement-missing")
     elif raes is not None and raes.source_digest != binding.raes_plan_digest:
         findings.append("boundary.guest-raes-source-mismatch")
+
+
+def _append_seat_enforcement_findings(
+    seat: BoundaryEnforcementObservation | None,
+    policy_digest: str,
+    findings: list[str],
+) -> None:
+    """Require complete input protection and an exact range-network scope."""
+
+    if seat is None:
+        findings.append(_INCOMPLETE_ENFORCEMENT)
+        return
+    if seat.source_digest != policy_digest:
+        findings.append("boundary.guest-seat-protection-source-mismatch")
+    if set(seat.families) != {"bridge", "inet"}:
+        findings.append(_INCOMPLETE_ENFORCEMENT)
+    coverage = list(seat.network_coverage)
+    valid = all(
+        value.count("/") == 1
+        and value.rsplit("/", 1)[0]
+        and value.rsplit("/", 1)[1] in {"ipv4", "ipv6"}
+        for value in coverage
+    )
+    if not coverage or len(coverage) != len(set(coverage)) or not valid:
+        findings.append(_INCOMPLETE_ENFORCEMENT)
+    if not seat.default_deny_observed:
+        findings.append("boundary.guest-default-deny-missing")
 
 
 def _append_platform_enforcement_findings(
@@ -306,6 +264,127 @@ def _append_probe_findings(
             findings.append(f"boundary.guest-{authority}-positive-probe-failed")
         if _probe_failed(guest, authority, "blocked"):
             findings.append(f"boundary.guest-{authority}-negative-probe-failed")
+    if policy.seat_component_protection:
+        _append_seat_probe_findings(policy, guest, findings)
+    elif any(item.authority == "seat-protection" for item in guest.probes):
+        findings.append("boundary.guest-unexpected-seat-protection-probes")
+
+
+def _append_seat_probe_findings(
+    policy: ApplianceBoundaryPolicy,
+    guest: GuestBoundaryObservation,
+    findings: list[str],
+) -> None:
+    """Require exact positive and negative coverage for each protected scope."""
+
+    seat_enforcement = next(
+        (item for item in guest.enforcements if item.authority == "seat-protection"),
+        None,
+    )
+    coverage = seat_enforcement.network_coverage if seat_enforcement else ()
+    expected = _seat_probe_expectations(policy, coverage)
+    observed = [item for item in guest.probes if item.authority == "seat-protection"]
+    identities = [item.identity for item in observed]
+    coverage_complete = set(identities) == set(expected) and len(identities) == len(
+        set(identities)
+    )
+    if not coverage_complete or any(
+        not _seat_probe_matches(item, expected[item.identity]) for item in observed
+    ):
+        findings.append("boundary.guest-seat-protection-probe-coverage")
+
+
+def _seat_probe_expectations(
+    policy: ApplianceBoundaryPolicy,
+    coverage: tuple[str, ...],
+) -> dict[str, tuple[str, str | None, int | None]]:
+    """Build the exact signed positive and negative seat probe matrix."""
+
+    expected: dict[str, tuple[str, str | None, int | None]] = {}
+    for source in coverage:
+        expected[f"seat-protection/{source}/host-reply"] = (
+            "reachable",
+            None,
+            None,
+        )
+        for component in policy.protected_components:
+            expected[f"seat-protection/{source}/{component.probe_identity}"] = (
+                "blocked",
+                component.protocol,
+                component.port,
+            )
+        for flow in policy.permitted_host_flows:
+            for port in flow.ports:
+                expected[
+                    f"seat-protection/{source}/{flow.probe_identity}/port-{port}"
+                ] = ("reachable", flow.protocol, port)
+    return expected
+
+
+def _seat_probe_matches(
+    item: BoundaryProbeObservation,
+    expected: tuple[str, str | None, int | None],
+) -> bool:
+    """Return whether one fresh probe exactly satisfies its matrix entry."""
+
+    expectation, protocol, port = expected
+    source = item.identity.removeprefix("seat-protection/").rsplit("/", 1)[0]
+    network, family = source.rsplit("/", 1)
+    return (
+        item.expectation == expectation
+        and item.target_ready
+        and item.passed
+        and item.source_network == network
+        and item.address_family == family
+        and (protocol is None or item.protocol == protocol)
+        and (port is None or item.port == port)
+    )
+
+
+def _append_range_workload_findings(
+    policy: ApplianceBoundaryPolicy,
+    guest: GuestBoundaryObservation,
+    findings: list[str],
+) -> None:
+    """Fail on incomplete authority, namespace, mount, or credential posture."""
+
+    if not policy.seat_component_protection:
+        return
+    workloads = guest.range_workloads
+    if _range_observation_incomplete(workloads):
+        findings.append("boundary.guest-range-observation-incomplete")
+    if any(_range_runtime_unapproved(item) for item in workloads):
+        findings.append("boundary.guest-range-runtime-unapproved")
+    if any(item.protected_mount for item in workloads):
+        findings.append("boundary.guest-evidence-custody-exposed")
+    if any(item.credential_exposure for item in workloads):
+        findings.append("boundary.guest-platform-credential-exposed")
+
+
+def _range_observation_incomplete(
+    workloads: tuple[RangeWorkloadObservation, ...],
+) -> bool:
+    """Return whether workload identity or inspection coverage is incomplete."""
+
+    identities = [item.identity for item in workloads]
+    return (
+        not workloads
+        or len(identities) != len(set(identities))
+        or any(
+            not item.receipt_bound or not item.inspect_complete for item in workloads
+        )
+    )
+
+
+def _range_runtime_unapproved(item: RangeWorkloadObservation) -> bool:
+    """Return whether one ordinary workload holds a forbidden runtime capability."""
+
+    return (
+        item.privileged
+        or item.host_pid_namespace
+        or item.host_network_namespace
+        or item.unapproved_docker_authority
+    )
 
 
 def _probe_failed(
@@ -319,84 +398,6 @@ def _probe_failed(
         if item.authority == authority and item.expectation == expectation
     ]
     return not scoped or any(not item.passed for item in scoped)
-
-
-def _inventory(
-    policy: ApplianceBoundaryPolicy,
-    binding: ApplianceBoundaryBinding,
-    host: HostBoundaryObservation | None,
-    guest: GuestBoundaryObservation,
-    findings: list[str],
-    phase: Literal["image-qualification", "start"],
-) -> dict[str, object]:
-    """Render bounded machine evidence without raw policy or probe output."""
-
-    return {
-        "schema_version": "aptl.appliance-boundary-inventory/v2",
-        "phase": phase,
-        "policy": {
-            "id": policy.policy_id,
-            "generation": policy.generation,
-            "digest": binding.policy_digest,
-            "containment": "internal-zones"
-            if policy.internal_zone_isolation
-            else "vm-only",
-        },
-        "payload_digest": binding.payload_digest,
-        "raes_plan_digest": binding.raes_plan_digest,
-        "raes_boundary_required": binding.raes_boundary_required,
-        "images": {
-            "boundary_helper": binding.boundary_helper_image,
-            "egress_proxy": binding.egress_proxy_image,
-        },
-        "boot_id": binding.boot_id,
-        "host_boot_id": binding.host_boot_id or binding.boot_id,
-        "guest_boot_id": binding.guest_boot_id or binding.boot_id,
-        "host": (
-            {"observation_id": host.observation_id, "complete": host.complete}
-            if host is not None
-            else {"missing": True}
-        ),
-        "guest": {
-            "guest_daemon_id": guest.guest_daemon_id,
-            "workbench_policy_version": guest.workbench_policy_version,
-            "enforcements": [
-                {
-                    "authority": item.authority,
-                    "source_digest": item.source_digest,
-                    "enforcement_digest": item.enforcement_digest,
-                    "families": list(item.families),
-                    "default_deny_observed": item.default_deny_observed,
-                }
-                for item in guest.enforcements
-            ],
-            "probes": [
-                {
-                    "identity": item.identity,
-                    "authority": item.authority,
-                    "source": item.source,
-                    "destination": item.destination,
-                    "protocol": item.protocol,
-                    "port": item.port,
-                    "expectation": item.expectation,
-                    "passed": item.passed,
-                }
-                for item in guest.probes
-            ],
-            "docker_authority_holders": [
-                {
-                    "identity": item.identity,
-                    "label_selector": item.label_selector,
-                    "daemon_id": item.daemon_id,
-                    "access": item.access,
-                }
-                for item in guest.docker_authority_holders
-            ],
-            "observation_complete": guest.observation_complete,
-        },
-        "findings": list(findings),
-        "passed": not findings,
-    }
 
 
 def _append_host_listener_findings(

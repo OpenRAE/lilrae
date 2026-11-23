@@ -93,11 +93,11 @@ class StartupDiagnostic:
 # CLI failure summary adds ``--project-dir`` when the start named another one.
 STOP_RECOVERY_ROUTES: tuple[tuple[str, str], ...] = (
     (
-        "aptl lab stop",
+        "lilrae lab stop",
         "removes the project's containers and networks and keeps its volumes, "
-        "so lab data survives",
+        "so volume-backed lab data survives; container-local data is removed",
     ),
-    ("aptl lab stop -v", "also removes the volumes and destroys all lab data"),
+    ("lilrae lab stop -v", "also removes managed volumes and destroys their lab data"),
 )
 
 
@@ -110,7 +110,9 @@ def _count(number: int, noun: str) -> str:
 def describe_project_runtime(container_count: int, network_count: int) -> str:
     """Name project runtime counts for an operator, such as ``3 containers``."""
 
-    return f"{_count(container_count, 'container')} and {_count(network_count, 'network')}"
+    return (
+        f"{_count(container_count, 'container')} and {_count(network_count, 'network')}"
+    )
 
 
 @dataclass(frozen=True)
@@ -170,6 +172,11 @@ class LabResult:
     # populated on lab start so the CLI can report the real host port each
     # service landed on when a default was already in use. Empty for other ops.
     resolved_ports: list[object] = field(default_factory=list)
+    # A trial start's run ID and admitted SDL digest (#1670); ``None`` otherwise.
+    run_id: str | None = None
+    scenario_sha256: str | None = None
+    # The trial CLI owns this already-admitted runtime until capture and seal.
+    trial_runtime: object | None = field(default=None, repr=False, compare=False)
     # The selected daemon observed during this exact startup attempt. A missing
     # observation is rendered explicitly as unknown, including on early failure.
     execution_boundary: ExecutionBoundaryObservation | None = None
@@ -197,10 +204,10 @@ class LabResult:
 
 @dataclass(frozen=True)
 class LabResetResult:
-    """Outcome of ``aptl lab reset`` (#1218).
+    """Outcome of ``lilrae lab reset`` (#1218).
 
     ``result`` is the project-scoped teardown with volume removal and pending
-    host-side cleanup, the same work as ``aptl lab stop -v``. The counts are the
+    host-side cleanup, the same work as ``lilrae lab stop -v``. The counts are the
     containers and networks of the workspace-scoped project that teardown
     removes, observed just before it, and zero when no start recorded that
     scope. They are ``None`` when that observation failed or the reset never

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from aptl.backends._runtime_concern_disclosure import _disclose
-from aptl.core.deployment._misp_cache_credential import MISP_CACHE_RUNTIME_CONFIG_PATH
+from aptl.backends.scenario_runtime_hooks import disclose_runtime_concern
+from aptl.backends.scenario_service_policy import MISP_CACHE_RUNTIME_CONFIG_PATH
 
 if TYPE_CHECKING:
     from raes.runtime_configuration import RuntimeConfiguration
@@ -61,7 +61,7 @@ def observe_redis_app_authorizations(
     )
     if getattr(result, "returncode", 1) != 0 or not _readback_verified(result):
         return None
-    return _disclose(
+    return disclose_runtime_concern(
         "runtime-app-authorizations",
         [item.model_dump(mode="json", by_alias=True) for item in authorizations],
     )

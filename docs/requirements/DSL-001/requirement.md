@@ -6,10 +6,17 @@ type: FUNCTIONAL
 priority: MUST
 wave: 1
 created_at: 2026-03-21T07:52:20.057307Z
-updated_at: 2026-05-19T05:11:45.570071Z
+updated_at: 2026-10-31T00:00:00.000000Z
 ---
 
 # DSL-001: Formal Scenario Specification Language
+
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/DSL-001/requirement.md).
+
 
 ## Statement
 
@@ -24,4 +31,4 @@ Current ad-hoc YAML schema has no grammar, no parser beyond Pydantic, and no sem
 - IMPLEMENTS → GITHUB_ISSUE `239` (DSL-001: Formal Scenario Specification Language)
 - DOCUMENTS → DOCUMENTATION `docs/sdl/` (SDL documentation suite (7 files: reference, parser, validation, precedents, limitations, testing))
 - DOCUMENTS → ADR `docs/adrs/adr-014-scenario-description-language.md` (ADR-014: Scenario Description Language)
-- VERIFIES → CODE_FILE `examples/aptl-lab-topology.sdl.yaml` (SDL specification of the real APTL lab topology (28 nodes, 4 networks))
+- VERIFIES → CODE_FILE `examples/aptl-lab-topology.sdl.yaml` (SDL specification of the real APTL lab topology (24 nodes, 4 networks))

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import Dialog from '$lib/components/kit/Dialog.svelte';
-	import Button from '$lib/components/kit/Button.svelte';
-	import { preferences, PREFERENCES_KEY } from '$lib/stores/preferences';
-	import { formatTimestamp } from '$lib/time';
+	import Dialog from '#lib/components/kit/Dialog.svelte';
+	import Button from '#lib/components/kit/Button.svelte';
+	import { preferences, PREFERENCES_KEY } from '#lib/stores/preferences.ts';
+	import { formatTimestamp } from '#lib/time.ts';
 
 	interface Props {
 		/** Open state. Bindable so the app shell can also close it. */

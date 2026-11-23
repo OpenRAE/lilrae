@@ -24,8 +24,8 @@ from aptl.core.deployment.realization import (
 
 def _artifact(provenance: str = FLAG_SIGNING_PROFILE_V2):
     return DeploymentGeneratedArtifactRealization(
-        address="provision.generated.techvault-flag-signing-keys",
-        name="techvault-flag-signing-keys",
+        address="provision.generated.range-flag-signing-keys",
+        name="range-flag-signing-keys",
         generator="rendered_config",
         lifecycle="regenerate_on_change",
         provenance=provenance,
@@ -92,7 +92,7 @@ def test_flag_signing_consumer_never_mounts_the_producer_private_seed():
         target_address="provision.node.victim",
         node_name="victim",
         service_name="victim",
-        mount_destination="/run/techvault/flag-signing",
+        mount_destination="/run/range/flag-signing",
         access_mode="read_only",
         selected_outputs=("victim-signing-key",),
     )

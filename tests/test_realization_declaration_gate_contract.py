@@ -1,6 +1,6 @@
 """Tests for the static realization-declaration gate (ADR-048 P7).
 
-TechVault's real shape is permanently mixed: a compliant node resolves
+A realistic range is permanently mixed: a compliant node resolves
 through EITHER declared `runtime:` (the generic materializer) OR a
 trust-policy-resolved `source:` (a transparently declared vendor image) -
 never through docker-compose.yml alone with no SDL-declared realization.
@@ -69,7 +69,7 @@ def test_clean_runtime_node_passes():
 
 def test_node_with_a_resolved_image_source_passes():
     # A legitimate, transparently declared vendor image (source:) is not a
-    # violation - TechVault's SOC-stack nodes are permanently this shape.
+    # violation - a SOC-stack node from a vendor image is permanently this shape.
     node = _node("n.box", runtime=None)
     spec = _spec([node], images=[_image("n.box")])
     assert realization_declaration_violations(spec) == []

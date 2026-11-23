@@ -60,7 +60,7 @@ _PREFIXED_SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 #: Bounds keep a malicious or corrupt journal from forcing unbounded work.
 _MAX_LINE_BYTES = 4096
-_MAX_VERSION = 64
+_MAX_VERSION = 256
 _MAX_SEAL_STATE = 32
 _MAX_TERMINAL_AT = 40
 _MAX_LOCATION = 256

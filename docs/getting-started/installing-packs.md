@@ -1,115 +1,107 @@
-# Install a scenario pack and its adapter
+<a id="install-a-scenario-pack-and-its-adapter"></a>
 
-LilRAE does not contain the scenarios it runs. A scenario has two parts, and you
-install each one:
+# Install A Scenario Pack And Its Adapter
 
-1. **The pack.** A RAES environment pack holds the scenario content: the SDL
-   document, assets, detection content, and seed data. TechVault is a pack.
-2. **The adapter.** A Python package that provides the scenario-specific
-   behavior for the pack's identity: serving, capture, startup, runtime
-   parameters, verification, and participant smoke plans. The generic
-   materializer in `src/aptl` does not branch on scenario names. The adapter
-   supplies all scenario-specific behavior through entry points.
-
-You must install both. The pack without its adapter realizes generically, but
-its scenario-specific startup, verification, and capture do not run.
+Use this guide to select released scenario content and its runtime adapter.
+Start with [LilRAE installed](installation.md) and an initialized project on an approved lab machine.
+Install only packages and content from publishers your organization approves.
+Adapters execute Python code; a valid content manifest alone does not authenticate a publisher.
+The result is a configured pack that the catalog validates and startup can use.
 
 ## Install the pack
 
-The default scenario source is `env-pack`. LilRAE resolves the pack from the
-installed `raes-env-packs` distribution by identity. It reads
-`resources/packs/<identity>/sdl/<identity>.sdl.yaml`, stages the pack into
-private project state, and validates it with the env-packs gates before use.
+The CLI installation already includes the [required environment-pack distribution](pack-reference.md#installed-pack-source).
+For TechVault, use that dependency in the CLI's own environment.
+Do not install pack packages into an unrelated system Python.
+For the source layout and version fields, see [Pack installation reference](pack-reference.md).
 
-Install the distribution that carries the pack:
-
-```shell
-pip install "raes-env-packs==6.2.0"
-```
-
-TechVault ships in `raes-env-packs` as two packs: `techvault` (the environment)
-and `techvault-participant-study` (the environment plus authored red and blue
-participants).
-
-A third-party pack that is not in `raes-env-packs` ships in its own
-distribution. Install that distribution the same way. The pack directory name
-must equal the pack's declared identity.
+For third-party content, obtain the publisher's intact release directory through an approved transfer.
+Place it beneath the project, for example at `releases/my-pack`.
+Keep its manifest and published bytes unchanged.
+Its directory name must match the declared pack identity.
+LilRAE does not download or extract a configured release directory.
 
 ## Install the adapter
 
-The adapter registers entry points in these groups, keyed by the pack identity:
-
-| Entry-point group | Purpose |
-| --- | --- |
-| `aptl.pack_backend_interactions` | Serving provider |
-| `aptl.scenario_capture` | Capture provider |
-| `aptl.scenario_startup` | Startup provider |
-| `aptl.scenario_runtime_parameters` | Runtime parameters |
-| `aptl.scenario_planning_compatibility` | Planning compatibility |
-| `aptl.scenario_verifiers` | Verifier |
-| `aptl.evidence_payload` | Evidence collectors |
-| `aptl.participant_mcp_smoke_plans` | Participant MCP smoke plans |
-
-The TechVault adapter is `aptl_techvault`. It ships inside the `aptl-labs`
-(LilRAE) distribution, so a LilRAE install already has it. You do not install it
-separately.
-
-A third-party pack supplies its own adapter distribution. Install it with pip.
-Its entry points must name the pack's identity (for example `mypack.aptl`).
-After install, confirm the entry points resolve:
+TechVault's adapter ships in the `lilrae` distribution.
+No separate adapter installation is required for TechVault.
+For a third-party adapter, install its approved distribution into the same environment as LilRAE.
+For pipx, use:
 
 ```shell
-python -c "from importlib.metadata import entry_points as e; print([ep.name for ep in e(group='aptl.scenario_startup')])"
+pipx inject lilrae <adapter-distribution>
 ```
+
+For a dedicated virtual environment, activate it and use:
+
+```shell
+python -m pip install <adapter-distribution>
+```
+
+Replace the placeholder with the publisher's package requirement.
+Confirm the adapter's declared pack identity and supported release before continuing.
+Use the [family adapter contract](../reference/family-adapters.md) for independently released family adapters.
 
 ## Select the pack
 
-The active scenario is an operator decision. It lives in `aptl.json`:
+Open the existing `aptl.json` in the project directory.
+For TechVault, set its `scenario` object to:
 
 ```json
 {
-  "scenario": {
-    "source": "env-pack",
-    "identity": "techvault"
-  }
+  "source": "env-pack",
+  "identity": "techvault"
 }
 ```
 
-- `source: env-pack` resolves the pack from the installed distribution by
-  identity. This is the default.
-- `identity` names the pack. The default identity is `techvault`.
+For the third-party release directory, use:
 
-The backend never switches the scenario at runtime. You select it before
-`aptl lab start`.
+```json
+{
+  "source": "env-pack",
+  "identity": "my-pack",
+  "pack_directory": "releases/my-pack"
+}
+```
+
+Save the file.
+The path is relative to the project containing `aptl.json`.
+Use an ordinary directory inside that project.
+See [source restrictions](pack-reference.md#configured-source-restrictions) for refused paths and conflicting settings.
 
 ## Verify and run
 
-List the configured pack. The catalog projects the pack named in `aptl.json`:
+From the project directory, validate the configuration and inspect the selected pack:
 
 ```shell
-aptl lab scenarios
+lilrae config validate
+lilrae lab scenarios
 ```
 
-The command prints the identity, version, status, digest, and description. Start
-the lab:
+Expected result: the configuration validates and the catalog lists the configured identity.
+The catalog includes identity, version, maturity, and digest information.
+`--scenario` validates a catalog selector; it does not configure a different pack.
+To change packs, edit `scenario.identity` first.
+
+On the approved lab machine, start the selected pack:
 
 ```shell
-aptl lab start
+lilrae lab start
 ```
 
-`aptl lab start` uses the configured identity. The `--scenario` option selects
-another identity, but only one that the catalog already lists. The catalog lists
-the configured pack, so `--scenario` cannot select a pack that `aptl.json` does
-not configure. To run a different pack, set `scenario.identity` in `aptl.json`.
+Expected result: the final startup report passes the pack's required readiness checks.
+When the session ends, use [project-scoped teardown](../deployment.md#manage-the-lifecycle).
+Do not run startup or behavior tests on the developer workstation.
 
 ## Troubleshooting
 
-- **`Unknown scenario id '<x>'. Available scenarios: <y>`**. The identity is
-  not the configured pack. Set `scenario.identity` to `<x>` in `aptl.json`, then
-  run `aptl lab scenarios` to confirm the catalog lists it.
-- **`env-pack source not found for '<x>'`**. The pack distribution is not
-  installed, or the pack directory name does not match the identity. Install the
-  distribution that carries `resources/packs/<x>/`.
-- **The lab realizes, but scenario-specific startup or verification does not
-  run**. The adapter is missing. Install the adapter distribution and confirm
-  its entry points name the pack identity.
+If no `aptl.json` is found, return to the project directory or use the command's `--project-dir` option.
+Startup searches the project and its parents; catalog listing reads the specified directory.
+
+If a selector is unknown, check `scenario.identity` and repeat `lilrae lab scenarios`.
+If pack acquisition fails, verify the release directory, declared identity, manifest, and SDL.
+A configured invalid source does not fall back to the installed pack.
+
+If scenario-specific startup or capture is unavailable, verify the adapter installation in the CLI environment.
+Compare its entry points with the [adapter reference](pack-reference.md#adapter-entry-points).
+Do not bypass acquisition or readiness gates.

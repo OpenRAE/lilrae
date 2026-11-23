@@ -8,6 +8,14 @@ accepted
 
 2026-07-28
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [realization Reference](../components/node-realization.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 APTL dynamically realizes `scenarios/techvault-operational.sdl.yaml` through
@@ -62,9 +70,7 @@ Measured against the pinned RAES 2.0.0 and the parity baseline `304d1217`:
 - APTL calls `RuntimeManager.plan()` with no `ArtifactAvailabilityContext`.
 - The scenario declares no `realization:` table, so every scope resolves
   `CLOSED_WORLD` and undeclared runtime state is already inadmissible.
-- The generic-materialization conversion dropped 20 volumes and 38 environment
-  variables across eight nodes without re-declaring them, including `webapp`'s
-  entire database binding and `misp-suricata-sync`'s MISP API wiring. That is the
+- The historical conversion lost 20 volumes and 38 environment variables across eight nodes. This included the web database binding and MISP synchronization credentials/wiring. That is the
   hollow-node failure mode this decision exists to make impossible.
 
 APTL also already has the backend seams needed to execute an admitted choice:
@@ -84,19 +90,14 @@ The source route is expressed with the existing RAES artifact contracts, not
 an APTL-local `source_type` enum.
 
 1. **Pinned upstream or vendor artifact.** Use an exact artifact requirement
-   and an `exact-artifact` pull route. The immutable identity includes a digest;
-   a mutable tag, a product name plus `4.x`, or an APTL allowlist entry alone is
-   not an admissible pin.
+   and an `exact-artifact` pull route. An immutable identity needs a digest. A mutable tag, product plus `4.x`, or local allowlist entry is not an acceptable pin.
 2. **Purpose-built component artifact.** Use a digest-bound
    `materialization-specification` route with verified locked inputs,
    associated artifact manifests, and trust/provenance references. The build
    produces one component image. `Source.build` remains observed provenance
    and must not be reinterpreted as executable build instructions.
 3. **Generic runtime composition.** Use a `dynamic-composition` route over a
-   pinned generic substrate. This route is admissible only when the compiled
-   declarations completely state every applicable component-contract
-   dimension and the backend declares that it can materialize and independently
-   read back each one.
+   pinned generic substrate. This route requires complete compiled component declarations. The backend must declare materialization and independent readback for every applicable dimension.
 
 Switch nodes are realized as networks through the existing network concern and
 do not select a container artifact.
@@ -118,25 +119,14 @@ fictional image containing the composed node. The existing RAES
 The artifact identity uses a stable generic-substrate policy identity and a
 truthful media type. It does not reuse `Source.name`, a Compose service, a node
 address, a registry/repository location, a mutable tag, or the scenario-bundle
-path as portable identity. The installed packages, configuration, identities,
-ports, mounts, capabilities, agents, and listeners remain separate runtime
-concerns proved through the ordinary concern registry; the substrate digest
-does not claim that those effects are baked into the image.
+path as portable identity. Packages, configuration, identities, ports, mounts, capabilities, agents, and listeners need separate observed runtime concerns. A substrate digest does not prove those effects.
 
-Before planning, APTL resolves the same fixed base-substrate policy that
-`base_container_spec()` uses for realization and asks the typed deployment
-backend for the immutable identity and local start reference available on the
-target daemon. The address-scoped `ArtifactRequirementAvailability` verifies
+Before planning, the backend resolves `base_container_spec()`'s fixed substrate policy. Typed deployment discovery supplies immutable identity and a local start reference on the target daemon. The address-scoped `ArtifactRequirementAvailability` verifies
 both the digest and the dynamic-composition provenance reference. Realization
 starts that immutable local identity, not the mutable selector used to find it.
-An absent, changed, malformed, ambiguous, wrong-platform, or otherwise
-unresolvable substrate yields no verified claim or container and must not fall
-through to a registry pull during the declared `local-lookup` route.
+Missing, changed, malformed, ambiguous, wrong-platform, or unresolved substrates produce no claim or container. The declared `local-lookup` route must not fall back to registry acquisition.
 
-Availability and post-realization readback use one digest domain. In
-particular, an OCI manifest digest and a Docker image/configuration ID are not
-interchangeable merely because both start with `sha256:`; the disclosed media
-type must describe the bytes the digest identifies. The runtime gate compares
+Availability and post-realization readback use one digest domain. OCI manifest digests and Docker image/configuration IDs are different identities despite their `sha256:` prefix. Media type must describe the actual identified bytes. The runtime gate compares
 the digest observed from the container with the verified availability facts.
 The independent readback remains a defense-in-depth check: any backend mismatch
 fails closed and retains the baseline snapshot.
@@ -154,20 +144,14 @@ authored explicitness class binding, and APTL honors it:
 - **`constrained`**: APTL MUST select only a declared, available candidate or a
   digest-bound materialization specification within the authored domain, and MUST
   disclose the selected id. Candidate order is not fallback order.
-- **`open`**: APTL MAY select only where its manifest declares
-  `support_mode: open-realization` with a matching mechanism route, and, when a
-  finer realization envelope is published, only where the offered projection
-  subsumes the compiled open request (I3).
+- **`open`**: Selection is permitted only for declared `support_mode: open-realization` and a matching route. A finer offered envelope must subsume the compiled open request, per I3.
 
 `OPEN_REALIZATION` in one domain is never permission to ignore an exact
 declaration in that same domain.
 
 Planning admission determines the eligible route set by intersecting the authored
 permitted routes, trusted address-partitioned `ArtifactAvailabilityContext` facts,
-and the manifest's `artifact_mechanisms`. Only when more than one route survives
-that intersection does a deterministic, backend-owned preference policy choose
-among them; that policy is keyed by mechanism and profile, never by scenario name,
-node name, Compose service, or local cache contents. The selection carries through
+and the manifest's `artifact_mechanisms`. If several routes survive admission, deterministic backend policy selects one. It uses mechanism and profile, never scenario, node, service name, or cache contents. The selection carries through
 the existing typed realization objects.
 
 APTL declares a mechanism in its manifest only after it can both materialize and
@@ -221,30 +205,19 @@ Second, APTL owns the contract-completeness gate for the dimensions RAES does no
 lower. That gate is per node and per dimension, and each dimension it admits must
 be backed by read-after-write evidence. It is never an APTL-local "complete"
 boolean, an optimistic manifest declaration, or a count of declared fields.
-Widening the RAES realization registry so these fields become enforceable demand is
-upstream work against `Brad-Edwards/aces`; until it lands, the ownership above is
-explicit rather than assumed.
+Extending the RAES concern registry is upstream work. Until that contract exists, native ownership must remain explicit rather than assumed.
 
-> **Update (2026-07-30, issue #876).** That upstream work has landed. raes 3.1.0
-> (OpenRAE/rae#985) lowers `runtime.environment`, `runtime.mounts` (bind/tmpfs),
-> `runtime.linux_capabilities`, `runtime.network.published_ports`,
-> `runtime.forwarding_agents`, and `runtime.service_listeners` into the SEM-218
-> realization concern registry, so RAES now owns their admission
-> (`realization_support_diagnostics`) and their fail-closed non-approximation gate
-> (`realization_disclosure`). The backend-owned contract-completeness gate this
-> section describes is therefore superseded for those dimensions by the ordinary
-> observe-and-disclose path: APTL reads each declared concern off the realized
-> container through the typed `DeploymentBackend` and discloses the observed value
-> at the concern's payload path, projected through RAES's own registry projector
-> (with its secret-boundary value commitment); the observer is
-> `aptl.backends.raes_runtime_observation`. A declared concern APTL cannot observe
-> is omitted from the returned snapshot, so an EXACT declaration is still rejected;
-> the fail-closed outcome is unchanged, now enforced by RAES. APTL advertises the
+> **Update (2026-07-30, issue #876).** RAES 3.1.0, OpenRAE/rae#985, added environment, bind/tmpfs mounts, capabilities, publications, forwarding agents, and service listeners to SEM-218.
+> RAES then owned their admission and non-approximation disclosure. For those dimensions, ordinary observe-and-disclose supersedes the local completeness gate.
+>
+> Typed deployment reads native values and uses the RAES registry projector and secret-boundary commitment.
+> `aptl.backends.raes_runtime_observation` owns that translation. An unobserved declared concern is omitted.
+>
+> RAES therefore still refuses an EXACT declaration rather than fabricate a value. APTL advertises the
 > `dynamic-composition` mechanism (`OPEN_REALIZATION`, `local-lookup`/`realization`)
-> on the strength of that readback. The route-3 *source-artifact* satisfaction
-> (disclosing the realized generic substrate digest) is implemented in the same
-> change, on top of the merged #874 / PR #891 realization roots, per the "Route 3
-> realized artifact satisfaction" section above.
+> on the strength of that readback. The same change implements route-3 substrate artifact satisfaction.
+>
+> It builds on the #874 / PR #891 realization-root change described above.
 
 A running container, an installed package, an open port, or a matching name
 proves only that individual fact. Readiness requires all admitted facts and
@@ -256,17 +229,10 @@ contract fails before backend mutation.
 An upstream or purpose-built image may own component software and invariant
 entrypoint mechanics. It must not own the TechVault scenario.
 
-RAES owns runtime composition: selected nodes, topology, effective
-configuration, network wiring, credentials by reference, generated artifacts,
-participant and seeded content, accounts, persistence, telemetry, integration
-bindings, and readiness expectations. A per-component image must remain useful
+RAES owns runtime composition: topology, configuration, reference-bound credentials, artifacts, participants, content, accounts, persistence, telemetry, integration, and readiness. A per-component image must remain useful
 outside TechVault when given different runtime inputs.
 
-Vendor security applications are therefore valid component artifacts. Wazuh,
-MISP, TheHive, Cortex, Shuffle, Suricata, and their datastores may use pinned
-upstream images while their certificates, credentials, rules, integrations,
-volumes, network placement, startup dependencies, and authenticated readiness
-remain RAES/APTL runtime-owned. This does not permit a whole-range image or an
+Vendor security applications are therefore valid component artifacts. Pinned product images may supply component software. Runtime contracts still own certificates, credentials, rules, integrations, volumes, topology, startup dependencies, and authenticated readiness. This does not permit a whole-range image or an
 image containing prewired TechVault topology.
 
 ### Backend and failure boundary

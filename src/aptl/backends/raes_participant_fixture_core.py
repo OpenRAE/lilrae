@@ -104,7 +104,7 @@ def _ensure_fixture(
         },
         "db": {
             "account": _BENIGN_ACCOUNT_ACTIVE,
-            _PROFILE_CONTACT_EMAIL: "green.user@techvault.local",
+            _PROFILE_CONTACT_EMAIL: "green.user@example.test",
             _PROFILE_DEPARTMENT: "Engineering",
             _PROFILE_PROTECTED_ACCOUNT_ID: "TV-SYNTHETIC-001",
             _SUPPORT_REQUEST: "none",

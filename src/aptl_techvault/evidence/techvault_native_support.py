@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import json
-from collections import deque
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator
 from datetime import datetime, timezone
-from pathlib import Path
+from typing import IO
 
-from aptl.core.deployment._compose_stateful_model import artifact_source_path
+from aptl.core.evidence.spool import iter_spool, new_spool
 
-MAX_SOURCE_BYTES = 2 * 1024 * 1024
 UTC_OFFSET = "+00:00"
 
 
@@ -20,14 +17,53 @@ def utc_iso_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace(UTC_OFFSET, "Z")
 
 
-def bounded(value: object) -> bool:
-    """Return whether a JSON-compatible value fits the source byte limit."""
+def stream_container_file(
+    operations: object, container: str, path: str
+) -> tuple[IO[bytes] | None, str | None]:
+    """Stream one complete container file into a spool; return it or a loss code.
 
-    try:
-        encoded = json.dumps(value, separators=(",", ":"), default=str).encode()
-    except (TypeError, ValueError, RecursionError):
-        return False
-    return len(encoded) <= MAX_SOURCE_BYTES
+    The caller closes the returned spool.
+    """
+    stream = getattr(operations, "container_exec_stream", None)
+    spool = new_spool()
+    loss = "source-exec-failed" if not callable(stream) else None
+    if loss is None:
+        with new_spool() as stderr:
+            try:
+                ended = stream(
+                    container, ["cat", "--", path], stdout=spool, stderr=stderr
+                )
+            # broad-except: backend transports expose implementation-specific failures.
+            except Exception:
+                ended = None
+        loss = _stream_loss(ended)
+    if loss is not None:
+        spool.close()
+        return None, loss
+    return spool, None
+
+
+def _stream_loss(ended: object | None) -> str | None:
+    """Return the loss code of a streamed read, or ``None`` when it succeeded."""
+    checks = (
+        (ended is None, "source-exec-failed"),
+        (getattr(ended, "timed_out", False), "source-read-timed-out"),
+        (getattr(ended, "failed_pipe", False), "source-read-interrupted"),
+        (getattr(ended, "returncode", 0) != 0, "source-command-failed"),
+    )
+    return next((loss for failed, loss in checks if failed), None)
+
+
+def spool_lines(spool: IO[bytes]) -> Iterator[tuple[bytes, bool]]:
+    """Yield each line of ``spool`` and whether it ended with a newline."""
+    pending = b""
+    for chunk in iter_spool(spool):
+        pending += chunk
+        *complete, pending = pending.split(b"\n")
+        for line in complete:
+            yield line, True
+    if pending:
+        yield pending, False
 
 
 def find_node(realization: object, name: str) -> object | None:
@@ -41,64 +77,6 @@ def find_node(realization: object, name: str) -> object | None:
         ),
         None,
     )
-
-
-def published_url(realization: object, name: str, port: int, scheme: str) -> str | None:
-    """Resolve one loopback-only published service URL."""
-
-    result = None
-    node = find_node(realization, name)
-    if node is not None:
-        matches = [
-            item
-            for item in getattr(node, "published_ports", ())
-            if getattr(item, "container_port", None) == port
-            and getattr(item, "protocol", "tcp") == "tcp"
-        ]
-        if len(matches) == 1 and getattr(matches[0], "host_port", None) is not None:
-            host = getattr(matches[0], "host_ip", "127.0.0.1")
-            if host in {"127.0.0.1", "::1", "localhost"}:
-                result = f"{scheme}://127.0.0.1:{matches[0].host_port}"
-    return result
-
-
-def generated_output(
-    realization: object, project_dir: Path, provenance: str, output_name: str
-) -> str | None:
-    """Read one bounded generated output rooted beneath its admitted artifact."""
-
-    path = generated_output_path(realization, project_dir, provenance, output_name)
-    if path is None:
-        return None
-    try:
-        value = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        value = ""
-    return value or None
-
-
-def generated_output_path(
-    realization: object, project_dir: Path, provenance: str, output_name: str
-) -> Path | None:
-    """Resolve one exact generated output without reading its contents."""
-
-    artifacts = [
-        item
-        for item in getattr(realization, "generated_artifacts", ())
-        if getattr(item, "provenance", None) == provenance
-    ]
-    if len(artifacts) != 1:
-        return None
-    outputs = [
-        item
-        for item in getattr(artifacts[0], "outputs", ())
-        if getattr(item, "name", None) == output_name
-    ]
-    if len(outputs) != 1:
-        return None
-    root = artifact_source_path(project_dir, artifacts[0]).resolve()
-    target = (root / outputs[0].path).resolve()
-    return target if target.is_relative_to(root) and target.is_file() else None
 
 
 def content_identities(realization: object) -> dict[str, str] | None:
@@ -154,34 +132,6 @@ def webapp_address(realization: object) -> str | None:
     return endpoint[0] if endpoint is not None else None
 
 
-def connector_projection(
-    value: object, *, cortex_context: bool = False
-) -> dict[str, str] | None:
-    """Find and project one healthy Cortex connector from a bounded response."""
-
-    pending = deque([(value, cortex_context)])
-    result = None
-    while pending and result is None:
-        current, inherited_context = pending.popleft()
-        if isinstance(current, Mapping):
-            name = str(current.get("name", current.get("service", "")))[:128]
-            status = str(current.get("status", "")).upper()
-            local_context = inherited_context or "cortex" in name.lower()
-            if local_context and status == "OK":
-                result = {"name": name or "cortex", "status": "OK"}
-                continue
-            pending.extend(
-                (
-                    item,
-                    local_context or "cortex" in str(key).lower(),
-                )
-                for key, item in current.items()
-            )
-        elif isinstance(current, Sequence) and not isinstance(current, str | bytes):
-            pending.extend((item, inherited_context) for item in current)
-    return result
-
-
 def inside_window(value: object, start_iso: str, end_iso: str) -> bool:
     """Return whether an ISO timestamp falls inside the closed evidence window."""
 
@@ -195,14 +145,11 @@ def inside_window(value: object, start_iso: str, end_iso: str) -> bool:
 
 
 __all__ = (
-    "MAX_SOURCE_BYTES",
-    "bounded",
-    "connector_projection",
     "content_identities",
     "find_node",
-    "generated_output",
     "inside_window",
-    "published_url",
+    "spool_lines",
+    "stream_container_file",
     "utc_iso_now",
     "webapp_address",
     "webapp_endpoint",

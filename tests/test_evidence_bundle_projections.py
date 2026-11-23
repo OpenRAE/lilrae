@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 import pytest
+import rfc8785
 
 sys.path.insert(0, str(Path(__file__).parent))
 import _bundle_fixtures as fixtures  # noqa: E402
@@ -117,6 +118,22 @@ class TestParquetTypeFidelity:
         table = _read_parquet(member.content)
         refs = table.column("source_refs").to_pylist()[0]
         assert json.loads(refs)[0]["ref_kind"] == "measurement-channel"
+
+    def test_non_ascii_refs_are_canonical_json(self, tmp_path: Path) -> None:
+        """A non-ASCII reference keeps its raw UTF-8 characters (#1598)."""
+        records = _records()
+        ref = {**records[0]["source_refs"][0], "ref_id": "capteur-é-📡"}
+        first = {**records[0], "source_refs": [ref]}
+        ctx = ProjectionContext(
+            run_dir=tmp_path,
+            records=(first, records[1]),
+            retained_sizes={r["evidence_record_id"]: 10 for r in records},
+            limits=DEFAULT_LIMITS,
+        )
+        run = run_projections(["parquet"], ctx)
+        member = next(m for m in run.members if m.bundle_path.endswith(".parquet"))
+        column = _read_parquet(member.content).column("source_refs").to_pylist()
+        assert rfc8785.dumps([ref]).decode("utf-8") in column
 
     def test_int64_retained_bytes_exact(self, tmp_path: Path) -> None:
         records = _records()

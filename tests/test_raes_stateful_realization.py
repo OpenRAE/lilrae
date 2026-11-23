@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
 
 from raes_contracts.planning import (
     ChangeAction,
@@ -10,11 +11,15 @@ from raes_contracts.planning import (
     ProvisioningPlan,
     ProvisionOp,
     RuntimeDomain,
+    RealizationAuthorityMode,
+    RealizationResolutionSource,
+    ResolvedRealizationAuthority,
 )
 
 from aptl.backends.raes_manifest import create_aptl_manifest
 from aptl.backends.raes_realization import interpret_provisioning_plan
 from aptl.core.config import AptlConfig
+from aptl.core.deployment._misp_cache_credential import MISP_CACHE_CREDENTIAL_PROFILE
 from aptl.core.scenario_bundle import ScenarioBundle, project_tree_bundle
 
 
@@ -82,7 +87,7 @@ def _write_compose(project_dir: Path) -> None:
 
 
 def _config() -> AptlConfig:
-    return AptlConfig(lab={"name": "test"}, containers={"wazuh": True})
+    return AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']})
 
 
 def test_manifest_advertises_released_stateful_contract() -> None:
@@ -94,6 +99,26 @@ def test_manifest_advertises_released_stateful_contract() -> None:
         for mode in manifest.provisioner.supported_generated_artifact_delivery_modes
     } == {"mount", "environment"}
     assert manifest.provisioner.supports_persistent_volumes is True
+
+
+def test_resolved_environment_authority_reaches_binding_admission(tmp_path: Path) -> None:
+    """Deployment must retain RAES authority rather than infer it from values."""
+
+    _write_compose(tmp_path)
+    node = _node("wazuh-indexer")
+    authority = ResolvedRealizationAuthority(
+        address=node.address,
+        field_path="nodes.wazuh-indexer.runtime.environment",
+        domain="runtime-realization",
+        requirement_kind="runtime-environment",
+        payload_pointer="/spec/node/runtime/environment",
+        mode=RealizationAuthorityMode.CLOSED,
+        source=RealizationResolutionSource.AUTHORED_SCOPE,
+    )
+    plan = replace(_plan(node), realization_authority=(authority,))
+    realization = interpret_provisioning_plan(plan=plan, config=_config(), bundle=_bundle(tmp_path))
+    assert realization.realization_authority == (authority,)
+    assert realization.deployment_spec([]).realization_authority == (authority,)
 
 
 def test_interpreter_lowers_stateful_resources_into_deployment_spec(
@@ -173,15 +198,15 @@ def test_interpreter_lowers_generated_environment_consumers(tmp_path: Path) -> N
     _write_compose(tmp_path)
     artifact = _resource(
         "generated-artifact",
-        "cortex-service-credentials",
+        "misp-cache-credential",
         {
             "generator": "rendered_config",
             "lifecycle": "reuse_valid",
-            "provenance": "techvault:cortex-service-credentials/v1",
+            "provenance": MISP_CACHE_CREDENTIAL_PROFILE,
             "outputs": [
                 {
-                    "name": "connector-api-key",
-                    "path": "cortex/connector-api-key",
+                    "name": "cache-password",
+                    "path": "cache-password",
                     "sensitivity": "secret",
                 }
             ],
@@ -191,8 +216,8 @@ def test_interpreter_lowers_generated_environment_consumers(tmp_path: Path) -> N
                     "node": "wazuh-indexer",
                     "target_address": "provision.node.wazuh-indexer",
                     "delivery_mode": "environment",
-                    "output": "connector-api-key",
-                    "environment_variable": "TH_CORTEX_KEYS",
+                    "output": "cache-password",
+                    "environment_variable": "REDIS_PASSWORD",
                 }
             ],
         },
@@ -207,8 +232,8 @@ def test_interpreter_lowers_generated_environment_consumers(tmp_path: Path) -> N
     assert [item.code for item in realization.diagnostics] == []
     generated = realization.generated_artifacts[0]
     assert generated.consumers == ()
-    assert generated.environment_consumers[0].environment_variable == "TH_CORTEX_KEYS"
-    assert generated.environment_consumers[0].output_name == "connector-api-key"
+    assert generated.environment_consumers[0].environment_variable == "REDIS_PASSWORD"
+    assert generated.environment_consumers[0].output_name == "cache-password"
 
 
 def test_interpreter_rejects_environment_consumer_name_injection(
@@ -217,15 +242,15 @@ def test_interpreter_rejects_environment_consumer_name_injection(
     _write_compose(tmp_path)
     artifact = _resource(
         "generated-artifact",
-        "cortex-service-credentials",
+        "misp-cache-credential",
         {
             "generator": "rendered_config",
             "lifecycle": "reuse_valid",
-            "provenance": "techvault:cortex-service-credentials/v1",
+            "provenance": MISP_CACHE_CREDENTIAL_PROFILE,
             "outputs": [
                 {
-                    "name": "connector-api-key",
-                    "path": "cortex/connector-api-key",
+                    "name": "cache-password",
+                    "path": "cache-password",
                     "sensitivity": "secret",
                 }
             ],
@@ -235,7 +260,7 @@ def test_interpreter_rejects_environment_consumer_name_injection(
                     "node": "wazuh-indexer",
                     "target_address": "provision.node.wazuh-indexer",
                     "delivery_mode": "environment",
-                    "output": "connector-api-key",
+                    "output": "cache-password",
                     "environment_variable": "SAFE\nINJECTED",
                 }
             ],

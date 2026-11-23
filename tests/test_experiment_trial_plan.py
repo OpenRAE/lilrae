@@ -40,7 +40,6 @@ from aptl.core.experiment.policy import (
 from aptl.core.experiment import trial_plan
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 from aptl.core.experiment.trial_plan import (
@@ -77,7 +76,6 @@ def _capture_binding(**overrides: object) -> CaptureBinding:
         "retention_policy": "retain-review-window",
         "loss_disclosure_required": True,
         "visibility_class": CaptureVisibility.EVALUATOR_ONLY,
-        "limits": CaptureLimits(max_bytes=1024, max_artifact_count=10, max_duration_s=60),
     }
     fields.update(overrides)
     return CaptureBinding(**fields)
@@ -146,6 +144,19 @@ def _condition_spec_payload(
     allocation_method: str = "balanced",
     stochastic_controls: list[dict] | None = None,
 ) -> dict:
+    # raes 9 requires every assigned factor level to be declared.
+    levels: dict[str, set[str]] = {}
+    for assignment in condition_assignments.values():
+        for factor_id, level in assignment["factor_levels"].items():
+            levels.setdefault(factor_id, set()).add(level)
+    factors = {
+        factor_id: {
+            "name": factor_id,
+            "factor_kind": "treatment",
+            "levels": sorted(levels[factor_id]),
+        }
+        for factor_id in sorted(levels)
+    }
     return {
         "schema_version": "experiment-authoring-input/v1",
         "spec_id": "spec-condition-test-v1",
@@ -173,6 +184,7 @@ def _condition_spec_payload(
                 "replication_policy": "n independent runs",
             },
         },
+        **({"factors": factors} if factors else {}),
     }
 
 

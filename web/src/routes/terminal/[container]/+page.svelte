@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import Terminal from '$lib/components/Terminal.svelte';
-	import type { TerminalStatus } from '$lib/bff';
-	import { guardControlledAction } from '$lib/stores/ui';
-	import { preferences } from '$lib/stores/preferences';
-	import { focusRing } from '$lib/components/kit/tone';
+	import Terminal from '#lib/components/Terminal.svelte';
+	import type { TerminalStatus } from '#lib/bff.ts';
+	import { guardControlledAction } from '#lib/stores/ui.ts';
+	import { preferences } from '#lib/stores/preferences.ts';
+	import { focusRing } from '#lib/components/kit/tone.ts';
 
-	const container = $derived($page.params.container ?? '');
+	const container = $derived(page.params.container ?? '');
 
 	let status = $state<TerminalStatus | null>(null);
 	// The PTY is not opened until the first-run local-use notice is acknowledged

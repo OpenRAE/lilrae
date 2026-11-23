@@ -7,6 +7,7 @@ ownership afterward.
 """
 
 import hashlib
+import ipaddress
 import os
 import shutil
 import subprocess
@@ -14,8 +15,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from cryptography import x509
+
 from aptl.core import hostenv
 from aptl.core.ephemeral_containers import EphemeralContainer
+from aptl.core.helper_images import CERT_GENERATOR_IMAGE, PINNED_HELPER_IMAGES
 from aptl.utils.logging import get_logger
 
 log = get_logger("certs")
@@ -25,6 +29,19 @@ _CERT_COMPOSE_FILE = "generate-indexer-certs.yml"
 _ROOT_CA = "root-ca.pem"
 _MANAGER_ROOT_CA = "root-ca-manager.pem"
 _CERT_CLEANUP_TIMEOUT = 60
+#: Host-run clients reach the indexer and the manager API through their
+#: loopback publications, so those certificates must name these hosts (#1767).
+_HOST_FACING_NAMES = (
+    x509.DNSName("localhost"),
+    x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
+)
+_HOST_FACING_ROLES = ("indexer", "manager")
+
+
+def wazuh_root_ca(project_dir: Path) -> Path:
+    """Return the lab Wazuh CA that signs the indexer and manager certificates."""
+
+    return project_dir / _CERTS_SUBDIR / _ROOT_CA
 
 
 @dataclass
@@ -38,6 +55,7 @@ class CertResult:
 
 
 CommandRunner = Callable[..., subprocess.CompletedProcess]
+ImagePuller = Callable[[list[str]], list[str]]
 
 
 def ensure_ssl_certs(
@@ -45,6 +63,7 @@ def ensure_ssl_certs(
     *,
     run_command: CommandRunner | None = None,
     project: str | None = None,
+    pull_images: ImagePuller | None = None,
 ) -> CertResult:
     """Ensure SSL certificates exist for the Wazuh Indexer.
 
@@ -58,6 +77,9 @@ def ensure_ssl_certs(
     Args:
         project_dir: Root directory of the APTL project (where
                      docker-compose.yml lives).
+        pull_images: The deployment backend's ``pull_images``. Before the
+                     generator runs, it points the generator's tag at the
+                     pinned digest.
 
     Returns:
         CertResult indicating success, whether certs were generated,
@@ -76,7 +98,7 @@ def ensure_ssl_certs(
     if native_user is not None:
         _reclaim_certs_dir(certs_dir, native_user[0])
 
-    if certs_dir.exists() and root_ca.exists():
+    if certs_dir.exists() and root_ca.exists() and _names_host_facing(certs_dir):
         alias_error = _ensure_manager_root_ca_alias(certs_dir)
         if alias_error is not None:
             return CertResult(
@@ -93,7 +115,35 @@ def ensure_ssl_certs(
             certs_dir=certs_dir,
         )
 
-    return _generate_ssl_certs(project_dir, certs_dir, run_command, project=project)
+    return _generate_ssl_certs(
+        project_dir,
+        certs_dir,
+        run_command,
+        project=project,
+        pull_images=pull_images,
+    )
+
+
+def _names_host_facing(certs_dir: Path) -> bool:
+    """Report whether the indexer and manager certificates name the loopback hosts.
+
+    A certificate from a release before #1767 lacks those names, so a verified
+    host-run client cannot reach the service. The generator then replaces it.
+    """
+
+    for role in _HOST_FACING_ROLES:
+        try:
+            certificate = x509.load_pem_x509_certificate(
+                (certs_dir / f"wazuh.{role}.pem").read_bytes()
+            )
+            names = certificate.extensions.get_extension_for_class(
+                x509.SubjectAlternativeName
+            ).value
+        except OSError, ValueError, x509.ExtensionNotFound:
+            return False
+        if not all(name in names for name in _HOST_FACING_NAMES):
+            return False
+    return True
 
 
 def _generate_ssl_certs(
@@ -102,10 +152,15 @@ def _generate_ssl_certs(
     run_command: CommandRunner | None,
     *,
     project: str | None = None,
+    pull_images: ImagePuller | None = None,
 ) -> CertResult:
     """Run certificate generation and convert the generator outcome."""
     log.info("Generating SSL certificates...")
-    error = _run_cert_generator(project_dir, certs_dir, run_command, project=project)
+    error = _pinned_generator_failure(certs_dir, pull_images)
+    if error is None:
+        error = _run_cert_generator(
+            project_dir, certs_dir, run_command, project=project
+        )
     result = error
     if result is None:
         alias_error = _ensure_manager_root_ca_alias(certs_dir)
@@ -120,6 +175,20 @@ def _generate_ssl_certs(
         log.info("SSL certificates generated successfully at %s", certs_dir)
         result = CertResult(success=True, generated=True, certs_dir=certs_dir)
     return result
+
+
+def _pinned_generator_failure(
+    certs_dir: Path, pull_images: ImagePuller | None
+) -> CertResult | None:
+    """Point the generator's tag at its pinned digest, or report why not."""
+    if pull_images is None:
+        return None
+    warnings = list(pull_images([PINNED_HELPER_IMAGES[CERT_GENERATOR_IMAGE]]))
+    if not warnings:
+        return None
+    error = f"Pinned certificate generator image is unavailable: {'; '.join(warnings)}"
+    log.error(error)
+    return CertResult(success=False, generated=False, certs_dir=certs_dir, error=error)
 
 
 def _ensure_manager_root_ca_alias(certs_dir: Path) -> str | None:
@@ -149,7 +218,7 @@ def _ensure_container_readable_certs(certs_dir: Path) -> None:
 
     The upstream generator emits owner-only PEM files. Wazuh Indexer and Wazuh
     Dashboard run as non-root uid 1000 inside the container, which may not match
-    the host uid that ran ``aptl lab start``. Keep the host-side directory
+    the host uid that ran ``lilrae lab start``. Keep the host-side directory
     private while widening the mounted files so the container processes can read
     them.
     """
@@ -277,7 +346,7 @@ def _cert_generator_command(
     :func:`ensure_ssl_certs` before this point, so ``exist_ok`` here only ever
     finds a fresh, host-owned directory. Docker Desktop needs no ``--user``
     because its file-sharing layer maps output ownership back to the host user.
-    Rootless Docker is unsupported: ``aptl lab start`` refuses it before any SSH
+    Rootless Docker is unsupported: ``lilrae lab start`` refuses it before any SSH
     key, credential render, volume, certificate, image pull or Compose change
     (#1053), as soon as ``_step_load_config`` has bound the daemon to ask.
     """

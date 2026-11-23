@@ -18,9 +18,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from aptl.core import lifecycle_errors
 from aptl.core.config import LabLifecyclePolicyConfig, LifecycleScheduleEntry
 from aptl.utils.logging import get_logger
 from aptl.utils.redaction import redact
+
+LifecycleBusyError = lifecycle_errors.LifecycleBusyError
 
 log = get_logger("lifecycle_policy")
 
@@ -29,10 +32,6 @@ _STATE_FILE = "state.json"
 _LOCK_FILE = ".lock"
 # Monday=0 .. Sunday=6, matching datetime.weekday().
 _WEEKDAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
-
-
-class LifecycleBusyError(RuntimeError):
-    """Raised when another lifecycle owner already holds the project lock."""
 
 
 @dataclass
@@ -137,7 +136,9 @@ def _entry_due(
     scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if now < scheduled or _minutes_between(now, scheduled) > grace_minutes:
         return False
-    return state.fired_schedules.get(schedule_entry_key(entry)) != now.date().isoformat()
+    return (
+        state.fired_schedules.get(schedule_entry_key(entry)) != now.date().isoformat()
+    )
 
 
 def due_schedule_entries(
@@ -186,8 +187,11 @@ def _decide_stopped(
         return LifecycleDecision("none", "stopped_no_schedule")
     entry, key = due[0]
     return LifecycleDecision(
-        "provision", "scheduled", "schedule",
-        scenario=entry.scenario, schedule_key=key,
+        "provision",
+        "scheduled",
+        "schedule",
+        scenario=entry.scenario,
+        schedule_key=key,
     )
 
 
@@ -226,7 +230,7 @@ def _read_state_file(path: Path) -> Optional[dict[str, object]]:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         log.warning("Unreadable lifecycle state at %s; starting fresh", path)
         return None
     return data if isinstance(data, dict) else None

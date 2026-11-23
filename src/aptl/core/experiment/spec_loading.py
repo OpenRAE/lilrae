@@ -39,8 +39,10 @@ from typing import BinaryIO
 
 import yaml
 from raes_contracts.associated_artifacts import (
+    ArtifactParent,
     AssociatedArtifactManifestModel,
     AssociatedArtifactValidationLimits,
+    ExperimentArtifactParent,
     validate_associated_artifact_manifest,
 )
 from raes_contracts.contracts import (
@@ -54,6 +56,7 @@ from raes_contracts.experiment_spec import (
     parse_experiment_spec,
 )
 from raes import SDLParseError, SDLValidationError, parse_sdl
+from raes.associated_artifacts import ScenarioArtifactParent
 from raes.canonical import SDLCanonicalDigest, canonical_sdl_digest
 from raes.scenario import Scenario
 from pydantic import ValidationError as PydanticValidationError
@@ -303,6 +306,8 @@ def validate_associated_artifacts(
     :class:`AdmissionRejection`; the diagnostics it returns are already
     the safe canonical shape, so they are used unchanged.
     """
+    if not isinstance(parent, ArtifactParent):
+        parent = ScenarioArtifactParent(parent) if isinstance(parent, Scenario) else ExperimentArtifactParent(parent)
     diagnostics = validate_associated_artifact_manifest(
         manifest, parent=parent, artifact_readers=artifact_readers, limits=limits
     )

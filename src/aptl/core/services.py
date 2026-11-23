@@ -131,7 +131,9 @@ class WazuhApiProbe:
         return f"{self.phase} phase failed: {self.category}{code}"
 
 
-def probe_indexer_api(url: str, username: str, password: str) -> WazuhApiProbe:
+def probe_indexer_api(
+    url: str, username: str, password: str, *, ca_cert_path: str
+) -> WazuhApiProbe:
     """Probe the Wazuh indexer API phase by phase and classify the outcome.
 
     Transport first, with a credential-free request: any HTTP status proves
@@ -142,13 +144,13 @@ def probe_indexer_api(url: str, username: str, password: str) -> WazuhApiProbe:
     """
 
     base = url.rstrip("/")
-    transport = curl_request(f"{base}/", insecure=True, timeout=10)
+    transport = curl_request(f"{base}/", ca_cert_path=ca_cert_path, timeout=10)
     if transport.http_status is None:
         return _api_failure("transport", transport)
     auth = curl_request(
         f"{base}/",
         auth_header=basic_auth_header(username, password),
-        insecure=True,
+        ca_cert_path=ca_cert_path,
         timeout=10,
     )
     status = auth.http_status
@@ -157,7 +159,9 @@ def probe_indexer_api(url: str, username: str, password: str) -> WazuhApiProbe:
     return _api_failure("authentication", auth)
 
 
-def probe_manager_api(url: str, username: str, password: str) -> WazuhApiProbe:
+def probe_manager_api(
+    url: str, username: str, password: str, *, ca_cert_path: str
+) -> WazuhApiProbe:
     """Probe the Wazuh manager API phase by phase and classify the outcome.
 
     Transport comes first, with a credential-free request: any HTTP status
@@ -169,14 +173,14 @@ def probe_manager_api(url: str, username: str, password: str) -> WazuhApiProbe:
     """
 
     base = url.rstrip("/")
-    transport = curl_request(f"{base}/", insecure=True, timeout=10)
+    transport = curl_request(f"{base}/", ca_cert_path=ca_cert_path, timeout=10)
     if transport.http_status is None:
         return _api_failure("transport", transport)
 
     auth = curl_request(
         f"{base}/security/user/authenticate",
         auth_header=basic_auth_header(username, password),
-        insecure=True,
+        ca_cert_path=ca_cert_path,
         method="POST",
         timeout=10,
     )
@@ -184,16 +188,16 @@ def probe_manager_api(url: str, username: str, password: str) -> WazuhApiProbe:
     if token is None:
         return _api_failure("authentication", auth)
 
-    return _manager_status_probe(base, token)
+    return _manager_status_probe(base, token, ca_cert_path)
 
 
-def _manager_status_probe(base: str, token: str) -> WazuhApiProbe:
+def _manager_status_probe(base: str, token: str, ca_cert_path: str) -> WazuhApiProbe:
     """Run the manager-status phase with an authenticated session token."""
 
     status = curl_request(
         f"{base}/manager/status",
         auth_header=f"Bearer {token}",
-        insecure=True,
+        ca_cert_path=ca_cert_path,
         timeout=10,
     )
     if status.http_status != 200:
@@ -268,12 +272,13 @@ def test_ssh_connection(host: str, port: int, user: str, key_path: Path) -> bool
     """Test SSH connectivity to a lab container.
 
     Reachability means the transport came up and the key authenticated, not
-    that the probe obtained a shell. A capture-wrapped target refuses one on
-    purpose: kali's sshd runs the capture wrapper as its ``ForceCommand``, and a
-    session carrying no control-plane-issued capture capability is denied with
-    exit 70, because an authenticated participant must never receive an
-    unrecorded shell. Requiring exit 0 therefore reported every such target as
-    unreachable, degrading a lab whose SSH was working.
+    that the probe obtained a shell. A capture-brokered target refuses one on
+    purpose: the Kali capture sidecar's sshd runs ``broker.py`` as its
+    ``ForceCommand``, and the broker refuses a session that has no active
+    capture authority or issued session identity, because an authenticated
+    participant must never receive an unrecorded shell. The broker exits
+    non-zero (``1``) in that case. Requiring exit 0 therefore reported every
+    such target as unreachable, degrading a lab whose SSH was working.
 
     A remote exit status of any kind only exists because ssh connected and
     authenticated first, so only ssh's own ``255`` means the transport or the

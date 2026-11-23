@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from aptl.core.experiment.capture_registry import CaptureBinding
+from aptl.workbench.process import ProcessCleanup
 from aptl.workbench.profiles import ProfileId
 
 CLAUDE_CODE_REALIZATION_PROFILE = "participant-implementation-manifest:claude-code"
@@ -60,6 +61,8 @@ class ParticipantDeliveryPlan:
 
     turns: tuple[ParticipantInjectTurn, ...] = ()
     behavior_specifications: Mapping[str, object] | None = None
+    participant_behaviors: Mapping[str, object] | None = None
+    mcp_server_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -69,3 +72,4 @@ class ParticipantTurnResult:
     session_id: str
     response: str
     provider_payload: Mapping[str, object]
+    cleanup: ProcessCleanup | None = None

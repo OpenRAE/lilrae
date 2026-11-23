@@ -20,7 +20,7 @@ def runner():
 
 VALID_CONFIG = {
     "lab": {"name": "test-lab"},
-    "containers": {"wazuh": True, "kali": True, "victim": False},
+    "containers": {"profiles": ["wazuh", "kali"]},
     "deployment": {"provider": "docker-compose", "project_name": "mylab"},
 }
 
@@ -32,6 +32,21 @@ def _write_config(tmp_path, payload):
     else:
         path.write_text(json.dumps(payload))
     return path
+
+
+@pytest.mark.parametrize("failure_name", ["busy", "unavailable"])
+def test_migration_reports_unavailable_lifecycle_ownership(runner, tmp_path, monkeypatch, failure_name):
+    from aptl.core.lifecycle_guard import LifecycleLockUnavailableError
+    from aptl.core.lifecycle_policy import LifecycleBusyError
+    _write_config(tmp_path, {"scenario": {"identity": "example"}, "containers": {"soc": False}})
+    failure = LifecycleBusyError if failure_name == "busy" else LifecycleLockUnavailableError
+    def refuse(*args, **kwargs):
+        raise failure("private-error-canary")
+    monkeypatch.setattr("aptl.core.lilrae_config_migration.migrate_config", refuse)
+    result = runner.invoke(app, ["config", "migrate", "--project-dir", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "project lock" in result.output
+    assert "private-error-canary" not in result.output
 
 
 # ---------------------------------------------------------------------------

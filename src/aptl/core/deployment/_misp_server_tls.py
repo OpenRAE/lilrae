@@ -4,11 +4,11 @@ The released TechVault pack owns this material: ``techvault-soc-certificates``
 declares ``misp-certificate`` and ``misp-private-key``, and mounts them into the
 MISP node at ``/opt/techvault/soc-certs``. That destination is the scenario's
 substrate-neutral statement of *what* MISP receives. It is not where the
-selected component looks: the pinned ``misp-core`` image's
-``/etc/nginx/sites-available/misp443`` reads ``/etc/nginx/certs/cert.pem`` and
-``/etc/nginx/certs/key.pem``, and generates a self-signed pair when they are
-absent. Choosing how an authored certificate reaches the selected image is a
-backend concern, so APTL makes that choice here.
+selected component looks: from misp-docker v2.5.46 the web tier is the
+pinned ``misp-nginx`` companion, which reads ``/etc/nginx/certs/cert.pem`` and
+``/etc/nginx/certs/key.pem`` (issue #1407). Choosing how an authored
+certificate reaches the selected image is a backend concern, so APTL makes that
+choice here.
 
 A consumer mount lowers to ``mount_destination / output.path`` for both its
 host source and its container target, so the host file has to carry the
@@ -25,8 +25,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from aptl.core.credentials import (
+    _FILE_MODE,
     _atomic_write_secure,
     _canonical_generated_path,
+    _enforce_mode,
     _ensure_secure_dir,
 )
 from aptl.core.deployment._compose_stateful_constants import (
@@ -37,8 +39,10 @@ from aptl.core.deployment.realization import DeploymentGeneratedArtifactRealizat
 
 MISP_SERVER_TLS_PROFILE = "techvault:misp-server-tls/v1"
 
-#: Where the pinned image's nginx configuration reads its TLS material.
+#: Where the pinned web companion's nginx configuration reads its TLS material.
 MISP_SERVER_TLS_MOUNT_DESTINATION = "/etc/nginx/certs"
+#: The MISP companion role that terminates TLS for the node's 443 listener.
+MISP_WEB_COMPANION_ROLE = "web"
 MISP_SERVER_TLS_CERTIFICATE_OUTPUT = "server-certificate"
 MISP_SERVER_TLS_PRIVATE_KEY_OUTPUT = "server-private-key"
 
@@ -47,7 +51,6 @@ _EXPECTED_OUTPUTS = {
     MISP_SERVER_TLS_CERTIFICATE_OUTPUT: ("cert.pem", "misp/server.pem"),
     MISP_SERVER_TLS_PRIVATE_KEY_OUTPUT: ("key.pem", "misp/server.key"),
 }
-_PRIVATE_OUTPUTS = frozenset({MISP_SERVER_TLS_PRIVATE_KEY_OUTPUT})
 
 
 def realize_misp_server_tls(
@@ -66,18 +69,22 @@ def realize_misp_server_tls(
     error = (
         "MISP server TLS artifact does not match its producer contract."
         if invalid_contract
-        else _stage_misp_server_tls(scenario_root)
+        else stage_misp_server_tls(scenario_root)
     )
     return error
 
 
-def _stage_misp_server_tls(scenario_root: Path) -> str | None:
-    """Copy the authored leaf into the selected image's native layout."""
+def stage_misp_server_tls(scenario_root: Path) -> str | None:
+    """Copy the SOC bundle's MISP leaf into the web companion's native layout.
+
+    Realization calls this through its generated artifact. The in-tree start
+    calls it directly, because the root Compose file mounts the same copy.
+    """
 
     try:
         root = _canonical_generated_path(scenario_root, MISP_SERVER_TLS_ROOT_RELPATH)
         _ensure_secure_dir(root)
-        for name, (relative, source_relative) in _EXPECTED_OUTPUTS.items():
+        for relative, source_relative in _EXPECTED_OUTPUTS.values():
             source = _canonical_generated_path(
                 scenario_root, SOC_CERTS_ROOT_RELPATH / source_relative
             )
@@ -89,13 +96,14 @@ def _stage_misp_server_tls(scenario_root: Path) -> str | None:
             target = _canonical_generated_path(
                 scenario_root, MISP_SERVER_TLS_ROOT_RELPATH / relative
             )
+            # 0644 under the owner-only staging root, as for every rendered
+            # credential: the web companion's nginx runs as uid 101, so an
+            # owner-only key would be unreadable across the bind mount. An
+            # unchanged copy from an earlier start may still be owner-only.
             if _current(target) == content:
-                continue
-            _atomic_write_secure(target, content)
-            # The certificate is public material and the key is not, but both
-            # are staged owner-only: the mount is read-only, so the container
-            # never needs group or world access to either.
-            target.chmod(0o600 if name in _PRIVATE_OUTPUTS else 0o644)
+                _enforce_mode(target, _FILE_MODE, "file")
+            else:
+                _atomic_write_secure(target, content)
     except (OSError, ValueError):
         return "MISP server TLS staging failed."
     return None
@@ -115,5 +123,7 @@ __all__ = (
     "MISP_SERVER_TLS_MOUNT_DESTINATION",
     "MISP_SERVER_TLS_PRIVATE_KEY_OUTPUT",
     "MISP_SERVER_TLS_PROFILE",
+    "MISP_WEB_COMPANION_ROLE",
     "realize_misp_server_tls",
+    "stage_misp_server_tls",
 )

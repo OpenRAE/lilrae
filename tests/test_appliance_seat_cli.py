@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -546,3 +547,167 @@ def test_recover_enrolls_host_access_like_start(tmp_path):
     assert options.access_enrollment is not None
     assert options.access_identity_file == identity
     assert options.access_clients == ("claude", "codex")
+
+
+def _assert_bounded_failure(result, code: str, message: str) -> None:
+    assert result.exit_code == 2, result.output
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {"error": code, "message": message}
+
+
+def _persist_participant_seat(seat_root: Path, *, guest_port: int) -> SeatRecord:
+    mapping = BoundaryEndpoint(
+        audience="participant",
+        address="127.0.0.1",
+        port=10443,
+        protocol="tcp",
+        guest_address="127.0.0.1",
+        guest_port=guest_port,
+    )
+    record = _seat_record().model_copy(
+        update={"schema_version": "aptl.seat-record/v2", "mappings": (mapping,)}
+    )
+    persist_seat_record(seat_root, record)
+    return record
+
+
+def _token_seat(seat_root: Path, token: bytes = b"t" * 43) -> Path:
+    """Stage a ready seat whose kiosk needs the private login bootstrap."""
+    record = _persist_participant_seat(seat_root, guest_port=443)
+    token_root = seat_root / "access" / f"generation-{record.generation}"
+    token_root.mkdir(parents=True)
+    (token_root / "web-launch-token").write_bytes(token)
+    return seat_root / "runtime" / "kiosk"
+
+
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        (lambda state: state.write_text("{not json"), "seat state is invalid"),
+        (lambda state: state.chmod(0o644), "seat state must be owner-only"),
+    ],
+    ids=["unparseable", "group-readable"],
+)
+def test_seat_status_reports_corrupt_state_as_bounded_json(
+    tmp_path: Path, damage, message: str
+) -> None:
+    persist_seat_record(tmp_path, _seat_record())
+    damage(tmp_path / "seat-state.json")
+
+    result = runner.invoke(app, ["seat", "status", "--seat-root", str(tmp_path)])
+
+    _assert_bounded_failure(result, "corrupt-seat-state", message)
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="needs an account that directory permissions apply to",
+)
+@pytest.mark.parametrize(
+    "command", [["status"], ["open-kiosk", "--dry-run"]], ids=["status", "open-kiosk"]
+)
+def test_unsearchable_seat_root_is_bounded_json(tmp_path: Path, command: list[str]) -> None:
+    seat_root = tmp_path / "seat"
+    seat_root.mkdir()
+    seat_root.chmod(0o600)
+    try:
+        result = runner.invoke(app, ["seat", *command, "--seat-root", str(seat_root)])
+    finally:
+        seat_root.chmod(0o700)
+
+    _assert_bounded_failure(result, "corrupt-seat-state", "seat state is unavailable")
+
+
+def test_open_kiosk_reports_a_browser_that_cannot_start(tmp_path: Path) -> None:
+    missing_browser = tmp_path / "missing-browser"
+
+    result = runner.invoke(
+        app,
+        [
+            "seat",
+            "open-kiosk",
+            "--seat-root",
+            str(tmp_path),
+            "--browser-command",
+            str(missing_browser),
+        ],
+    )
+
+    _assert_bounded_failure(
+        result, "browser-unavailable", "kiosk browser command could not be started"
+    )
+
+
+def _symlinked_bootstrap(seat_root: Path) -> list[str]:
+    bootstrap = _token_seat(seat_root)
+    bootstrap.parent.mkdir()
+    bootstrap.symlink_to(seat_root / "elsewhere", target_is_directory=True)
+    return []
+
+
+def _unwritable_bootstrap(seat_root: Path) -> list[str]:
+    bootstrap = _token_seat(seat_root)
+    (bootstrap / "login.html").mkdir(parents=True)
+    return []
+
+
+def _undecodable_token(seat_root: Path) -> list[str]:
+    _token_seat(seat_root, token=b"\xff\xfe")
+    return ["--dry-run"]
+
+
+def _private_desktop(seat_root: Path) -> list[str]:
+    _persist_participant_seat(seat_root, guest_port=8080)
+    return ["--dry-run"]
+
+
+# The current process shares the caller's network, so the real namespace check refuses it.
+_SHARED_DESKTOP_NETWORK = {"aptl.cli.seat.read_vm_pid": lambda _root: os.getpid()}
+# A private VM that exits before nsenter can stat its /proc entry.
+_VANISHED_DESKTOP_VM = {
+    "aptl.cli.seat.read_vm_pid": lambda _root: 2**30,
+    "aptl.appliance.seat.namespace.in_private_network": lambda _pid: True,
+}
+
+
+@pytest.mark.parametrize(
+    ("prepare", "patches", "code", "message"),
+    [
+        (_symlinked_bootstrap, {}, "corrupt-seat-state", "seat root must not be a symlink"),
+        (_unwritable_bootstrap, {}, "corrupt-seat-state", "seat state is unavailable"),
+        (_undecodable_token, {}, "missing-web-login", "seat browser login is unavailable"),
+        (
+            _private_desktop,
+            _SHARED_DESKTOP_NETWORK,
+            "desktop-unavailable",
+            "seat desktop network namespace is unavailable",
+        ),
+        (
+            _private_desktop,
+            _VANISHED_DESKTOP_VM,
+            "vm-not-running",
+            "seat desktop VM is not running",
+        ),
+    ],
+    ids=[
+        "symlinked-bootstrap",
+        "unwritable-bootstrap",
+        "undecodable-token",
+        "shared-desktop-network",
+        "vanished-desktop-vm",
+    ],
+)
+def test_open_kiosk_failure_is_bounded_json(
+    tmp_path: Path, monkeypatch, prepare, patches, code: str, message: str
+) -> None:
+    extra_args = prepare(tmp_path)
+    for target, replacement in patches.items():
+        monkeypatch.setattr(target, replacement)
+
+    with patch("aptl.appliance.seat.kiosk.subprocess.Popen") as popen:
+        result = runner.invoke(
+            app, ["seat", "open-kiosk", "--seat-root", str(tmp_path), *extra_args]
+        )
+
+    _assert_bounded_failure(result, code, message)
+    popen.assert_not_called()

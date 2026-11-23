@@ -45,7 +45,16 @@ class SeatImageBinding(BaseModel):
 
     boundary_helper_image: str = Field(pattern=_IMAGE_DIGEST)
     egress_proxy_image: str = Field(pattern=_IMAGE_DIGEST)
-    raes_plan_digest: str = Field(pattern=_SHA256)
+    participant_routes_digest: str | None = Field(default=None, pattern=_SHA256)
+    # Kept only to parse previously signed v1/v2 images. That field contained
+    # the participant-route projection, not an admitted runtime plan.
+    raes_plan_digest: str | None = Field(default=None, pattern=_SHA256)
+
+    @model_validator(mode="after")
+    def validate_projection_identity(self) -> SeatImageBinding:
+        if (self.participant_routes_digest is None) == (self.raes_plan_digest is None):
+            raise ValueError("image binding requires exactly one route projection")
+        return self
 
 
 class SeatImageConfig(BaseModel):
@@ -53,7 +62,9 @@ class SeatImageConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["aptl.seat-image/v1", "aptl.seat-image/v2"]
+    schema_version: Literal[
+        "aptl.seat-image/v1", "aptl.seat-image/v2", "aptl.seat-image/v3"
+    ]
     resources: HostPrerequisites
     boundary: ApplianceBoundaryPolicy
     binding: SeatImageBinding
@@ -62,10 +73,25 @@ class SeatImageConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_publications(self) -> SeatImageConfig:
-        if (self.schema_version == "aptl.seat-image/v2") != (
+        if (self.schema_version in {"aptl.seat-image/v2", "aptl.seat-image/v3"}) != (
             self.desktop_privilege_contract == "aptl.desktop-privileges/v1"
         ):
             raise ValueError("image privilege contract does not match schema version")
+        if self.schema_version == "aptl.seat-image/v3":
+            if (
+                not self.boundary.seat_component_protection
+                or self.binding.participant_routes_digest is None
+                or self.binding.raes_plan_digest is not None
+            ):
+                raise ValueError(
+                    "v3 image requires protected-seat policy and participant routes"
+                )
+        elif (
+            self.boundary.seat_component_protection
+            or self.binding.raes_plan_digest is None
+            or self.binding.participant_routes_digest is not None
+        ):
+            raise ValueError("legacy image cannot claim protected-seat identity")
         # The seat exists to project the guest's endpoints to the host; an
         # image that publishes none cannot be reached and must not launch.
         audiences = [item.audience for item in self.boundary.guest_publications]
@@ -90,7 +116,9 @@ def parse_seat_image_config(payload: bytes) -> SeatImageConfig:
     try:
         document = loads_strict(payload)
     except ValueError as exc:
-        raise SeatImageConfigError(f"seat image config is not valid JSON: {exc}") from exc
+        raise SeatImageConfigError(
+            f"seat image config is not valid JSON: {exc}"
+        ) from exc
     if not isinstance(document, dict):
         raise SeatImageConfigError("seat image config is not a JSON object")
     try:

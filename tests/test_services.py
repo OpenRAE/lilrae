@@ -234,6 +234,7 @@ def _probe(mocker, *outcomes):
         url="https://localhost:55000/",
         username="api-user",
         password="api-password",
+        ca_cert_path="/lab/root-ca.pem",
     )
     return result, request
 
@@ -271,7 +272,8 @@ class TestProbeManagerApi:
         assert request.call_count == 1
         kwargs = request.call_args.kwargs
         assert kwargs.get("auth_header") is None
-        assert kwargs["insecure"] is True
+        assert "insecure" not in kwargs
+        assert kwargs["ca_cert_path"] == "/lab/root-ca.pem"
         assert result.ready is False
         assert (result.phase, result.category) == ("transport", "tls_handshake")
         assert result.curl_exit == 35
@@ -380,6 +382,7 @@ class TestProbeIndexerApi:
             url="https://localhost:9200/",
             username="admin",
             password="indexer-secret",
+            ca_cert_path="/lab/root-ca.pem",
         )
         return result, request
 
@@ -434,10 +437,14 @@ class TestProbeIndexerApi:
             url="https://localhost:9200",
             username="admin",
             password="super-secret-password",
+            ca_cert_path="/lab/root-ca.pem",
         )
 
         assert result.ready is True
         joined = " ".join(" ".join(cmd) for cmd in argv)
+        # SEC-009: each request verifies against the lab Wazuh CA.
+        assert all("-k" not in cmd and "--insecure" not in cmd for cmd in argv)
+        assert all(cmd[cmd.index("--cacert") + 1] == "/lab/root-ca.pem" for cmd in argv)
         assert "admin" not in joined
         assert "super-secret-password" not in joined
 
@@ -468,6 +475,7 @@ class TestManagerApiWarmUpIsQuiet:
                 url="https://localhost:55000",
                 username="api-user",
                 password="api-password",
+                ca_cert_path="/lab/root-ca.pem",
             )
 
         assert probe.ready is False
@@ -525,12 +533,12 @@ class TestSSHConnection:
     def test_returns_true_when_a_forced_command_denies_the_session(self, mocker):
         """Reachability is proven by authentication, not by getting a shell.
 
-        Kali's sshd runs the capture wrapper as its `ForceCommand`: a session
-        without a control-plane-issued capture capability is denied with exit
-        70, because an authenticated participant must never receive an
-        unrecorded shell. The probe ran a bare `echo`, so it was denied on every
-        boot and the lab was reported `degraded_unusable` while SSH was in fact
-        up and authenticating.
+        The Kali capture sidecar's sshd runs `broker.py` as its `ForceCommand`.
+        The broker refuses a session that has no active capture authority and
+        exits 1, because an authenticated participant must never receive an
+        unrecorded shell. The probe runs a bare `echo`, so a probe that required
+        exit 0 reported the lab `degraded_unusable` while SSH was up and
+        authenticating.
 
         A remote exit status only exists because ssh connected and authenticated
         first. Only ssh's own 255 means the transport or the key failed.
@@ -540,9 +548,9 @@ class TestSSHConnection:
         mocker.patch(
             "aptl.core.services.subprocess.run",
             return_value=MagicMock(
-                returncode=70,
+                returncode=1,
                 stdout="",
-                stderr="[aptl-wrap-shell] capture capability missing; access denied",
+                stderr="ValueError: capture session admission is closed",
             ),
         )
 

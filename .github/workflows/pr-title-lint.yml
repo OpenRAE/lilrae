@@ -22,24 +22,33 @@ name: PR Title Lint
 # Running is not blocking. This workflow reports a check; whether the check is
 # required to merge is live branch-protection configuration.
 # `.github/branch-protection-baseline.json` records `PR title lint` as required
-# on both branches, but that checked-in intent does not enforce the live rules.
+# on each protected branch, but that checked-in intent does not enforce the live rules.
 #
 # The PR title is untrusted event data, read from $GITHUB_EVENT_PATH by the
 # checker (never shell-interpolated), the token is read-only, and this uses
 # `pull_request` (never `pull_request_target`). Actions are pinned to commit SHAs.
+#
+# The dev merge queue (ADR-068) requires this context on each merge group. A
+# merge_group event carries no pull request, so the checker gets the pull
+# request number from the queue ref and reads the current title from the API.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
     branches:
       - main
       - dev
+      - go-cutover
+  merge_group:
+    types: [checks_requested]
+    branches: [dev]
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: pr-title-lint-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: pr-title-lint-${{ github.event.pull_request.number || github.event.merge_group.head_ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   title-guard:
@@ -53,13 +62,17 @@ jobs:
       # by the test suite in checks.yml.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Validate PR title
         # The checker reads the title from $GITHUB_EVENT_PATH (set automatically
         # by the runner). It is stdlib-only, so no dependency install is needed.
+        # On a merge group it reads the title with the read-only job token.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ ! -f tools/check_pr_title.py ]; then
             echo "::notice::tools/check_pr_title.py is not on the base ref yet; skipping (bootstrap for the PR that introduces the guard). Enforcement is active for every subsequent PR."

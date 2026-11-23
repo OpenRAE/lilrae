@@ -1,5 +1,13 @@
 # Issue #1193: Base Container Terminology Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-1193-base-container-terminology-preflight.md).
+Its last recorded file change before this rewrite was `377769710e05`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 Issue #1193 is the contract for this terminology change. This note fixes the
 concept boundary and compatibility guardrails before implementation. ADR-048
 and ADR-051 already own the realization architecture; this issue does not make

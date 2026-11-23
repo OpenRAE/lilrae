@@ -35,6 +35,10 @@ def _parse_labels(labels_str: str) -> dict[str, str]:
     for pair in labels_str.split(","):
         if "=" in pair:
             key, value = pair.split("=", 1)
+            # Compose hashes the complete service environment. Publishing this
+            # fingerprint would let an archived snapshot confirm secret guesses.
+            if key.strip() == "com.docker.compose.config-hash":
+                continue
             out[key.strip()] = value.strip()
     return out
 

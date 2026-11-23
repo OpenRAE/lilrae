@@ -136,9 +136,13 @@ class ServiceConfig(BaseModel):
 
     @classmethod
     def from_env(cls) -> "ServiceConfig":
-        api_key = os.environ.get("MISP_API_KEY")
+        api_key = os.environ.get("MISP_API_KEY") or _key_file_value(
+            os.environ.get("MISP_API_KEY_FILE", "")
+        )
         if api_key is None or not api_key.strip():
-            raise ValueError("MISP_API_KEY environment variable is required")
+            raise ValueError(
+                "MISP_API_KEY or a readable MISP_API_KEY_FILE is required"
+            )
 
         ca_cert_raw = os.environ.get("MISP_CA_CERT_PATH", "").strip()
         ca_cert = Path(ca_cert_raw) if ca_cert_raw else None
@@ -172,3 +176,14 @@ class ServiceConfig(BaseModel):
             ),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
         )
+
+
+def _key_file_value(path: str) -> str | None:
+    """Read the API key the backend wrote for this agent, if it wrote one."""
+
+    if not path.strip():
+        return None
+    try:
+        return Path(path).read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None

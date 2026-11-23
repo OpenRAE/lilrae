@@ -1,5 +1,13 @@
 # Issue #905 Lab Lifecycle Robustness Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-905-lab-lifecycle-robustness-preflight.md).
+Its last recorded file change before this rewrite was `322735d9b006`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes the architecture boundary for interrupted and overlapping lab
 lifecycle operations. It is guidance, not an implementation plan. No new ADR
 is needed: ADR-045 already defines the lifecycle owner and ADR-046 already
@@ -24,6 +32,10 @@ the non-volume reset, while `aptl lab stop -v` and `aptl lab start --clean`
 remain the explicit destructive volume-reset surfaces. Persistent project
 volumes alone are valid state for a stopped range and must not block normal
 start.
+
+Failed-start recovery is narrowed by the
+[issue #952 preflight](issue-952-start-failure-recovery-preflight.md), including
+the opt-in teardown, volume-retention, and recovery-target guardrails.
 
 Acquire the single project lifecycle mutation lock before `.env` hydration or
 any other project-state or Docker mutation. Hold it through authoritative RAES
@@ -75,7 +87,7 @@ cancellation, result retrieval, and API semantics and is outside this issue.
 | Results and errors | Keep `LabResult`, `StartupOutcome`, and `StartupDiagnostic` as the canonical core envelope, with existing CLI rendering and `LabActionResponse` projection. Busy, pre-existing, observation-failed, and cleanup-incomplete states need stable bounded diagnostics; they do not require a duplicate DTO or public exception hierarchy. Raw commands, Docker stderr, environment, credentials, host paths, or tracebacks must not cross the CLI/API/log envelope. |
 | Authentication and web/API | The existing `verify_token`, BFF Host/CSRF/session gates, strict response model, loopback defaults, and web single-flight UI remain authoritative. An API `asyncio.wait_for()` timeout does not cancel its worker thread; the worker retains the lifecycle owner until it actually exits, and the response must continue to describe the outcome as unknown rather than success or cleanup authority. |
 | Logging and observability | Use `get_logger()`, redaction, existing progress callbacks, and bounded structured fields. Record lifecycle stage, owner-busy versus residue-present classification, duration, resource counts, and cleanup verification. Do not log secret-bearing config, commands, raw backend output, process argv, or a PID as an authority token. No new OTel or persistence schema is needed. |
-| Workflow and verification | Python changes require focused pytest coverage, `pytest`, the Ruff complexity gate, `pre-commit run --all-files`, and CI/Sonar checks from `.ground-control.yaml`. Changes to Compose, Dockerfiles, or `config/` also require the clean-lab gate on a fresh machine; the architecture does not require those artifact changes. |
+| Workflow and verification | Python changes require focused pytest coverage via `tools/run-targeted-tests.sh` and staged `pre-commit run`, per `.ground-control.yaml` and `.gc/plan-rules.md`. Full suites, whole-tree checks, complexity, and CI/Sonar qualification belong to CI/CD. Changes to Compose, Dockerfiles, or `config/` also require CI's clean-lab gate on a fresh machine; the architecture does not require those artifact changes. |
 
 ## Security And Host-Layer Guardrails
 

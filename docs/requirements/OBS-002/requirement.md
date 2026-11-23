@@ -11,6 +11,13 @@ updated_at: 2026-07-20T05:59:40.442552Z
 
 # OBS-002: Experiment Correlation Identity and Clock Context
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/OBS-002/requirement.md).
+
+
 ## Statement
 
 APTL shall assign and preserve stable experiment-spec, task, condition, planned-trial, attempt/run, participant episode, action, capture, and evidence identifiers across its control, observability, and archive surfaces. It shall record clock sources, synchronization status, offset/uncertainty, and timestamp domains for each evidence source. Correlation metadata may be propagated into range components only through supported non-secret channels and with observer effects disclosed; causal links shall be based on explicit identifiers or declared evidence rules rather than timestamp proximity alone.

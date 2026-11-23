@@ -77,7 +77,6 @@ updates:
       - "/containers/misp-suricata-sync"
       - "/containers/network-boundary-helper"
       - "/containers/operator-access-proxy"
-      - "/containers/reverse"
       - "/containers/suricata-wazuh-agent"
       - "/web"
     target-branch: "dev"
@@ -86,6 +85,11 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "build"
+    ignore:
+      # APTL and RAES require Python >=3.14,<3.15. A Python minor bump breaks
+      # the image build (PR #1623). Digest refreshes within 3.14 still arrive.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor"]
     groups:
       container-base-images:
         patterns:
@@ -105,6 +109,24 @@ updates:
     ignore:
       - dependency-name: "node"
         update-types: ["version-update:semver-major"]
+      # APTL and RAES require Python >=3.14,<3.15 in the npm-cache-input stage.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor"]
+
+  # Temporary milestone-44 policy (#1593). Go port 31 (#1582) replaces this
+  # cutover target with the normal Go update policy before deleting the branch.
+  - package-ecosystem: "gomod"
+    directories:
+      - "/"
+      - "/tools"
+      - "/tools/lint"
+      - "/tools/gates"
+    target-branch: "go-cutover"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
 
   # The web image builds Caddy from source so that it can take Go and
   # golang.org/x/net security fixes before the upstream Caddy image does. This

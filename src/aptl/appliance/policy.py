@@ -11,15 +11,15 @@ from aptl.core.appliance_boundary import ApplianceBoundaryPolicy
 
 
 def full_techvault_boundary_policy() -> ApplianceBoundaryPolicy:
-    """Return the signed VM-only contract without repurposing scenario resources."""
+    """Return the signed protected-seat contract without scenario topology."""
 
     return ApplianceBoundaryPolicy.model_validate(
         {
-            "schema_version": "aptl.appliance-boundary/v2",
+            "schema_version": "aptl.appliance-boundary/v3",
             "policy_id": "techvault-full",
-            "generation": 3,
+            "generation": 4,
             "workbench_policy_version": "participant-workbench-profile/v1",
-            "default_deny": False,
+            "default_deny": True,
             "guest_publications": [
                 {
                     "audience": "participant",
@@ -29,11 +29,47 @@ def full_techvault_boundary_policy() -> ApplianceBoundaryPolicy:
                 },
             ],
             "docker_authority": {
-                "allowed_holder_labels": [
-                    "aptl.node.address=provision.node.shuffle-orborus",
-                ],
+                "allowed_holder_labels": [],
                 "require_guest_daemon": True,
             },
+            "protected_components": [
+                {
+                    "component_class": "management-control",
+                    "probe_identity": "seat-management-control",
+                    "protocol": "tcp",
+                    "port": 43101,
+                    "purpose": "seat management and control boundary",
+                },
+                {
+                    "component_class": "evidence-capture",
+                    "probe_identity": "seat-evidence-capture",
+                    "protocol": "tcp",
+                    "port": 43102,
+                    "purpose": "evidence capture authority boundary",
+                },
+                {
+                    "component_class": "evidence-store",
+                    "probe_identity": "seat-evidence-store",
+                    "protocol": "tcp",
+                    "port": 43103,
+                    "purpose": "evidence storage boundary",
+                },
+                {
+                    "component_class": "docker-authority",
+                    "probe_identity": "seat-docker-authority",
+                    "protocol": "tcp",
+                    "port": 43104,
+                    "purpose": "guest Docker authority boundary",
+                },
+                {
+                    "component_class": "credentials",
+                    "probe_identity": "seat-credentials",
+                    "protocol": "tcp",
+                    "port": 43105,
+                    "purpose": "platform credential boundary",
+                },
+            ],
+            "permitted_host_flows": [],
         }
     )
 

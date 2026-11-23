@@ -1,5 +1,17 @@
 # EXP-008 Portable Research Evidence Bundle Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/exp-008-portable-evidence-bundle-preflight.md).
+Its last recorded file change before this rewrite was `41551db875b1`.
+Current interfaces and successor decisions take precedence for present use.
+
+
+> **Dated preflight record.** Written on 2026-07-28 and kept as written. Since
+> then, #1163 (0ae24994, 2026-09-23) removed `src/aptl/appliance/offline.py`,
+> which it cites.
+
 This note is the architecture preflight for EXP-008 / issue #472. It is
 guidance, not an implementation plan. No new ADR is needed: ADR-029 owns
 secret handling, ADR-044 owns the distinction between RAES contracts and APTL

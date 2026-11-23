@@ -8,10 +8,16 @@ uses ``--random-password`` (target-side generation), never a positional secret.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from aptl.core.deployment import _account_provider as provider
+from aptl.core.deployment._compose_account_realization import (
+    ComposeRealizationAccountMixin,
+)
 from aptl.core.deployment.realization import (
+    DeclaredAccountCredential,
     DeploymentAccountRealization,
     DeploymentNetworkAttachment,
     DeploymentNodeRealization,
@@ -24,6 +30,7 @@ def _node(
     name: str = "scenario.ad",
     service_name: str | None = "ad",
     container_name: str | None = "aptl-ad",
+    account_provider: str = provider.SAMBA_AD,
 ) -> DeploymentNodeRealization:
     return DeploymentNodeRealization(
         address=address,
@@ -32,6 +39,7 @@ def _node(
         container_name=container_name,
         networks=(),
         network_attachments=(),
+        backend_account_provider=account_provider,
     )
 
 
@@ -39,7 +47,7 @@ def _account(
     *,
     address: str = "provision.account-placement.jessica",
     target_address: str = "scenario.node.ad",
-    username: str = "jessica.williams",
+    username: str = "alice.smith",
     groups: tuple[str, ...] = (),
     spn: str = "",
     mail: str = "",
@@ -57,29 +65,34 @@ def _account(
 
 
 class TestProviderBinding:
-    def test_ad_service_binds_to_samba(self):
-        assert provider.resolve_account_provider("ad") == provider.SAMBA_AD
+    def test_samba_and_application_providers_are_known(self):
+        for kind in (provider.SAMBA_AD, *provider.APPLICATION_ACCOUNT_PROVIDERS):
+            assert provider.known_account_provider(kind)
 
-    def test_unknown_service_has_no_provider(self):
-        assert provider.resolve_account_provider("db") is None
+    def test_an_unknown_or_absent_provider_is_not_known(self):
+        assert not provider.known_account_provider("db")
+        assert not provider.known_account_provider("")
+        assert not provider.known_account_provider(None)
 
-    def test_none_service_has_no_provider(self):
-        assert provider.resolve_account_provider(None) is None
-
-    def test_interpret_time_service_set_matches_binding(self):
-        # The interpret-time gate and the realize-time binding must share one
-        # source of truth (ADR-046 §Extensibility): a single code-owned map.
-        assert provider.account_provider_services() == frozenset({"ad"})
+    def test_the_node_name_never_selects_a_provider(self):
+        # ADR-046 §Extensibility and DSL-008: the binding is the implementation
+        # the backend selected, so a node named "ad" with no provider has none.
+        node = _node(address="scenario.node.ad", account_provider="")
+        targets, errors = provider.plan_account_targets(
+            (_account(target_address="scenario.node.ad"),), (node,)
+        )
+        assert targets == []
+        assert [e.reason for e in errors] == ["no-account-provider-for-node"]
 
 
 class TestPlanAccountTargets:
     def test_resolves_target_and_groups_by_container(self):
         node = _node(address="scenario.node.ad")
         accounts = (
-            _account(username="jessica.williams", target_address="scenario.node.ad"),
+            _account(username="alice.smith", target_address="scenario.node.ad"),
             _account(
                 address="provision.account-placement.emily",
-                username="emily.chen",
+                username="bob.jones",
                 target_address="scenario.node.ad",
             ),
         )
@@ -89,8 +102,8 @@ class TestPlanAccountTargets:
         assert targets[0].container_name == "aptl-ad"
         assert targets[0].provider == provider.SAMBA_AD
         assert {a.username for a in targets[0].accounts} == {
-            "jessica.williams",
-            "emily.chen",
+            "alice.smith",
+            "bob.jones",
         }
 
     def test_unresolved_target_node_fails_closed(self):
@@ -101,14 +114,17 @@ class TestPlanAccountTargets:
         assert [e.reason for e in errors] == ["unresolved-target-node"]
         assert errors[0].address == "provision.account-placement.jessica"
 
-    def test_service_without_provider_fails_closed(self):
+    def test_node_without_provider_fails_closed(self):
         node = _node(
-            address="scenario.node.db", service_name="db", container_name="aptl-db"
+            address="scenario.node.db",
+            service_name="db",
+            container_name="aptl-db",
+            account_provider="",
         )
         accounts = (_account(target_address="scenario.node.db"),)
         targets, errors = provider.plan_account_targets(accounts, (node,))
         assert targets == []
-        assert [e.reason for e in errors] == ["no-account-provider-for-service"]
+        assert [e.reason for e in errors] == ["no-account-provider-for-node"]
 
     def test_node_without_container_fails_closed(self):
         node = _node(address="scenario.node.ad", container_name=None)
@@ -159,9 +175,9 @@ class TestPlanAccountTargets:
         [
             {"groups": ("Domain Admins",)},  # AD group names may contain spaces
             {"username": "svc-sql"},
-            {"username": "jessica.williams"},
-            {"mail": "jessica.williams@techvault.local"},
-            {"spn": "MSSQLSvc/db.techvault.local:1433"},
+            {"username": "alice.smith"},
+            {"mail": "alice.smith@range.example"},
+            {"spn": "MSSQLSvc/db.range.example:1433"},
         ],
     )
     def test_accepts_valid_provider_identifiers(self, field_kwargs):
@@ -215,39 +231,89 @@ class TestPlanAccountTargets:
         assert errors == []
         assert len(targets) == 1
 
+    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.SHUFFLE])
+    @pytest.mark.parametrize(
+        "changed",
+        [
+            {"credential": DeclaredAccountCredential("fixture", "different")},
+            {"credential": DeclaredAccountCredential("other-source", "original")},
+            {"credential": None},
+            {"auth_method": "key"},
+            {"password_strength": "weak"},
+        ],
+    )
+    def test_conflicting_duplicate_credentials_block_the_whole_batch(
+        self, kind, changed, mocker
+    ):
+        node = _node(address="scenario.node.ad", account_provider=kind)
+        first = replace(
+            _account(username="dup"),
+            credential=DeclaredAccountCredential("fixture", "original"),
+        )
+        second = replace(first, address="provision.account-placement.dup2", **changed)
+
+        targets, errors = provider.plan_account_targets((first, second), (node,))
+
+        assert targets == []
+        assert [e.reason for e in errors] == ["conflicting-duplicate-account"]
+        backend = ComposeRealizationAccountMixin()
+        mutate = mocker.patch.object(backend, "_realize_targets")
+        result = backend.realize_accounts((first, second), (node,))
+        assert result is not None
+        assert result.success is False
+        mutate.assert_not_called()
+
+    @pytest.mark.parametrize("kind", [provider.SAMBA_AD, provider.SHUFFLE])
+    def test_equivalent_duplicate_credentials_are_accepted(self, kind):
+        node = _node(address="scenario.node.ad", account_provider=kind)
+        first = replace(
+            _account(username="dup"),
+            credential=DeclaredAccountCredential("fixture", "original"),
+        )
+        second = replace(
+            first,
+            address="provision.account-placement.dup2",
+            credential=DeclaredAccountCredential("fixture", "original"),
+        )
+
+        targets, errors = provider.plan_account_targets((first, second), (node,))
+
+        assert errors == []
+        assert len(targets) == 1
+
 
 class TestSambaCommandBuilders:
     def test_user_create_uses_random_password_never_positional_secret(self):
-        cmd = provider.samba_user_create("jessica.williams")
+        cmd = provider.samba_user_create("alice.smith")
         assert cmd == [
             "samba-tool",
             "user",
             "create",
-            "jessica.williams",
+            "alice.smith",
             "--random-password",
         ]
 
     def test_user_create_sets_mail_when_declared(self):
         cmd = provider.samba_user_create(
-            "emily.chen", mail="emily.chen@techvault.local"
+            "bob.jones", mail="bob.jones@range.example"
         )
         assert cmd == [
             "samba-tool",
             "user",
             "create",
-            "emily.chen",
+            "bob.jones",
             "--random-password",
-            "--mail-address=emily.chen@techvault.local",
+            "--mail-address=bob.jones@range.example",
         ]
 
     def test_user_set_mail_updates_existing_without_rename_or_secret(self):
-        cmd = provider.samba_user_set_mail("jessica.williams", "j@techvault.local")
+        cmd = provider.samba_user_set_mail("alice.smith", "a@range.example")
         assert cmd == [
             "samba-tool",
             "user",
             "rename",
-            "jessica.williams",
-            "--mail-address=j@techvault.local",
+            "alice.smith",
+            "--mail-address=a@range.example",
         ]
         # No new username positional and no password token: mail-only update.
         assert all(not t.startswith("--random-password") for t in cmd)
@@ -265,12 +331,12 @@ class TestSambaCommandBuilders:
             "add",
             "Sales",
         ]
-        assert provider.samba_group_addmembers("Sales", "jessica.williams") == [
+        assert provider.samba_group_addmembers("Sales", "alice.smith") == [
             "samba-tool",
             "group",
             "addmembers",
             "Sales",
-            "jessica.williams",
+            "alice.smith",
         ]
         assert provider.samba_group_listmembers("Sales") == [
             "samba-tool",
@@ -335,9 +401,9 @@ class TestSambaCommandBuilders:
         # never reproduces them.
         weak_passwords = {"password123", "Summer2024", "Welcome1!", "SqlService2024!"}
         built = [
-            provider.samba_user_create("jessica.williams", mail="j@x"),
+            provider.samba_user_create("alice.smith", mail="j@x"),
             provider.samba_group_add("Sales"),
-            provider.samba_group_addmembers("Sales", "jessica.williams"),
+            provider.samba_group_addmembers("Sales", "alice.smith"),
             provider.samba_spn_add("MSSQLSvc/db:1433", "svc-sql"),
             provider.samba_user_disable("former.employee"),
         ]
@@ -345,3 +411,37 @@ class TestSambaCommandBuilders:
             for token in cmd:
                 assert token not in weak_passwords
                 assert "--password" not in token
+
+
+class TestApplicationAccountFields:
+    """An application provider realizes enabled principals only (#1273)."""
+
+    def _plan(self, **fields):
+        node = _node(
+            address="provision.node.console",
+            service_name="console",
+            container_name="aptl-console",
+            account_provider=provider.SHUFFLE,
+        )
+        account = DeploymentAccountRealization(
+            address="provision.account.console-admin",
+            target_address="provision.node.console",
+            username="admin@example.test",
+            **fields,
+        )
+        return provider.plan_account_targets((account,), (node,))
+
+    @pytest.mark.parametrize("disabled", [None, False])
+    def test_an_enabled_or_default_principal_is_accepted(self, disabled):
+        targets, errors = self._plan(disabled=disabled)
+        assert errors == []
+        assert targets[0].provider == provider.SHUFFLE
+
+    @pytest.mark.parametrize(
+        "fields",
+        [{"disabled": True}, {"groups": ("admins",)}, {"mail": "a@example.test"}, {"spn": "HTTP/x"}],
+    )
+    def test_an_attribute_the_provider_cannot_apply_is_refused(self, fields):
+        targets, errors = self._plan(**fields)
+        assert targets == []
+        assert [e.reason for e in errors] == ["account-attribute-unsupported"]

@@ -2,7 +2,7 @@
 
 Exercises the lifecycle + terminal-semantics contract with fake collectors and
 a real ``LocalRunStore``: distinct dispositions for success / startup-failure /
-finalization-failure / truncation / accepted-degradation, reverse-order stop,
+finalization-failure / accepted-degradation / complete retention, reverse-order stop,
 content-addressed persistence, RAES evidence records, and the never-empty-on-
 error rule.
 """
@@ -17,7 +17,6 @@ from aptl.core.evidence.outcomes import AcquisitionDisposition, CollectorStatus
 from aptl.core.evidence.protocol import CollectorOutcome, RunScope
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 from aptl.core.runstore import LocalRunStore
@@ -30,7 +29,6 @@ def _binding(
     *,
     requirement_id="req-a",
     registration_id="aptl.collector.a",
-    max_bytes=4096,
     **overrides,
 ) -> CaptureBinding:
     """Build a representative pinned binding for the coordinator tests."""
@@ -55,9 +53,6 @@ def _binding(
         "retention_policy": "retain",
         "loss_disclosure_required": True,
         "visibility_class": CaptureVisibility.EVALUATOR_ONLY,
-        "limits": CaptureLimits(
-            max_bytes=max_bytes, max_artifact_count=10, max_duration_s=60
-        ),
     }
     fields.update(overrides)
     return CaptureBinding(**fields)
@@ -262,6 +257,10 @@ class TestTerminalSemantics:
         with pytest.raises(KeyboardInterrupt):
             _acquire(tmp_path, [first, second], collectors)
         assert ("stop", first.registration_id) in log
+        # Interruption cannot discard the earlier collector's accepted evidence.
+        assert list(
+            (tmp_path / "runs" / "run-1" / "evidence" / "records").glob("*.json")
+        )
         if phase == "stop":
             assert log[-2:] == [
                 ("stop", second.registration_id),
@@ -295,33 +294,26 @@ class TestTerminalSemantics:
         assert result.disposition is AcquisitionDisposition.INCONCLUSIVE
         assert result.reports[0].status is CollectorStatus.SOURCE_UNAVAILABLE
 
-    def test_over_quota_truncation_invalidates_a_required_capture(self, tmp_path):
-        binding = _binding(max_bytes=4)  # smaller than the payload
-        result = _acquire(
-            tmp_path,
-            [binding],
-            {"aptl.collector.a": _FakeCollector("aptl.collector.a")},
-        )
-        assert result.reports[0].status is CollectorStatus.TRUNCATION
+    def test_invalid_content_is_finalization_failure(self, tmp_path):
+        binding = _binding()
+        collector = _FakeCollector("aptl.collector.a", outcome=_ok_outcome(b"{not json"))
+        result = _acquire(tmp_path, [binding], {"aptl.collector.a": collector})
+        assert result.reports[0].status is CollectorStatus.FINALIZATION_FAILURE
         assert result.disposition is AcquisitionDisposition.INVALIDATED
-
-    def test_accepted_degradation_truncation_is_completed_partial(self, tmp_path):
-        binding = _binding(
-            max_bytes=4,
-            accepted_limitation="partial-window",
-            comparability_disclosure_ref="disc:1",
-        )
-        result = _acquire(
-            tmp_path,
-            [binding],
-            {"aptl.collector.a": _FakeCollector("aptl.collector.a")},
-        )
-        assert result.reports[0].status is CollectorStatus.TRUNCATION
-        assert result.disposition is AcquisitionDisposition.COMPLETED_PARTIAL
-        # A truncated structured document cannot be safely redacted. Disclose
-        # the loss, but do not manufacture evidence or retain a raw fragment.
         assert result.records == ()
-        assert result.diagnostics[0].code == "aptl.experiment-capture.truncation"
+
+    def test_accepted_degradation_finalization_failure_is_completed_partial(
+        self, tmp_path
+    ):
+        binding = _binding(
+            accepted_limitation="partial-window", comparability_disclosure_ref="disc:1"
+        )
+        collector = _FakeCollector("aptl.collector.a", outcome=_ok_outcome(b"{not json"))
+        result = _acquire(tmp_path, [binding], {"aptl.collector.a": collector})
+        assert result.reports[0].status is CollectorStatus.FINALIZATION_FAILURE
+        assert result.disposition is AcquisitionDisposition.COMPLETED_PARTIAL
+        # Content that cannot be validated is never retained as a raw fragment.
+        assert result.records == ()
 
 
 class TestReverseOrderStop:
@@ -380,50 +372,53 @@ class TestLimitEnforcement:
         assert result.reports[0].status is CollectorStatus.MID_RUN_LOSS
         assert result.disposition is AcquisitionDisposition.INVALIDATED
 
-    def test_over_artifact_count_is_truncation(self, tmp_path):
-        binding = _binding(
-            limits=CaptureLimits(
-                max_bytes=8192, max_artifact_count=1, max_duration_s=60
-            )
+    def test_many_events_and_large_content_are_retained_completely(self, tmp_path):
+        payload = ("[" + ",".join('{"e":%d}' % i for i in range(200_000)) + "]").encode()
+        outcome = _ok_outcome(payload, count=200_000)
+        store = LocalRunStore(tmp_path / "runs")
+        result = acquire_evidence(
+            bindings=[_binding()],
+            collectors={"aptl.collector.a": _FakeCollector("aptl.collector.a", outcome=outcome)},
+            run_store=store,
+            scope=_SCOPE,
+            clock=_CLOCK,
         )
-        outcome = CollectorOutcome(
-            status=CollectorStatus.OK,
-            started_at="2026-07-20T00:00:00Z",
-            finished_at="2026-07-20T00:00:00Z",
-            chunks=[b'[{"e":1},{"e":2},{"e":3}]'],
-            media_type="application/json",
-            event_count=3,
-        )
-        result = _acquire(
-            tmp_path,
-            [binding],
-            {"aptl.collector.a": _FakeCollector("aptl.collector.a", outcome=outcome)},
-        )
-        assert result.reports[0].status is CollectorStatus.TRUNCATION
-        assert result.disposition is AcquisitionDisposition.INVALIDATED
+        assert result.reports[0].status is CollectorStatus.OK
+        assert result.disposition is AcquisitionDisposition.SEALED_READY
+        stored = store.get_run_path("run-1") / result.refs[0].content_uri
+        assert stored.read_bytes() == payload
 
-    def test_over_duration_is_timeout(self, tmp_path):
-        binding = _binding(
-            limits=CaptureLimits(
-                max_bytes=8192, max_artifact_count=10, max_duration_s=1
-            )
-        )
-        # The outcome's own start/finish span 5s, exceeding the 1s admitted duration.
+    def test_long_collection_window_is_not_a_timeout(self, tmp_path):
         outcome = CollectorOutcome(
             status=CollectorStatus.OK,
             started_at="2026-07-20T00:00:00Z",
-            finished_at="2026-07-20T00:00:05Z",
+            finished_at="2026-07-21T00:00:00Z",
             chunks=[b'{"e": 1}'],
             media_type="application/json",
             event_count=1,
         )
-        result = _acquire(
-            tmp_path,
-            [binding],
-            {"aptl.collector.a": _FakeCollector("aptl.collector.a", outcome=outcome)},
+        collector = _FakeCollector("aptl.collector.a", outcome=outcome)
+        result = _acquire(tmp_path, [_binding()], {"aptl.collector.a": collector})
+        assert result.reports[0].status is CollectorStatus.OK
+        assert result.disposition is AcquisitionDisposition.SEALED_READY
+
+    def test_collectors_receive_the_store_progress_timeout(self, tmp_path):
+        seen = []
+
+        class _Recording(_FakeCollector):
+            def start(self, context):
+                seen.append(context.progress_timeout_seconds)
+                return super().start(context)
+
+        store = LocalRunStore(tmp_path / "runs", progress_timeout_seconds=42.0)
+        acquire_evidence(
+            bindings=[_binding()],
+            collectors={"aptl.collector.a": _Recording("aptl.collector.a")},
+            run_store=store,
+            scope=_SCOPE,
+            clock=_CLOCK,
         )
-        assert result.reports[0].status is CollectorStatus.TIMEOUT
-        assert result.disposition is AcquisitionDisposition.INVALIDATED
+        assert seen == [42.0]
 
 
 class TestBindingKeyIsCaptureSpecScoped:

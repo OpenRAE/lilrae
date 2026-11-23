@@ -1,5 +1,10 @@
 # DSL-005 Assertion Evaluation Preflight
 
+> Source record: The last source change was 2026-07-26. Its status review date is 2026-11-06.
+> The original text below keeps historical proposals, decisions, and evidence.
+> It does not establish current runtime behavior or authorize external publication.
+> See the [current validation reference](techvault-static-validation-gate.md) and [live validation reference](techvault-live-validation-gate.md).
+
 This note is the architecture preflight for issue #434. It is guidance, not an
 implementation plan. The assertion contract is owned by RAES (upstream issue
 Brad-Edwards/aces#657); APTL consumes that contract and evaluates it against a

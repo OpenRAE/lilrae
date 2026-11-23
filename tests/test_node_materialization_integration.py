@@ -83,10 +83,10 @@ def test_realize_node_through_backend_on_real_docker(tmp_path):
         runtime=RuntimeConfiguration(
             packages=[RuntimePackage(manager="apt", name="curl", version="*")],
             local_identity=RuntimeLocalIdentityInventory(
-                groups=[RuntimeLocalGroup(name="techvault", gid=1600)],
+                groups=[RuntimeLocalGroup(name="rangeops", gid=1600)],
                 users=[
                     RuntimeLocalUser(
-                        username="analyst", supplemental_groups=["techvault"]
+                        username="analyst", supplemental_groups=["rangeops"]
                     )
                 ],
             ),
@@ -109,7 +109,7 @@ def test_realize_node_through_backend_on_real_docker(tmp_path):
         )
         assert (
             backend.container_exec(
-                container, ["getent", "group", "techvault"]
+                container, ["getent", "group", "rangeops"]
             ).returncode
             == 0
         )

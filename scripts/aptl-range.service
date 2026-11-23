@@ -6,7 +6,7 @@
 # up. Progress/result: /tmp/provision-range.log (look for RANGE_PROVISION_OK).
 # Re-run manually any time with: sudo systemctl start aptl-range.service
 [Unit]
-Description=APTL Arsenal range provisioning (aptl lab start + env-pack fixups)
+Description=APTL Arsenal range provisioning (lilrae lab start + env-pack fixups)
 Wants=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
@@ -17,6 +17,9 @@ RemainAfterExit=yes
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=/home/ubuntu/aptl3
+# The RDP participant is this same account; lab start publishes its private
+# desktop files and the hostname list (issue #1273).
+Environment=LILRAE_PARTICIPANT_DESKTOP_ACCOUNT=ubuntu
 # Give the full stack (Wazuh/Elasticsearch startup + seed) generous headroom.
 TimeoutStartSec=1800
 ExecStart=/bin/bash /home/ubuntu/aptl3/scripts/provision-range.sh

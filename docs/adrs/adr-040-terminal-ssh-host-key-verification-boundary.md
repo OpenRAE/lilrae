@@ -8,6 +8,14 @@ accepted
 
 2026-06-13
 
+## Reader boundary
+
+This Explanation records design reasons and constraints.
+Dated examples, versions, estimates, and measurements describe their stated revision.
+They do not establish current interface support or installed qualification.
+The [web Reference](../reference/web.md) describes maintained use.
+The record's status and amendments still determine its decision scope.
+
 ## Context
 
 Issue #418 identifies that the operator-facing WebSocket terminal relay opens
@@ -15,9 +23,7 @@ its `asyncssh` client connection with `known_hosts=None`. That disables SSH
 server host-key verification on the connection that carries the operator's
 interactive PTY input.
 
-The relay's attack surface is narrow because the current dial target is
-loopback or lab-local, and the route already gates access with a WebSocket
-Origin allowlist, a container allowlist, and a lab-running check. The boundary
+The original relay dialed loopback or lab-local targets. Its route already required an allowed WebSocket Origin, an allowed container, and a running lab. The boundary
 is still control-plane: if an attacker can impersonate the SSH endpoint the
 relay dials, the relay will stream whatever the operator types.
 
@@ -48,9 +54,7 @@ verification bypass for the interactive operator relay.
 Host-key trust material is generated or learned as lab-start-owned runtime
 state and persisted for the lab identity. The terminal request path consumes a
 known-good `known_hosts` file; it does not create trust material lazily while an
-operator session is being opened. A first-run or clean-state bootstrap may use a
-TOFU-style capture only inside startup/provisioning, but once a key is pinned,
-host-key mismatch is a fail-closed condition for the terminal relay.
+operator session is being opened. First-run provisioning may capture a key through TOFU. After pinning, a key mismatch must refuse terminal access.
 
 Keep SSH materials separate:
 
@@ -64,21 +68,12 @@ Keep SSH materials separate:
 
 Endpoint identity must come from the canonical endpoint boundary. Do not add a
 second terminal-only endpoint schema with container names, users, host ports,
-or host-key file names. The implementation may add a small terminal projection
-over `ENDPOINT_REGISTRY` plus runtime container inventory, but the registry and
-deployment backend remain the source of container/user/reachability facts.
+or host-key file names. A small terminal projection may combine `ENDPOINT_REGISTRY` with runtime inventory. The registry and deployment backend remain the owners of container, user, and reachability facts.
 
-Generated trust artifacts follow ADR-028: place them under an ignored generated
-state root such as `.aptl/`, use containment checks before I/O, write
-atomically, and fail startup if a mandatory bind-mount source cannot be
-materialized. Private server host-key files, if the chosen design persists them
-on the host, are operator secrets for filesystem and archive purposes and must
-use restrictive permissions. Public `known_hosts` lines are not secrets, but
+Generated trust follows ADR-028: ignored state, containment checks, and atomic writes. Failure to materialize a required bind source must stop startup. Persisted private server host keys are operator secrets. Filesystem and archive handling must use restrictive permissions. Public `known_hosts` lines are not secrets, but
 they still belong to generated state rather than checked-in config.
 
-Terminal connection failures caused by missing pins, host-key mismatch, bad
-known-hosts syntax, or SSH authentication errors are reported to the WebSocket
-client through the existing narrow terminal error envelope. Logs may name the
+Missing pins, key mismatches, invalid known-hosts syntax, and SSH authentication failures use the existing narrow WebSocket error envelope. Logs may name the
 container and validation layer, but must not include operator keystrokes,
 private key material, or raw secret-bearing exception payloads.
 
@@ -115,14 +110,9 @@ known-hosts material, but issue #418 is scoped to the operator terminal relay.
 
 The extensibility seam is per-SSH-endpoint trust material rooted under one
 generated state directory and keyed by the canonical endpoint identity
-(`container_name`, SSH user, target host, and target port). Adding another
-interactive terminal target should require extending the canonical endpoint
-metadata and registering or materializing its host-key trust material, not
-editing a second static terminal endpoint map.
+(`container_name`, SSH user, target host, and target port). Another terminal target should extend canonical endpoint metadata and host-key trust. It should not need a second static endpoint map.
 
-If a future deployment provider cannot expose a local file path to
-`known_hosts`, adapt the provider/runtime endpoint projection first so the
-terminal still receives one verified SSH identity contract. Do not bypass host
+A provider without a local known-hosts path first adapts its endpoint projection. The terminal must still receive one verified SSH identity contract. Do not bypass host
 verification because a provider is remote or because containers were rebuilt.
 
 ## Non-Goals

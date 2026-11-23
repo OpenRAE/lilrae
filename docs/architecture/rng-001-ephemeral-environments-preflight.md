@@ -1,5 +1,13 @@
 # RNG-001 Ephemeral Environments Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/rng-001-ephemeral-environments-preflight.md).
+Its last recorded file change before this rewrite was `ced66dcc408b`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note is the architecture preflight for RNG-001 / issue #424. It is
 guidance, not an implementation plan. Existing ADRs remain binding: ADR-013
 and ADR-023 own deployment backends, ADR-025 owns first-party config shape,

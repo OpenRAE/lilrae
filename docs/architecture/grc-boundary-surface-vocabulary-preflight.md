@@ -1,5 +1,13 @@
 # GRC Boundary Surface Vocabulary Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/grc-boundary-surface-vocabulary-preflight.md).
+Its last recorded file change before this rewrite was `103ebfbcb223`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note is the architecture preflight for issue #634. It is guidance, not an
 implementation plan. The issue is a GRC workflow platform metadata fix: APTL's
 declared trust boundaries are valid repository concepts, but their

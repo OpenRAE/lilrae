@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { renderMarkdown } from '$lib/markdown';
+	import { renderMarkdown } from '#lib/markdown.ts';
 
 	interface Props {
 		content: string;

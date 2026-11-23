@@ -1,6 +1,6 @@
 """Host + Docker environment detection.
 
-Cross-platform capability layer for the ``aptl lab`` control plane. aptl runs
+Cross-platform capability layer for the ``lilrae lab`` control plane. lilrae runs
 on Linux, macOS, and Windows, and against either a native Linux Docker engine
 or Docker Desktop. Host-touching steps (kernel checks, file-ownership repair,
 key permissions) must branch on *which* OS and *which* Docker mode they are

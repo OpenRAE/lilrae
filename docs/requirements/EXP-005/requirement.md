@@ -11,6 +11,13 @@ updated_at: 2026-07-27T15:37:03.190777Z
 
 # EXP-005: Safe Experimental Parameter Binding and Provenance
 
+This Reference preserves the recorded requirement contract.
+The front matter states its lifecycle status; this editorial notice does not change that status.
+An ACTIVE contract is not a historical implementation or qualification result.
+The statement, rationale, identifiers, and traceability below keep their recorded meaning.
+The original file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/requirements/EXP-005/requirement.md).
+
+
 ## Statement
 
 APTL shall bind each admitted experimental condition only to explicitly supported parameter surfaces: ACES scenario instantiation parameters, ACES participant-implementation configuration, or allowlisted APTL apparatus configuration. Unknown parameters, cross-plane injection, type mismatches, and attempts to bind secrets as values shall fail admission. Each run shall record the realized non-secret values, source factor and condition, binding target, and configuration digest; secret references shall be recorded by non-sensitive identity only. Prompt or interaction-content capture shall be opt-in through an ACES capture specification and sensitivity policy, not an implicit APTL feature.
@@ -20,6 +27,11 @@ APTL shall bind each admitted experimental condition only to explicitly supporte
 Parameterized experiments are essential, but prompt templating and provider behavior belong to ACES participant implementations. APTL must safely realize declared factors across its backend surfaces and preserve exact, redaction-aware provenance without becoming an agent runtime.
 
 ## Traceability
+
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/lilrae_participant_configuration.py` (Typed OpenCode targets and committed prompt delivery)
+- IMPLEMENTS → CODE_FILE `src/aptl/backends/lilrae_participant_workload.py` (Trial configuration equality before native dispatch)
+- TESTS → TEST `tests/test_lilrae_participant_configuration.py` (Model domain and exact prompt commitment)
+- TESTS → TEST `tests/test_lilrae_participant_workload.py` (Independent prompt variants and fresh trial contexts)
 
 - DOCUMENTS → GITHUB_ISSUE `#441` (EXP-005: Safe experimental parameter binding and provenance)
 - IMPLEMENTS → CODE_FILE `src/aptl/core/experiment/bindings.py` (Canonical experiment parameter binding)

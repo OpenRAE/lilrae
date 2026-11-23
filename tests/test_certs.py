@@ -8,6 +8,8 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
+from aptl.core.helper_images import CERT_GENERATOR_IMAGE, PINNED_HELPER_IMAGES
+
 _COMPOSE_PATH = Path(__file__).resolve().parent.parent / "generate-indexer-certs.yml"
 
 
@@ -31,6 +33,44 @@ def linux_native(mocker):
     mocker.patch("aptl.core.certs.hostenv.needs_host_ownership_fix", return_value=True)
     mocker.patch("aptl.core.certs.os.getuid", return_value=1000)
     mocker.patch("aptl.core.certs.os.getgid", return_value=1000)
+
+
+def _write_leaf_certificates(certs_dir: Path, *, host_facing: bool = True) -> None:
+    """Write indexer and manager certificates, with or without loopback names."""
+
+    import datetime
+    import ipaddress
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import Encoding
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    now = datetime.datetime.now(datetime.UTC)
+    for role in ("indexer", "manager"):
+        names: list[x509.GeneralName] = [x509.DNSName(f"wazuh.{role}")]
+        if host_facing:
+            names += [
+                x509.DNSName("localhost"),
+                x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
+            ]
+        subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"wazuh.{role}")])
+        certificate = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(subject)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now)
+            .not_valid_after(now + datetime.timedelta(days=1))
+            .add_extension(x509.SubjectAlternativeName(names), critical=False)
+            .sign(key, hashes.SHA256())
+        )
+        (certs_dir / f"wazuh.{role}.pem").write_bytes(
+            certificate.public_bytes(Encoding.PEM)
+        )
 
 
 def _successful_generator(mocker, certs_dir):
@@ -79,6 +119,7 @@ class TestEnsureSSLCerts:
         certs_dir = tmp_path / "config" / "wazuh_indexer_ssl_certs"
         certs_dir.mkdir(parents=True)
         (certs_dir / "root-ca.pem").write_text("fake-cert")
+        _write_leaf_certificates(certs_dir)
 
         mock_run = mocker.patch("aptl.core.certs.subprocess.run")
 
@@ -143,6 +184,55 @@ class TestEnsureSSLCerts:
         ]
         subprocess_run.assert_not_called()
 
+    def test_generator_tag_is_pointed_at_its_pin_before_it_runs(self, tmp_path, mocker):
+        """The generator runs only after its tag names the pinned digest."""
+        from aptl.core.certs import ensure_ssl_certs
+
+        certs_dir = tmp_path / "config" / "wazuh_indexer_ssl_certs"
+        generator = _successful_generator(mocker, certs_dir)
+        pulled = []
+
+        def pull_images(images):
+            generator.assert_not_called()
+            pulled.append(images)
+            return []
+
+        result = ensure_ssl_certs(tmp_path, pull_images=pull_images)
+
+        assert result.success is True
+        assert pulled == [[PINNED_HELPER_IMAGES[CERT_GENERATOR_IMAGE]]]
+        assert generator.called
+
+    def test_unavailable_pinned_generator_image_is_fail_closed(self, tmp_path, mocker):
+        """A failed pinned pull never lets Compose pull the mutable tag."""
+        from aptl.core.certs import ensure_ssl_certs
+
+        mock_run = mocker.patch("aptl.core.certs.subprocess.run")
+        warning = "Failed to pull wazuh/wazuh-certs-generator: 429"
+
+        result = ensure_ssl_certs(tmp_path, pull_images=lambda _images: [warning])
+
+        assert result.success is False
+        assert result.error == (
+            f"Pinned certificate generator image is unavailable: {warning}"
+        )
+        mock_run.assert_not_called()
+
+    def test_existing_certs_need_no_generator_image(self, tmp_path):
+        """Existing certificates need no generator, so nothing is pulled."""
+        from aptl.core.certs import ensure_ssl_certs
+
+        certs_dir = tmp_path / "config" / "wazuh_indexer_ssl_certs"
+        certs_dir.mkdir(parents=True)
+        (certs_dir / "root-ca.pem").write_text("fake-cert")
+        _write_leaf_certificates(certs_dir)
+        pull_images = MagicMock(return_value=[])
+
+        result = ensure_ssl_certs(tmp_path, pull_images=pull_images)
+
+        assert result.success is True
+        pull_images.assert_not_called()
+
     def test_existing_certs_are_widened_for_non_root_container_mounts(
         self, tmp_path, mocker
     ):
@@ -153,6 +243,7 @@ class TestEnsureSSLCerts:
         certs_dir.mkdir(parents=True)
         root_ca = certs_dir / "root-ca.pem"
         root_ca.write_text("fake-cert")
+        _write_leaf_certificates(certs_dir)
         dashboard_key = certs_dir / "wazuh.dashboard-key.pem"
         dashboard_key.write_text("fake-key")
         root_ca.chmod(0o600)
@@ -169,6 +260,31 @@ class TestEnsureSSLCerts:
         _assert_posix_mode(dashboard_key, 0o644)
         _assert_posix_mode(certs_dir / "root-ca-manager.pem", 0o644)
         mock_run.assert_not_called()
+
+    def test_certificates_without_loopback_names_are_regenerated(
+        self, tmp_path, mocker
+    ):
+        """A certificate from before #1767 cannot serve host-run clients."""
+        from aptl.core.certs import ensure_ssl_certs
+
+        certs_dir = tmp_path / "config" / "wazuh_indexer_ssl_certs"
+        certs_dir.mkdir(parents=True)
+        (certs_dir / "root-ca.pem").write_text("fake-cert")
+        _write_leaf_certificates(certs_dir, host_facing=False)
+        mock_run = _successful_generator(mocker, certs_dir)
+
+        result = ensure_ssl_certs(tmp_path)
+
+        assert result.success is True
+        assert result.generated is True
+        mock_run.assert_called()
+
+    def test_wazuh_root_ca_is_the_generated_ca(self, tmp_path):
+        from aptl.core.certs import wazuh_root_ca
+
+        assert wazuh_root_ca(tmp_path) == (
+            tmp_path / "config" / "wazuh_indexer_ssl_certs" / "root-ca.pem"
+        )
 
     def test_linux_native_generator_runs_as_host_user(
         self, tmp_path, mocker, linux_native
@@ -428,6 +544,7 @@ class TestEnsureSSLCerts:
         (certs_dir / "root-ca.pem").write_text("new-cert")
         (certs_dir / "root-ca-manager.pem").write_text("existing-cert")
         (certs_dir / "root-ca-manager.pem").chmod(0o400)
+        _write_leaf_certificates(certs_dir)
         mock_run = mocker.patch("aptl.core.certs.subprocess.run")
 
         result = ensure_ssl_certs(tmp_path)
@@ -496,7 +613,7 @@ class TestEnsureSSLCerts:
         assert mock_run.call_args_list[1][0][0][-2:] == ["down", "--remove-orphans"]
 
     def test_cleanup_failure_blocks_start(self, tmp_path, mocker):
-        """A leftover generator network would overlap TechVault and must fail."""
+        """A leftover generator network would overlap the range and must fail."""
         from aptl.core.certs import ensure_ssl_certs
 
         (tmp_path / "config").mkdir()
@@ -558,6 +675,7 @@ class TestEnsureSSLCerts:
         certs_dir = tmp_path / "config" / "wazuh_indexer_ssl_certs"
         certs_dir.mkdir(parents=True)
         (certs_dir / "root-ca.pem").write_text("fake-cert")
+        _write_leaf_certificates(certs_dir)
 
         result = ensure_ssl_certs(tmp_path)
 
@@ -601,7 +719,7 @@ class TestCertGeneratorComposeFile:
         compose = yaml.safe_load(_COMPOSE_PATH.read_text())
         generator = compose["services"]["generator"]
 
-        assert generator["image"] == "wazuh/wazuh-certs-generator:0.0.2"
+        assert generator["image"] == CERT_GENERATOR_IMAGE
         assert generator["working_dir"] == "/tmp"
         assert "entrypoint" in generator
 
@@ -609,3 +727,27 @@ class TestCertGeneratorComposeFile:
         script = entrypoint[-1] if isinstance(entrypoint, list) else entrypoint
         assert "wazuh-certs-tool.sh" in script
         assert "chown" not in script
+
+
+class TestHostFacingCertificateContract:
+    """Host-run clients verify the indexer and the manager API (#1767)."""
+
+    def test_generator_names_the_loopback_hosts_for_indexer_and_manager(self):
+        compose = yaml.safe_load(_COMPOSE_PATH.read_text(encoding="utf-8"))
+        script = compose["services"]["generator"]["entrypoint"][-1]
+
+        assert 'if [ "$${role}" != dashboard ]; then' in script
+        assert 'host_names=",DNS:localhost,IP:127.0.0.1"' in script
+        assert "DNS:aptl-wazuh-%s%s" in script
+
+    def test_manager_api_serves_the_generated_manager_certificate(self):
+        root = Path(__file__).resolve().parent.parent
+        compose = yaml.safe_load(
+            (root / "docker-compose.yml").read_text(encoding="utf-8")
+        )
+        volumes = compose["services"]["wazuh.manager"]["volumes"]
+        source = "./config/wazuh_indexer_ssl_certs/"
+        target = "/wazuh-config-mount/api/configuration/ssl/"
+
+        assert f"{source}wazuh.manager.pem:{target}server.crt:ro" in volumes
+        assert f"{source}wazuh.manager-key.pem:{target}server.key:ro" in volumes

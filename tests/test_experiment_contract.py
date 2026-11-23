@@ -160,6 +160,14 @@ def _condition_spec_payload() -> dict:
                 "replication_policy": "independent-replications",
             },
         },
+        # raes 9 requires every assigned factor level to be declared.
+        "factors": {
+            "danger": {
+                "name": "danger",
+                "factor_kind": "treatment",
+                "levels": ["high", "low"],
+            }
+        },
     }
 
 

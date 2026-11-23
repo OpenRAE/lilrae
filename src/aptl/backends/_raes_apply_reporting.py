@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from raes_contracts.realization_structure import validate_realization_value
-from raes_contracts.runtime_state import RuntimeSnapshot
+from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
+from raes_runtime.backend_account_credentials import plan_has_account_credentials
 
 from aptl.backends.raes_artifact_mechanisms import SOURCE_ARTIFACT_REQUIREMENT_KIND
 from aptl.backends.raes_artifact_satisfaction import satisfactions_for_plan
@@ -23,7 +24,20 @@ if TYPE_CHECKING:
     from aptl.core.deployment.observation import DeploymentObservationContext
     from aptl.core.deployment.realization import DeploymentRealizationSpec
 
-_MAX_APPLY_DETAILS_BYTES = 65_536
+def source_image_evidence(details: dict[str, object]) -> dict[str, object]:
+    """Extract the small backend projection from full or compact apply details."""
+
+    compact = details.get("source_image_evidence")
+    if isinstance(compact, dict):
+        return dict(compact)
+    observations = details.get("observation_evidence")
+    if not isinstance(observations, dict):
+        return {}
+    return {
+        address: record["source_image"]
+        for address, record in observations.items()
+        if isinstance(record, dict) and "source_image" in record
+    }
 
 
 def _compact_realization_details(realization: AptlRealization) -> dict[str, object]:
@@ -62,23 +76,26 @@ def _compact_realization_details(realization: AptlRealization) -> dict[str, obje
     }
 
 
-def bounded_apply_details(
+def conformant_apply_details(
     details: dict[str, object], realization: AptlRealization
 ) -> dict[str, object]:
-    """Keep RAES ApplyResult details finite without losing observer additions."""
+    """Keep RAES ApplyResult details conformant without losing observer additions.
+
+    Details that are not JSON or not a conformant realization value point to
+    the runtime snapshot, which keeps the full observation evidence.
+    """
 
     try:
-        serialized_size = len(json.dumps(details, allow_nan=False).encode("utf-8"))
+        json.dumps(details, allow_nan=False)
+        conformant = validate_realization_value(details).conformant
     except (TypeError, ValueError):
-        serialized_size = _MAX_APPLY_DETAILS_BYTES + 1
-    if (
-        serialized_size <= _MAX_APPLY_DETAILS_BYTES
-        and validate_realization_value(details).conformant
-    ):
+        conformant = False
+    if conformant:
         return details
     compact = {**details, "realization": _compact_realization_details(realization)}
     evidence = compact.get("observation_evidence")
     if isinstance(evidence, dict):
+        compact["source_image_evidence"] = source_image_evidence(details)
         compact["observation_evidence"] = {
             "projection": "runtime-snapshot",
             "record_count": len(evidence),
@@ -166,7 +183,24 @@ def with_artifact_satisfactions(
 
 
 __all__ = (
-    "bounded_apply_details",
+    "conformant_apply_details",
     "capture_apparatus_observations",
     "with_artifact_satisfactions",
 )
+
+
+def closed_credential_result(
+    plan: ProvisioningPlan, result: ApplyResult
+) -> ApplyResult:
+    """Return no free-form details for a plan that carries account credentials.
+
+    RAES refuses any backend details from a credential-bearing apply, because
+    details are an open carrier a credential could leave through. Realized
+    evidence still travels in the snapshot entries and realization
+    observations, and APTL keeps the source-image evidence it read from the
+    details before they are closed.
+    """
+
+    if not plan_has_account_credentials(plan):
+        return result
+    return replace(result, details={})

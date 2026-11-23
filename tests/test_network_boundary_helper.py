@@ -1,6 +1,9 @@
 """Pure rendering checks for the authority-separated nftables helper."""
 
+import hashlib
 import importlib.util
+import json
+import ipaddress
 from pathlib import Path
 
 import pytest
@@ -27,6 +30,8 @@ def _network(name: str, bridge: str, cidr: str) -> dict[str, object]:
         "bridge": bridge,
         "ipv4_cidr": cidr,
         "ipv6_cidr": None,
+        "ipv4_gateway": str(ipaddress.ip_network(cidr)[1]),
+        "ipv6_gateway": None,
         "labels": [],
     }
 
@@ -126,6 +131,155 @@ def _platform_policy() -> dict[str, object]:
     }
 
 
+def _seat_protection_policy() -> dict[str, object]:
+    return {
+        "authority": "seat-protection",
+        "owner": "seat-17",
+        "policy_digest": "sha256:" + "b" * 64,
+        "networks": [
+            _network("orchard", "br-orchard", "10.44.1.0/24"),
+            {
+                **_network("quartz", "br-quartz", "10.44.2.0/24"),
+                "ipv6_cidr": "2001:db8:44::/64",
+                "ipv6_gateway": "2001:db8:44::1",
+            },
+        ],
+        "protected_components": [
+            {
+                "component_class": component_class,
+                "probe_identity": "seat-" + component_class,
+                "protocol": "tcp",
+                "port": 43101 + index,
+                "purpose": component_class + " boundary",
+            }
+            for index, component_class in enumerate(
+                (
+                    "management-control",
+                    "evidence-capture",
+                    "evidence-store",
+                    "docker-authority",
+                    "credentials",
+                )
+            )
+        ],
+        "permitted_flows": [
+            {
+                "source": "ordinary-range-workload",
+                "destination": "management-control",
+                "protocol": "tcp",
+                "ports": [8443],
+                "purpose": "reviewed management callback",
+                "probe_identity": "reviewed-management-callback",
+            }
+        ],
+        "default_deny": True,
+    }
+
+
+def _seat_observation(helper, family: str) -> dict[str, object]:
+    ingress_key = "ibrname" if family == "bridge" else "iifname"
+    table = helper._table_name("seat-17", "seat-protection")
+    rules: list[dict[str, object]] = []
+    network_gateways = {
+        "br-orchard": (("ip", "10.44.1.1"),),
+        "br-quartz": (("ip", "10.44.2.1"), ("ip6", "2001:db8:44::1")),
+    }
+
+    def interface_match(bridge: str) -> dict[str, object]:
+        return {
+            "match": {
+                "op": "==",
+                "left": {"meta": {"key": ingress_key}},
+                "right": bridge,
+            }
+        }
+
+    def add_rule(identity: str, expressions: list[dict[str, object]]) -> None:
+        rules.append(
+            {
+                "rule": {
+                    "family": family,
+                    "table": table,
+                    "chain": "host_input",
+                    "expr": expressions,
+                    "comment": helper._rule_marker(identity),
+                }
+            }
+        )
+
+    for bridge in network_gateways:
+        add_rule(
+            f"seat-protection/reply/{bridge}",
+            [
+                interface_match(bridge),
+                # nft lists conntrack state flags as an array, not as a set.
+                {
+                    "match": {
+                        "op": "in",
+                        "left": {"ct": {"key": "state"}},
+                        "right": ["established", "related"],
+                    }
+                },
+                {"accept": None},
+            ],
+        )
+    for bridge, gateways in network_gateways.items():
+        for address_family, gateway in gateways:
+            add_rule(
+                "seat-protection/reviewed-management-callback/"
+                f"{bridge}/{address_family}",
+                [
+                    interface_match(bridge),
+                    {
+                        "match": {
+                            "op": "==",
+                            "left": {
+                                "payload": {
+                                    "protocol": address_family,
+                                    "field": "daddr",
+                                }
+                            },
+                            "right": gateway,
+                        }
+                    },
+                    {
+                        "match": {
+                            "op": "==",
+                            "left": {
+                                "payload": {
+                                    "protocol": "tcp",
+                                    "field": "dport",
+                                }
+                            },
+                            "right": 8443,
+                        }
+                    },
+                    {"accept": None},
+                ],
+            )
+    for bridge in network_gateways:
+        add_rule(
+            f"seat-protection/default/{bridge}",
+            [interface_match(bridge), {"drop": None}],
+        )
+    return {
+        "nftables": [
+            {
+                "chain": {
+                    "family": family,
+                    "table": table,
+                    "name": "host_input",
+                    "type": "filter",
+                    "hook": "input",
+                    "prio": -300,
+                    "policy": "accept",
+                }
+            },
+            *rules,
+        ]
+    }
+
+
 def test_raes_rules_remain_owner_anchored_and_separate(helper) -> None:
     rendered = helper.render_ruleset(_raes_policy(), existing_families=())
 
@@ -160,6 +314,77 @@ def test_platform_floor_covers_forward_and_guest_host_paths(helper) -> None:
         "192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, "
         "224.0.0.0/4, 240.0.0.0/4 } drop"
     ) in rendered
+
+
+def test_seat_protection_filters_only_guest_input_for_every_range_bridge(
+    helper,
+) -> None:
+    rendered = helper.render_ruleset(_seat_protection_policy(), existing_families=())
+
+    assert "authority=seat-protection" in rendered
+    assert "hook input priority -300" in rendered
+    assert "hook forward" not in rendered
+    assert "hook output" not in rendered
+    assert "oifname" not in rendered
+    assert "obrname" not in rendered
+    assert "ct state established,related accept" in rendered
+    assert "tcp dport 8443 accept" in rendered
+    assert "ip daddr 10.44.1.1 tcp dport 8443 accept" in rendered
+    assert "ip6 daddr 2001:db8:44::1 tcp dport 8443 accept" in rendered
+    for bridge in ("br-orchard", "br-quartz"):
+        assert f'iifname "{bridge}" drop comment' in rendered
+        assert f'ibrname "{bridge}" drop comment' in rendered
+
+
+def test_seat_protection_payload_is_closed_and_complete(helper) -> None:
+    policy = _seat_protection_policy()
+    policy["forward"] = True
+    with pytest.raises(ValueError, match="fields"):
+        helper.validate_policy(policy)
+
+    policy = _seat_protection_policy()
+    policy["protected_components"] = policy["protected_components"][:-1]
+    with pytest.raises(ValueError, match="component classes"):
+        helper.validate_policy(policy)
+
+    policy = _seat_protection_policy()
+    policy["networks"] = []
+    with pytest.raises(ValueError, match="network"):
+        helper.validate_policy(policy)
+
+    policy = _seat_protection_policy()
+    policy["networks"][0]["ipv4_gateway"] = None
+    with pytest.raises(ValueError, match="gateway"):
+        helper.validate_policy(policy)
+
+    policy = _seat_protection_policy()
+    policy["permitted_flows"][0]["ports"] = [8444, 8443]
+    with pytest.raises(ValueError, match="semantics"):
+        helper.validate_policy(policy)
+
+
+@pytest.mark.parametrize("family", ["inet", "bridge"])
+def test_seat_protection_readback_verifies_rule_expressions(
+    helper, monkeypatch, family: str
+) -> None:
+    observed = _seat_observation(helper, family)
+    monkeypatch.setattr(helper, "_table_payload", lambda *_: observed)
+
+    assert helper._verify_observed_family(_seat_protection_policy(), family)
+
+    default_rule = observed["nftables"][-1]["rule"]
+    default_rule["expr"][-1] = {"accept": None}
+
+    assert not helper._verify_observed_family(_seat_protection_policy(), family)
+
+    reordered = _seat_observation(helper, family)
+    reordered["nftables"][1], reordered["nftables"][-1] = (
+        reordered["nftables"][-1],
+        reordered["nftables"][1],
+    )
+    monkeypatch.setattr(helper, "_table_payload", lambda *_: reordered)
+
+    assert not helper._verify_observed_family(_seat_protection_policy(), family)
 
 
 def test_platform_bootstrap_is_deny_only_before_anchors_exist(helper) -> None:
@@ -301,3 +526,247 @@ def test_ruleset_replacement_is_one_atomic_native_transaction(helper) -> None:
     assert "\ndelete table bridge " in rendered
     assert rendered.count("table inet ") == 2
     assert rendered.count("table bridge ") == 2
+
+
+def _match(left: dict[str, object], right: object) -> dict[str, object]:
+    return {"match": {"op": "==", "left": left, "right": right}}
+
+
+def _meta(key: str, value: str) -> dict[str, object]:
+    return _match({"meta": {"key": key}}, value)
+
+
+def _ip(field: str, value: object) -> dict[str, object]:
+    return _match({"payload": {"protocol": "ip", "field": field}}, value)
+
+
+def _listing(
+    family: str,
+    table: str,
+    chains: dict[str, tuple[str | None, int | None]],
+    rules: list[tuple[str, str, list[dict[str, object]]]],
+) -> dict[str, object]:
+    """Build the `nft -j list table` shape of one owned table."""
+
+    items: list[dict[str, object]] = []
+    for name, (hook, priority) in chains.items():
+        chain: dict[str, object] = {"family": family, "table": table, "name": name}
+        if hook is not None:
+            chain.update(type="filter", hook=hook, prio=priority, policy="accept")
+        items.append({"chain": chain})
+    for chain_name, comment, expressions in rules:
+        items.append(
+            {
+                "rule": {
+                    "family": family,
+                    "table": table,
+                    "chain": chain_name,
+                    "expr": expressions,
+                    "comment": comment,
+                }
+            }
+        )
+    return {"nftables": items}
+
+
+def _raes_observation(helper) -> dict[str, object]:
+    owner = "provision.node.sentinel"
+    chain = "owner_" + hashlib.sha256(owner.encode()).hexdigest()[:12]
+    return _listing(
+        "inet",
+        helper._table_name("seat-17", "raes"),
+        {chain: (None, None), "forward": ("forward", -200)},
+        [
+            (
+                chain,
+                helper._rule_marker(f"{owner}/allow-web/in"),
+                [
+                    _meta("iifname", "br-orchard"),
+                    _meta("oifname", "br-quartz"),
+                    _ip("saddr", {"prefix": {"addr": "10.44.1.0", "len": 24}}),
+                    _ip("daddr", {"prefix": {"addr": "10.44.2.0", "len": 24}}),
+                    _ip("daddr", "10.44.2.10"),
+                    _match({"payload": {"protocol": "tcp", "field": "dport"}}, 443),
+                    {"return": None},
+                ],
+            ),
+            (chain, helper._rule_marker(f"{owner}/default"), [{"return": None}]),
+            (
+                "forward",
+                helper._rule_marker(f"{owner}/dispatch/in"),
+                [_ip("daddr", "10.44.2.10"), {"jump": {"target": chain}}],
+            ),
+            (
+                "forward",
+                helper._rule_marker(f"{owner}/dispatch/out"),
+                [_ip("saddr", "10.44.2.10"), {"jump": {"target": chain}}],
+            ),
+        ],
+    )
+
+
+def test_raes_readback_rejects_a_changed_rule_with_its_original_comment(
+    helper, monkeypatch
+) -> None:
+    observed = _raes_observation(helper)
+    monkeypatch.setattr(helper, "_table_payload", lambda *_: observed)
+
+    assert helper._verify_observed_family(_raes_policy(), "inet")
+
+    allow_web = next(item["rule"] for item in observed["nftables"] if "rule" in item)
+    allow_web["expr"][5] = _match(
+        {"payload": {"protocol": "tcp", "field": "dport"}}, 22
+    )
+
+    assert not helper._verify_observed_family(_raes_policy(), "inet")
+
+
+def _bootstrap_platform_policy() -> dict[str, object]:
+    policy = _platform_policy()
+    policy.update(bootstrap=True, anchors=[], crossings=[], egress_ports=[])
+    return policy
+
+
+def test_platform_readback_rejects_a_changed_rule_with_its_original_comment(
+    helper, monkeypatch
+) -> None:
+    bridges = ("br-egress", "br-mgmt", "br-part")
+    rules: list[tuple[str, str, list[dict[str, object]]]] = []
+    for bridge in bridges:
+        for direction, key in (("ingress", "iifname"), ("egress", "oifname")):
+            rules.append(
+                (
+                    "forward",
+                    helper._rule_marker(f"platform/default-{direction}/{bridge}"),
+                    [_meta(key, bridge), {"drop": None}],
+                )
+            )
+    for chain, key in (("host_input", "iifname"), ("host_output", "oifname")):
+        for bridge in bridges:
+            rules.append(
+                (
+                    chain,
+                    helper._rule_marker(f"platform/{chain}/{bridge}"),
+                    [_meta(key, bridge), {"drop": None}],
+                )
+            )
+    observed = _listing(
+        "inet",
+        helper._table_name("seat-17", "platform"),
+        {
+            "forward": ("forward", -300),
+            "host_input": ("input", -300),
+            "host_output": ("output", -300),
+        },
+        rules,
+    )
+    monkeypatch.setattr(helper, "_table_payload", lambda *_: observed)
+
+    assert helper._verify_observed_family(_bootstrap_platform_policy(), "inet")
+
+    first_drop = next(item["rule"] for item in observed["nftables"] if "rule" in item)
+    first_drop["expr"][-1] = {"accept": None}
+
+    assert not helper._verify_observed_family(_bootstrap_platform_policy(), "inet")
+
+
+def test_cleanup_fails_when_nft_cannot_list_the_tables(helper, monkeypatch) -> None:
+    def unavailable(*_args, **_kwargs):
+        raise RuntimeError("nft operation failed")
+
+    monkeypatch.setattr(helper, "_nft_json", unavailable)
+    policy = _raes_policy()
+
+    with pytest.raises(RuntimeError):
+        helper._cleanup(policy)
+
+
+def test_cleanup_fails_when_an_owned_table_remains(helper, monkeypatch) -> None:
+    policy = _raes_policy()
+    table = helper._table_name("seat-17", "raes")
+    comment = helper._expected_table_comment(policy)
+    deletions: list[str] = []
+
+    def nft(*args, input_text=None):
+        if args == ("list", "tables"):
+            return {
+                "nftables": [
+                    {"table": {"family": family, "name": table}}
+                    for family in ("bridge", "inet")
+                ]
+            }
+        if args[:2] == ("list", "table"):
+            return {"nftables": [{"table": {"name": table, "comment": comment}}]}
+        deletions.append(input_text)
+        return {}
+
+    monkeypatch.setattr(helper, "_nft_json", nft)
+
+    with pytest.raises(RuntimeError, match="cleanup was not observed"):
+        helper._cleanup(policy)
+    assert len(deletions) == 1
+
+
+def test_cleanup_reports_no_families_when_nft_confirms_absence(
+    helper, monkeypatch
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def nft(*args, input_text=None):
+        calls.append(args)
+        return {"nftables": [{"metainfo": {"json_schema_version": 1}}]}
+
+    monkeypatch.setattr(helper, "_nft_json", nft)
+
+    assert helper._cleanup(_raes_policy())["families"] == []
+    assert calls == [("list", "tables"), ("list", "tables")]
+
+
+def test_a_foreign_table_with_the_owned_name_is_an_ownership_conflict(
+    helper, monkeypatch
+) -> None:
+    table = helper._table_name("seat-17", "raes")
+
+    def nft(*args, input_text=None):
+        if args == ("list", "tables"):
+            return {"nftables": [{"table": {"family": "inet", "name": table}}]}
+        return {"nftables": [{"table": {"name": table}}]}
+
+    monkeypatch.setattr(helper, "_nft_json", nft)
+    policy = _raes_policy()
+
+    with pytest.raises(RuntimeError, match="ownership conflict"):
+        helper._owned_families(policy)
+
+
+@pytest.mark.parametrize("protocol", ["tcp", "udp"])
+def test_a_portless_transport_rule_matches_the_protocol(helper, protocol) -> None:
+    policy = _raes_policy()
+    policy["rules"][0].update(protocol=protocol, ports=[])
+
+    rendered = helper.render_ruleset(policy, existing_families=())
+
+    assert f"meta l4proto {protocol} return" in rendered
+    assert f" {protocol} return" not in rendered.replace(
+        f"meta l4proto {protocol} return", ""
+    )
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [_raes_policy, _platform_policy, _seat_protection_policy],
+    ids=["raes", "platform", "seat-protection"],
+)
+def test_each_rendered_comment_fits_the_nft_limit(helper, policy) -> None:
+    """nft refuses a comment longer than 128 characters (NFTNL_UDATA_COMMENT_MAXLEN)."""
+
+    rendered = helper.render_ruleset(policy(), existing_families=())
+    # Table comments and rule comments both end their line.
+    comments = [
+        json.loads(line.rsplit(" comment ", 1)[1])
+        for line in rendered.splitlines()
+        if " comment " in line
+    ]
+
+    assert comments
+    assert max(len(comment) for comment in comments) <= 128

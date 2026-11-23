@@ -1,5 +1,13 @@
 # Issue #955 Generic Systemd Substrate Privilege Preflight
 
+This historical Reference preserves the original source record.
+The record below describes its own evidence date and revision, where stated.
+It does not establish current behavior, implementation completion, or installed qualification.
+The preserved file is available at [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35d245f11a7fffcaac1645cd25ccfafbad4599/docs/architecture/issue-955-systemd-substrate-privilege-preflight.md).
+Its last recorded file change before this rewrite was `566dfb0b205c`.
+Current interfaces and successor decisions take precedence for present use.
+
+
 This note fixes the design boundary for reducing the generic systemd substrate's
 host authority. It is guidance, not an implementation plan. No ADR is needed:
 ADR-048 already assigns generic substrate selection and realization to the
@@ -119,7 +127,9 @@ not invent a fake RAES concern for backend-owned init mechanics.
 The Samba AD provider and the reference `reverse` service are separate from the
 generic-init baseline. Their remaining `SYS_ADMIN` grants have specific measured
 necessity records in `tests/test_compose_capability_necessity.py`; #976 owns any
-replacement of those product behaviors. Do not remove either grant by assuming
+replacement of those product behaviors. Issue #976 later removed both grants;
+see [the Samba NT ACL store design](issue-976-samba-acl-store-design.md).
+Do not remove either grant by assuming
 the generic init result applies. Conversely, do not copy either exception into
 the generic policy. The generated and compatibility Compose models must not
 emit the retired host cgroup or unconfined seccomp recipe. Scenario-required

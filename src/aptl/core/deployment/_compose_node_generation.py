@@ -22,7 +22,10 @@ from pathlib import Path
 
 import yaml
 
-from aptl.core.deployment._compose_runtime_config import _operational_config
+from aptl.core.deployment._compose_runtime_config import (
+    _operational_config,
+    compose_literal,
+)
 from aptl.core.deployment._compose_runtime_orchestration import (
     docker_authority_admissions_by_address,
     docker_socket_volume,
@@ -40,9 +43,11 @@ from aptl.core.deployment._compose_stateful_constants import (
 )
 from aptl.core.deployment._wazuh_identity import wazuh_cluster_identity
 from aptl.core.deployment.realization import (
+    DeploymentCompanionRealization,
     DeploymentImageRealization,
     DeploymentNodeRealization,
     DeploymentRealizationSpec,
+    companion_container_name,
 )
 from aptl.runtime_authority import DeploymentDockerAuthorityAdmission
 
@@ -123,7 +128,65 @@ def _render_services(
                 docker_authority_admission=admissions.get(node.address),
                 network_aliases=canonical_aliases.get(node.service_name, ()),
             )
+            for companion in node.backend_companions:
+                services[companion.image.service_name] = _render_companion(
+                    node, companion, services[node.service_name]
+                )
     return services
+
+
+#: Every companion runs with no capabilities, no privilege escalation, and a
+#: read-only root filesystem; it receives no authority beyond its owner's
+#: network namespace and its declared writable scratch paths.
+_COMPANION_HARDENING: dict[str, object] = {
+    "read_only": True,
+    "cap_drop": ["ALL"],
+    "security_opt": ["no-new-privileges:true"],
+}
+
+
+def companion_compose_contract(
+    node: DeploymentNodeRealization, companion: DeploymentCompanionRealization
+) -> dict[str, object]:
+    """Return the exact authority fields one companion service may carry."""
+
+    return {
+        "network_mode": f"service:{node.service_name}",
+        "tmpfs": list(companion.tmpfs),
+        **_COMPANION_HARDENING,
+    }
+
+
+def _render_companion(
+    node: DeploymentNodeRealization,
+    companion: DeploymentCompanionRealization,
+    owner: dict[str, object],
+) -> dict[str, object]:
+    """Render one companion that joins its owner's network namespace.
+
+    ``service:`` (not ``container:``) lets Compose order the companion after
+    its owner and recreate it with the owner. The labels name the owner; they
+    never carry ``aptl.node.address``, so node lookups cannot mistake the
+    companion for the SDL node.
+    """
+
+    service: dict[str, object] = {
+        "image": companion.image.image_ref,
+        "container_name": companion_container_name(
+            str(owner["container_name"]), companion.role
+        ),
+        "labels": {
+            "aptl.companion.of": node.address,
+            "aptl.companion.role": companion.role,
+        },
+        **companion_compose_contract(node, companion),
+    }
+    if companion.environment:
+        service["environment"] = dict(companion.environment)
+    for field in ("profiles", "restart"):
+        if field in owner:
+            service[field] = owner[field]
+    return service
 
 
 def _render_service(
@@ -194,12 +257,17 @@ _DEFAULT_IMAGE_NODE_ULIMITS = {
 def write_realization_compose(
     spec: DeploymentRealizationSpec, scenario_root: Path
 ) -> Path:
-    """Render and write the generated base Compose file under ``scenario_root``."""
+    """Render and write the generated base Compose file under ``scenario_root``.
+
+    Every string is written as a Compose literal, so Compose interpolates
+    nothing the scenario authors, such as a command (issue #965).
+    """
 
     path = scenario_root / GENERATED_COMPOSE_RELPATH
     path.parent.mkdir(parents=True, exist_ok=True)
+    document = compose_literal(render_realization_compose(spec))
     path.write_text(
-        yaml.safe_dump(render_realization_compose(spec), sort_keys=True),
+        yaml.safe_dump(document, sort_keys=True),
         encoding="utf-8",
         newline="\n",
     )
@@ -211,18 +279,11 @@ def base_compose_file(
     content_root: Path,
     realization_root: Path | None = None,
 ) -> Path:
-    """Return the base Compose file for a realization.
+    """Generate the base Compose file from the admitted scenario.
 
-    An in-tree scenario ships a hand-authored ``docker-compose.yml`` at its
-    ``content_root`` and it is used as-is. An env-pack ships none, so the base is
-    generated from the realization (issue #875) and written under
-    ``realization_root`` — the writable engine checkout — never under the
-    pristine pack, whose digest-validated inventory must not gain generated
-    files. ``realization_root`` defaults to ``content_root`` so in-tree
-    (where the two coincide) is behaviour-neutral.
+    A root ``docker-compose.yml`` is never a scenario realization input: using
+    it unchanged would bypass environment bindings and literal rendering.
+    Output belongs under the writable realization root, never a pristine pack.
     """
 
-    static = content_root / STATIC_COMPOSE_FILENAME
-    if static.exists():
-        return static
     return write_realization_compose(spec, realization_root or content_root)

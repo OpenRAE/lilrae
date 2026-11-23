@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 import type { LabStatus, ScenarioDetail } from '../../src/lib/types';
 
 const labStatus = writable<LabStatus>({ running: false, containers: [], error: null });
-vi.mock('$lib/stores/lab', () => ({ labStatus }));
+vi.mock('#lib/stores/lab.ts', () => ({ labStatus }));
 
 // Stub the DOM-canvas terminal deps, exactly as tests/components/workbench/blocks.test.ts
 // and tests/routes/terminal-page.test.ts already do. This file renders the whole
@@ -51,7 +51,7 @@ function detail(overrides: Partial<ScenarioDetail> = {}): ScenarioDetail {
 		required_containers: ['host-a'],
 		validation: { valid: true, detail: null },
 		pack: {
-			id: 'techvault',
+			id: 'fixture-range',
 			version: '0.1.0',
 			set_digest: `sha256:${'a'.repeat(64)}`,
 			maturity: 'built'

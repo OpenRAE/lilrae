@@ -14,13 +14,12 @@ from raes_processor.capture_admission import (
 from aptl.core.experiment.capture_registry import (
     DEFAULT_COLLECTOR_REGISTRY,
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistry,
 )
 from aptl.core.experiment.errors import AdmissionRejection, diagnostic
 
-_CAPTURE_PLAN_SCHEMA = "aptl-capture-plan/v1"
+_CAPTURE_PLAN_SCHEMA = "aptl-capture-plan/v3"
 
 
 @dataclass(frozen=True)
@@ -65,8 +64,10 @@ class AdmittedCaptureDemand:
     contract_version: str
     effective_config_digest: str
     visibility_class: CaptureVisibility
-    limits: CaptureLimits
     selected_output_contract: str
+    selected_channel_kind: str
+    selected_capture_scope: str
+    clock_accuracy_ms: int | None
 
     def projection(self) -> dict[str, object]:
         return {
@@ -80,11 +81,9 @@ class AdmittedCaptureDemand:
             "effective_config_digest": self.effective_config_digest,
             "visibility_class": self.visibility_class.value,
             "selected_output_contract": self.selected_output_contract,
-            "limits": {
-                "max_bytes": self.limits.max_bytes,
-                "max_artifact_count": self.limits.max_artifact_count,
-                "max_duration_s": self.limits.max_duration_s,
-            },
+            "selected_channel_kind": self.selected_channel_kind,
+            "selected_capture_scope": self.selected_capture_scope,
+            "clock_accuracy_ms": self.clock_accuracy_ms,
         }
 
     def runtime_binding(self, capture_plan_id: str) -> CaptureBinding:
@@ -102,12 +101,12 @@ class AdmittedCaptureDemand:
             channel_ref_id=(
                 demand.channel_refs[0]
                 if demand.channel_refs
-                else demand.channel_kinds[0]
+                else self.selected_channel_kind
             ),
             channel_ref_version=None,
-            channel_kind=demand.channel_kinds[0],
+            channel_kind=self.selected_channel_kind,
             capture_kind=demand.capture_kind,
-            capture_scope="scenario",
+            capture_scope=self.selected_capture_scope,
             output_contract=self.selected_output_contract,
             expected_media_types=demand.media_types,
             required_artifact_roles=demand.artifact_roles,
@@ -121,7 +120,6 @@ class AdmittedCaptureDemand:
             ),
             loss_disclosure_required=True,
             visibility_class=self.visibility_class,
-            limits=self.limits,
             redaction_policy=demand.redaction_policy,
         )
 
@@ -176,8 +174,10 @@ def admit_capture_demands(
                 contract_version=registration.contract_version,
                 effective_config_digest=registration.effective_config_digest(),
                 visibility_class=registration.visibility_class,
-                limits=registration.limits,
                 selected_output_contract=offer.output_contract,
+                selected_channel_kind=registration.channel_kind,
+                selected_capture_scope=registration.capture_scope,
+                clock_accuracy_ms=registration.clock_accuracy_ms,
             )
         )
     if diagnostics:
