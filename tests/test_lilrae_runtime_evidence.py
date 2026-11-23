@@ -9,7 +9,7 @@ import zipfile
 import pytest
 
 from aptl.core.evidence.outcomes import CollectorStatus
-from aptl.core.experiment.capture_registry import CaptureLimits, CaptureVisibility
+from aptl.core.experiment.capture_registry import CaptureVisibility
 from aptl.core.runstore import LocalRunStore
 from tests.test_evidence_adapters import _binding
 from tests.test_lilrae_runtime_inventory_reporting import reporting_runtime
@@ -21,7 +21,6 @@ def _protected_binding():
         expected_media_types=("application/zip",),
         sensitivity="restricted",
         visibility_class=CaptureVisibility.APPARATUS_ONLY,
-        limits=CaptureLimits(4 * 1024 * 1024, 128, 60),
     )
 
 
@@ -75,7 +74,6 @@ def test_trial_collection_returns_original_native_owner_artifacts(
             media_types=offer.media_types,
             supported_sensitivities=frozenset({"restricted"}),
             redaction_policies=frozenset(),
-            limits=CaptureLimits(4 * 1024 * 1024, 128, 60),
         )
         registry = CollectorRegistry((registration,))
         demand = replace(
@@ -232,16 +230,20 @@ def test_handoff_reads_final_native_cleanup_without_mutating_a_sealed_run(
     }
 
 
-def test_changed_proof_and_over_limit_handoff_never_become_empty_success(
+def test_large_handoff_is_complete_and_changed_proof_is_never_empty_success(
     tmp_path, monkeypatch
 ):
-    outcome, _, store, _, _ = _started(tmp_path, monkeypatch)
+    outcome, _, store, artifacts, _ = _started(tmp_path, monkeypatch)
     outcome.runtime_manager.close()
     binding = _protected_binding()
-    source = outcome.native_evidence.source(
-        replace(binding, limits=CaptureLimits(1, 1, 60))
-    )
-    assert source.fetch("start", "end").status is CollectorStatus.TRUNCATION
+    # Larger than the removed 8 MiB member bound: the handoff keeps every byte.
+    large = b'{"attempt_id":"run-1","pad":"' + b"x" * (9 * 1024 * 1024) + b'"}'
+    artifacts.append(("native-resource-receipt/v1", large))
+    index, archive = _unpack(outcome.native_evidence.source(binding))
+    with archive:
+        assert any(
+            archive.read(item["path"]) == large for item in index["native_artifacts"]
+        )
     index, archive = _unpack(outcome.native_evidence.source(binding))
     with archive:
         artifact = index["cuts"][0]["artifacts"][0]

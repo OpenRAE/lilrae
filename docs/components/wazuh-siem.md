@@ -26,6 +26,7 @@ The Wazuh and indexer MCP servers use the generated project connections.
 ## Wazuh Manager
 
 The manager listens for agent traffic on TCP 1514, enrollment on 1515, syslog on UDP 514, and API requests on 55000.
+The API serves the manager certificate that the lab Wazuh CA signs.
 Its declared network interfaces permit admitted agents to reach it.
 The project renders secret-bearing configuration below `.aptl/config/`.
 Tracked templates remain source-owned.
@@ -37,6 +38,8 @@ See [active response](wazuh-active-response.md).
 ## Wazuh Indexer
 
 The indexer uses OpenSearch on port 9200.
+The indexer and manager certificates also name `localhost` and `127.0.0.1` for host-run clients.
+The Wazuh, indexer, and network MCP servers verify both services with the lab Wazuh CA certificate, `config/wazuh_indexer_ssl_certs/root-ca.pem`.
 Alert indices use `wazuh-alerts-*`.
 Archive indices use `wazuh-archives-4.x-*`.
 Archive ingestion requires manager `logall` and `logall_json`, plus Filebeat's enabled archive fileset.

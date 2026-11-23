@@ -182,8 +182,8 @@ For preserved historical and requirement records, review covers the added status
 | `docs/adrs/adr-062-lilrae-name-and-naming-convention.md` | ``Status``, ``Date``, ``Reader boundary``, ``Context``, ``Decision``, ``Consequences`` |
 | `docs/adrs/adr-063-remove-thehive-and-cortex.md` | ``Status``, ``Date``, ``Reader boundary``, ``Context``, ``Decision``, ``Consequences`` |
 | `docs/adrs/adr-064-layered-architecture-and-code-conventions.md` | ``Status``, ``Date``, ``Reader boundary``, ``Context``, ``Decision``, ``Consequences``, ``References`` |
-| `docs/adrs/adr-065-executable-participant-action-boundaries.md` | ``Status``, ``Reader boundary``, ``Context``, ``Decision``, ``Consequences`` |
-| `docs/adrs/adr-066-runtime-readback-reports-realized-state.md` | ``Status``, ``Date``, ``Reader boundary``, ``Context``, ``Decision``, ``Alternatives considered``, ``Consequences``, ``Relation to other decisions`` |
+| `docs/adrs/adr-070-executable-participant-action-boundaries.md` | ``Status``, ``Reader boundary``, ``Context``, ``Decision``, ``Consequences`` |
+| `docs/adrs/adr-071-runtime-readback-reports-realized-state.md` | ``Status``, ``Date``, ``Reader boundary``, ``Context``, ``Decision``, ``Alternatives considered``, ``Consequences``, ``Relation to other decisions`` |
 | `docs/adrs/adr-067-admitted-participant-smoke-providers.md` | ``Status``, ``Date``, ``Reader boundary``, ``Context``, ``Decision``, ``Alternatives considered``, ``Consequences`` |
 | `docs/architecture/ci-verification.md` | ``Components and contracts``, ``Data flows and security``, ``Go cutover branch``, ``Verification policy``, ``References`` |
 | `docs/architecture/concurrent-participant-execution.md` | ``Ownership and composition``, ``Participant configuration and harnesses``, ``Execution and failure``, ``Data flow and security``, ``Existing architecture and verification``, ``Integration and qualification limits``, ``Related issue coverage``, ``References`` |

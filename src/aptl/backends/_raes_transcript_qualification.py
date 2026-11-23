@@ -15,7 +15,6 @@ from aptl.core.evidence.outcomes import (
     capture_diagnostic,
 )
 from aptl.core.evidence_bundle._io import SourceMissing, SourceRejected, read_source
-from aptl.core.experiment.capture_registry import CaptureBinding
 from aptl.core.runstore import LocalRunStore
 
 
@@ -23,7 +22,6 @@ def qualify_retained_transcript(
     result: AcquisitionResult,
     runtime_adapter: object,
     payload: object,
-    binding: CaptureBinding,
     store_base: Path,
     run_id: str,
 ) -> AcquisitionResult:
@@ -36,7 +34,6 @@ def qualify_retained_transcript(
         retained_digest, _, body = read_source(
             LocalRunStore(store_base).get_run_path(run_id),
             record.raw_content.content_uri,
-            max_bytes=binding.limits.max_bytes,
         )
         if retained_digest != f"sha256:{record.raw_content.content_checksum.value}":
             raise ValueError("retained transcript checksum mismatch")

@@ -1,11 +1,7 @@
 #!/bin/bash
-# pre-commit wrapper around Vale (ADR-038).
-#
-# Lints the staged .md files passed by pre-commit. If Vale is not
-# installed on this machine, install it via tools/install-vale.sh
-# (one-time download, idempotent) and then run. Skipping the lint when
-# Vale is missing would let unlinted prose land, which is the failure
-# mode the gate exists to prevent.
+# Check explicit Markdown paths with Vale (ADR-038).
+# Install the pinned binary when absent. Installation failure stops the check.
+# Local pre-commit does not invoke this wrapper; it runs staged hygiene only.
 set -euo pipefail
 
 if [ "$#" -eq 0 ]; then

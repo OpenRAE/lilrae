@@ -21,7 +21,7 @@ Legacy providers retain their existing API and absence behavior outside family t
 A family trial requires all five capabilities before realization.
 These capabilities are serving, runtime parameters, startup, capture, and verification.
 
-[ADR-066](../adrs/adr-066-runtime-readback-reports-realized-state.md) removed planning compatibility.
+[ADR-071](../adrs/adr-071-runtime-readback-reports-realized-state.md) removed planning compatibility.
 Core no longer reads that entry-point group, and no adapter can change a compiled plan.
 
 The startup provider owns product readback for its pack.

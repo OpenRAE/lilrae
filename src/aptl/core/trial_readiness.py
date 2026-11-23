@@ -78,14 +78,14 @@ class ParticipantReadiness:
 
 @dataclass(frozen=True)
 class CaptureDestinationReadiness:
-    """One effective writer's capacity check, shared by co-located outputs.
+    """One effective writer's readiness check, shared by co-located outputs.
 
-    The operation uses the destination owner's approved transport and enforces
-    time/output limits. It must check write access and any effective quota.
-    Reuse this same object for captures sharing a filesystem or writer quota.
+    The operation uses the destination owner's approved transport. It must
+    check write access and the writer's free-space reserve. Reuse this same
+    object for captures sharing a filesystem or writer.
     """
 
-    check: Callable[[int], bool] = field(repr=False)
+    check: Callable[[], bool] = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -199,15 +199,9 @@ def observe_capture_readiness(
                     source.clock_is_ready(binding, admitted.clock_accuracy_ms)
                 ),
             )
-        key = id(source.destination)
-        check, required = destinations.get(key, (source.destination.check, 0))
-        destinations[key] = (check, required + binding.limits.max_bytes)
-    for index, (check, required) in enumerate(destinations.values()):
-        observer.check(
-            checks,
-            f"capture-storage-{index}",
-            lambda check=check, required=required: check(required),
-        )
+        destinations[id(source.destination)] = source.destination.check
+    for index, check in enumerate(destinations.values()):
+        observer.check(checks, f"capture-storage-{index}", check)
 
 
 def _installed_participants(

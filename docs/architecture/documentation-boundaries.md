@@ -11,7 +11,7 @@ Current explanations describe reasons, relationships, and limits.
 How-to guides describe operating tasks.
 Reference pages describe exact interfaces and contracts.
 Each page links to the other forms when the reader needs them.
-The [assignment register](documentation-assignments.md) records migration ownership.
+The [assignment register](documentation-assignments.md) records reader purposes, routes, and source checks.
 
 ADRs retain their identifiers, dates, status, rationale, and amendment links.
 The record's Status section determines its recorded status.
@@ -150,6 +150,45 @@ The existing MkDocs model and publisher guards retain publication authority.
 `tests/test_documentation_checks.py` owns consumer integration evidence.
 `tests/test_docs_publishing.py` and the docs job retain navigation and publishing checks.
 Unknown changed inputs continue to select all checks through `tools/ci/select_checks.py`.
+
+## Contributor documentation boundary
+
+The [inventory](documentation-assignments.md) records page purposes, source entries, and delivery provenance.
+[Contributor source checks](../reviews/1668-contributor-source-checks.md) records the final reconciliation and corrections.
+New pages use ordinary Markdown links, existing reader routes, and explicit checker paths.
+No new schema, generator, service, or skill is required.
+
+Root policies retain their standard paths and authority.
+Agent skill identities, invocation restrictions, workflow permissions, and merge approval boundaries remain intact.
+Requirement files own lifecycle state and traceability; editorial classification cannot retire an ACTIVE contract.
+The issue-scope writer validates exact UIDs against those files.
+
+`README.md` and `docs/index.md` link to canonical procedures without copying them.
+Home retains its existing task links. Useful heading fragments remain available after splits.
+Typer, FastAPI, MCP definitions, and argparse own generated interface text.
+Directive comments, executable fixtures, literal outputs, notices, and generated releases remain protected source material.
+
+The existing Vale rules cover rewritten agent prose.
+A rule-specific exception preserves precise workflow tool names; it does not disable other prose checks.
+Finished maintained pages join `.ste-required.txt`.
+The corpus report includes source records, so it remains informational.
+Changed descriptions around preserved bodies use explicit passage checks.
+
+Prose review preserves authentication, admission, strict configuration, TLS, listener scopes, private files, redaction, and evidence integrity.
+Current source owners determine each contract; a heading, earlier delivery, or clean linter result does not establish behavior.
+The Sonar helper can report bounded HTTP response excerpts, so diagnostics need review before sharing.
+The existing diagrams above still describe authoring, checking, and publication flows.
+
+Release Please owns versions and generated releases.
+Manual QA retains candidate-byte identity and human approval.
+Feature queue rules do not replace promotion or back-merge merge commits.
+Tests and lab operations run only in CI or an explicitly approved, isolated VM.
+Local work uses source review, static checks, explicit-path prose checks, Git, and staged hygiene.
+
+[ADR-038](../adrs/adr-038-docs-style-lint-and-published-site.md) records the final prose selection and publisher policy.
+Existing tests retain navigation, source correspondence, and publishing checks.
+Source edits keep conservative CI selection through `tools/ci/select_checks.py`.
+No runtime component, estate model, credential source, deployment policy, or publisher needs to change.
 
 ## Sources
 

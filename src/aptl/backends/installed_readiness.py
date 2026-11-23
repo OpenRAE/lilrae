@@ -34,6 +34,7 @@ from aptl.utils.pathsafe import (
     remove_contained_nofollow,
 )
 from aptl.utils.probe_execution import ProbeProcessRunner
+from aptl.utils.pathsafe_stream import FreeSpaceReserveError, require_free_space
 
 
 class ReadinessBackend(BoundaryProbeBackend, Protocol):
@@ -94,15 +95,15 @@ class InstalledReadiness:
             and self.containment.check(self.backend.daemon_identity())
         )
 
-    def destination_ready(self, required_bytes: int) -> bool:
-        """Prove the effective local writer and space with existing safe operations."""
+    def destination_ready(self) -> bool:
+        """Prove the local writer and the free-space reserve with safe operations."""
         fd = open_private_dir_contained_nofollow(
             self.store.base_dir, Path(".readiness")
         )
         try:
-            info = os.fstatvfs(fd)
-            if info.f_bavail * info.f_frsize < required_bytes:
-                return False
+            require_free_space(fd, self.store.free_space_reserve)
+        except FreeSpaceReserveError:
+            return False
         finally:
             os.close(fd)
         relative = Path(".readiness") / uuid4().hex

@@ -1,29 +1,19 @@
-"""Prove a stopped lab left no project-scoped Docker resources behind.
+"""Verify that a stopped lab left no project-owned Docker resources.
 
-The clean-install regression gate (issue #951) boots a lab from the built wheel
-and tears it down; this asserts the teardown actually removed everything. It
-runs against the *installed* package, so it reuses the same identities and query
-rules production teardown uses rather than restating them:
+The clean-install gate runs this against the installed package.
+It reuses production ownership rules instead of matching container names.
+``DeploymentBackend.observe_project_runtime`` checks containers and networks, including stopped containers and both admitted labels.
+``project_scoped_volume_names`` uses the ``<project>_`` prefix for seeded volumes without Compose labels.
 
-- containers and networks through ``DeploymentBackend.observe_project_runtime``,
-  which counts stopped containers and both admitted project labels;
-- volumes through ``project_scoped_volume_names``, whose ``<project>_`` prefix
-  catches ADR-043 seeded volumes that carry no Compose label at all.
+Validated ``aptl.json`` and durable state establish the workspace project identity.
+An ``aptl-*`` name match grants no authority.
+The verifier performs no daemon-wide pruning.
+A failed Docker query returns failure instead of reporting absence.
 
-Both are scoped to the effective workspace-owned Compose project identity,
-resolved from the lab's validated ``aptl.json`` and durable ownership state.
-A name prefix such as ``aptl-*`` is never the authority, and nothing here
-prunes daemon-wide state.
-
-Absence that cannot be *proved* is a failure: a Docker query that errors exits
-non-zero rather than reporting a clean lab.
-
-Two kinds of debris carry no project identity at all, so the project scope
-cannot see them: anonymous volumes (hash-named and unlabelled) and ephemeral
-helper containers (labelled only with their role). Neither can be attributed to
-a project after the fact. With ``--record-baseline`` before the lab starts and
-``--baseline`` here, the proof fails on any of either that the daemon did not
-already hold. That comparison observes; it deletes nothing.
+Anonymous volumes and ephemeral helpers lack project identity.
+``--record-baseline`` records daemon state before startup.
+``--baseline`` checks for new leftovers after teardown.
+The comparison observes resources; it deletes nothing.
 """
 
 from __future__ import annotations

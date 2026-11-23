@@ -28,9 +28,8 @@ from aptl.utils.pathsafe import (
 )
 from aptl.utils.strict_json import loads_strict
 
-OBSERVER_SHA256 = "f9c7924367684be08ac42685936ee0f30026ef1820a77fa3ca9e27598fd3d96e"
+OBSERVER_SHA256 = "dd0fc2663abeba6dfbf5e71e4366a9c73c42cd342c310df12c11a6a4bef8d255"
 OBSERVER_CREDENTIAL = "LILRAE_OPENCODE_PROVIDER_KEY"
-MAX_OBSERVATION_BYTES = 16 * 1024 * 1024
 OBSERVER_MODULE = "request_observer.mjs"
 
 
@@ -46,11 +45,11 @@ class Request(SafeObservation):
     """Safe request controls and context commitments for a new call."""
 
     kind: Literal["request"]
-    call_id: Annotated[int, Field(ge=1, le=10_000)]
+    call_id: Annotated[int, Field(ge=1)]
     timestamp_ms: Count
     controls: ObservedRequestControls
     context: Annotated[
-        tuple[ObservedContext, ...], Field(min_length=1, max_length=4096)
+        tuple[ObservedContext, ...], Field(min_length=1)
     ]
 
 
@@ -58,7 +57,7 @@ class Response(SafeObservation):
     """Allowlisted response metadata for a previously dispatched call."""
 
     kind: Literal["response"]
-    call_id: Annotated[int, Field(ge=1, le=10_000)]
+    call_id: Annotated[int, Field(ge=1)]
     timestamp_ms: Count
     http_status: Annotated[int, Field(ge=100, le=599)]
     response: ProviderResponseObservation
@@ -68,7 +67,7 @@ class End(SafeObservation):
     """One terminal state for a dispatched call."""
 
     kind: Literal["end"]
-    call_id: Annotated[int, Field(ge=1, le=10_000)]
+    call_id: Annotated[int, Field(ge=1)]
     timestamp_ms: Count
     state: Literal["completed", "failed", "cancelled"]
 
@@ -129,8 +128,8 @@ def _journal_calls(
     expected_controls: ObservedRequestControls | None,
     expected_prompt_sha256: str | None,
 ) -> tuple[Ready, tuple[ProviderCallObservation, ...]]:
-    """Validate bounded event order and reduce it to safe call records."""
-    if not lines or len(lines) > 50_000 or any(len(line) > 131_072 for line in lines):
+    """Validate event order and reduce it to safe call records."""
+    if not lines:
         raise ValueError("invalid observation journal")
     loads_strict(lines[0])
     ready = _EVENT.validate_json(lines[0])
@@ -176,7 +175,6 @@ def read_request_observations(
     work: Path,
     *,
     observer_sha256: str = OBSERVER_SHA256,
-    max_bytes: int = MAX_OBSERVATION_BYTES,
     expected_controls: ObservedRequestControls | None = None,
     expected_prompt_sha256: str | None = None,
 ) -> RequestObservation:
@@ -184,11 +182,7 @@ def read_request_observations(
     status = "invalid"
     try:
         with open_contained_nofollow(work, "provider-observations.jsonl") as source:
-            payload = source.read(max_bytes + 1)
-        if len(payload) > max_bytes:
-            return RequestObservation(
-                status="oversized", observer_sha256=observer_sha256
-            )
+            payload = source.read()
         truncated = not payload.endswith(b"\n")
         if truncated:
             payload = payload.rsplit(b"\n", 1)[0] if b"\n" in payload else b""

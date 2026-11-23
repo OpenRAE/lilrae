@@ -4,8 +4,8 @@
 # allowed: `.ground-control.yaml` is excluded below, and `.gc/` and
 # `gc_*` never match. The raw scope also catches a name that wraps
 # onto the next line inside a list item or blockquote. A blank line or
-# a new list item between the two words ends the match. AGENTS.md and
-# the other agent-facing paths are outside Vale (see .vale.ini).
+# a new list item between the two words ends the match. Agent contracts keep
+# precise tool names through a rule-specific exception in .vale.ini.
 #
 # Vale wraps the tokens in word boundaries, and an underscore is a word
 # character, so the first token misses a name that touches underscore

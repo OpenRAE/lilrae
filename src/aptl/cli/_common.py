@@ -2,7 +2,7 @@
 
 Helpers used by multiple subcommand modules — typically the
 ``find_config`` + ``load_config`` + ``typer.Exit`` boilerplate that every
-``aptl <subcommand>`` runs at the start.
+``lilrae <subcommand>`` runs at the start.
 
 Keep this module thin: only put helpers here that are genuinely shared
 across CLI surfaces. Subcommand-specific logic stays in the respective
@@ -152,7 +152,11 @@ def resolve_run_store(
     local_path = Path(config.run_storage.local_path)
     if not local_path.is_absolute():
         local_path = project_dir / local_path
-    return LocalRunStore(local_path)
+    return LocalRunStore(
+        local_path,
+        free_space_reserve=config.run_storage.free_space_reserve,
+        progress_timeout_seconds=config.run_storage.capture_progress_timeout_seconds,
+    )
 
 
 def resolve_optional_config_for_cli(project_dir: Path) -> AptlConfig:

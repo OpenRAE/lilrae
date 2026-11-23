@@ -315,6 +315,7 @@ class ComposeRealizationModelMixin:
         for service_mounts in (
             self._recording_service_volumes(realization),
             self._content_mounts_for(realization, realization_root),
+            _certificate_alias_volumes(realization, realization_root, validated_service_volumes),
         ):
             for service_name, mounts in service_mounts.items():
                 validated_service_volumes[service_name] = (
@@ -338,3 +339,28 @@ class ComposeRealizationModelMixin:
         ):
             return content[2]
         return {}
+
+
+def _certificate_alias_volumes(
+    realization: DeploymentRealizationSpec,
+    realization_root: Path,
+    validated: Mapping[str, Sequence[object]],
+) -> dict[str, tuple[object, ...]]:
+    """Return the adapter's authorized aliases of SDL-owned certificate binds."""
+    from aptl.backends.scenario_service_policy import certificate_mount_aliases
+
+    expected = {
+        service: {
+            (str(volume.get("source")), str(volume.get("target")))
+            for volume in volumes
+            if isinstance(volume, Mapping)
+        }
+        for service, volumes in validated.items()
+    }
+    return {
+        service: tuple(
+            {"type": "bind", "source": source, "target": target, "read_only": True}
+            for source, target in sorted(pairs)
+        )
+        for service, pairs in certificate_mount_aliases(realization, realization_root, expected).items()
+    }

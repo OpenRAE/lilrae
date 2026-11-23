@@ -38,7 +38,7 @@ def _source(project_dir, trial, *, provisioning: bool = False):
 
 
 def _record_path(project_dir):
-    return next((project_dir / WAZUH_TRIAL_ENROLLMENT_DIR).iterdir())
+    return next((project_dir / WAZUH_TRIAL_ENROLLMENT_DIR).glob("*.json"))
 
 
 def test_rebuilt_source_reads_pre_restart_ids_for_unchanged_and_changed(tmp_path):
@@ -136,7 +136,7 @@ def test_missing_earlier_evidence_stays_unproven_across_restart(
     for _ in range(2):
         assert _provision(tmp_path, trial, seen)({"db": "009"}) is None
         assert _source(tmp_path, trial)({"db": "009"}) is None
-    assert list((tmp_path / WAZUH_TRIAL_ENROLLMENT_DIR).iterdir()) == []
+    assert list((tmp_path / WAZUH_TRIAL_ENROLLMENT_DIR).glob("*.json")) == []
 
 
 def test_evidence_from_another_trial_is_not_visible(tmp_path):

@@ -1,14 +1,15 @@
 # Release Candidate Manual QA
 
-This is the single release-blocking, hands-on QA procedure for APTL. A person
-must execute it against both the candidate distribution and a clean source
-checkout before the release PR is merged. Container health, automated tests,
-and a previous release's results are useful prerequisites, but they do not
-satisfy any row in this manual.
+Use this procedure to qualify a LilRAE release candidate.
+A person must complete both the candidate-distribution path and the clean-source path before the release PR merges.
+Container health, automated tests, and earlier results do not satisfy these manual rows.
 
 Every row is blocking. Record `PASS` or `FAIL`; `SKIP`, an empty result, and
 "not applicable" are not passing outcomes. Stop the release on a failure,
 repair it, build a new candidate, and repeat both paths from clean state.
+
+Run this procedure only in CI or an explicitly approved, isolated test VM.
+Do not run it on the developer workstation.
 
 ## Candidate and environment record
 
@@ -58,10 +59,10 @@ from a source checkout.
 ```bash
 python3 -m venv qa-candidate-venv
 source qa-candidate-venv/bin/activate
-pip install /absolute/path/to/aptl_labs-X.Y.Z-py3-none-any.whl
-aptl --version
+pip install /absolute/path/to/lilrae-X.Y.Z-py3-none-any.whl
+lilrae --version
 raes --version
-aptl lab init qa-candidate-lab
+lilrae lab init qa-candidate-lab
 cd qa-candidate-lab
 ```
 
@@ -75,14 +76,14 @@ reuse the distribution-path project, virtual environment, generated files, or
 Docker volumes.
 
 ```bash
-git clone https://github.com/Brad-Edwards/aptl.git qa-source
+git clone https://github.com/OpenRAE/lilrae.git qa-source
 cd qa-source
 git checkout --detach <recorded-release-pr-head-commit>
 git status --porcelain
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
-aptl --version
+lilrae --version
 raes --version
 ```
 
@@ -112,21 +113,21 @@ operating-system trust store:
 - `config/soc_certs/lab-ca.pem` for MISP and Shuffle.
 
 The Wazuh dashboard certificate names `wazuh.dashboard`, not `localhost`.
-Configure a temporary browser or operating-system resolver entry mapping
-`wazuh.dashboard` to `127.0.0.1`, and use the dashboard host port reported by
-`aptl lab info` (`443` is only the default). The other SOC UI certificates
-include `localhost`, but MISP's authored browser origin is
-`https://misp.techvault.local` on port 443. Its loopback publication (normally
-`https://localhost:8443`) is usable by API/MCP clients but is **not** a browser
-login URL: MISP redirects the form to its canonical origin, which the browser
-blocks under `form-action 'self'` when opened on the loopback publication.
+Temporarily map `wazuh.dashboard` to `127.0.0.1` in the browser or operating-system resolver.
+Use the host port from `lilrae lab info` (`443` is only the default).
+The other SOC certificates include `localhost`.
+MISP's authored browser origin is `https://misp.techvault.local` on port 443.
+
+Its loopback publication, normally `https://localhost:8443`, supports API/MCP clients.
+It is not a browser login URL.
+MISP redirects the form to its canonical origin.
+The browser then blocks submission under `form-action 'self'`.
 Do not weaken CSP or change the authored in-world base URL to make this pass.
 
-On a native-Linux Docker host, select the MISP container's security-network IP
-from this path's `qa-start-status.json` and map `misp.techvault.local` to that
-IP in the test browser only. Open `https://misp.techvault.local/`, not the
-loopback publication. For example, the IP can be read without guessing a
-container name:
+On native Linux, find the MISP container's security-network IP in this path's `qa-start-status.json`.
+Map `misp.techvault.local` to that IP in the test browser only.
+Open `https://misp.techvault.local/`.
+Use this query to find the address:
 
 ```bash
 jq -r '.containers[] | select(.name | endswith("-misp")) |
@@ -134,24 +135,25 @@ jq -r '.containers[] | select(.name | endswith("-misp")) |
   .value' qa-start-status.json
 ```
 
-The browser must have a route to that in-range address. Docker Desktop hosts
-may not expose the bridge address directly; use a browser in an environment
-with a route to the scenario network and the same canonical origin, or record
-`QA-MISP` as `FAIL`. Do not count a successful API call or the broken loopback
-login page as a browser result. For Shuffle, use the service's actual loopback
-publication from `qa-start-status.json`. Confirm a valid
-hostname and chain to the path-specific root before recording any UI result.
+The browser must have a route to that address.
+Docker Desktop might not expose the bridge address directly.
+Use a browser with a route to the scenario network and the same canonical origin.
+If that is unavailable, record `QA-MISP` as `FAIL`.
+An API result or broken loopback login does not satisfy browser QA.
 
-Do not click through a certificate warning, disable certificate validation, or
-use an insecure client flag to make a QA row pass. Remove the temporary trust
-entries and hostname mappings after that path's `QA-TEARDOWN`; path B must
-import its own newly generated roots rather than reuse path A's trust.
+For Shuffle, use its actual loopback publication from `qa-start-status.json`.
+Before recording any UI result, verify the hostname and certificate chain to this path's root.
+
+Do not bypass a certificate warning, disable validation, or use an insecure flag to make a row pass.
+After each path's `QA-TEARDOWN`, remove temporary trust entries and hostname mappings.
+For path B, import its newly generated roots. Do not reuse path A's trust.
 
 ## Required actions
 
-Execute `QA-START` through `QA-TEARDOWN` in order for path A, complete the
-path-A results table, then repeat the whole sequence from clean state for path
-B. Do not copy an observation from one path to the other.
+Execute `QA-START` through `QA-TEARDOWN` in order for path A.
+Complete its results table.
+Repeat the whole sequence from clean state for path B.
+Do not copy observations between paths.
 
 ### QA-START: Complete startup and project inventory
 
@@ -159,10 +161,10 @@ Run:
 
 ```bash
 set -o pipefail
-aptl lab start 2>&1 | tee qa-start.txt
-aptl lab status | tee qa-start-status.txt
-aptl lab status --json --output qa-start-status.json
-aptl runs list | tee qa-start-runs.txt
+lilrae lab start 2>&1 | tee qa-start.txt
+lilrae lab status | tee qa-start-status.txt
+lilrae lab status --json --output qa-start-status.json
+lilrae runs list | tee qa-start-runs.txt
 ```
 
 Expected: start exits zero and reports readiness; status accounts for every
@@ -171,10 +173,11 @@ non-running. No `aptl-mcp-endpoints` container exists. The runs listing
 contains the canonical run created by this exact start, backed by its root
 `manifest.json`. The JSON snapshot records the actual loopback publications
 used by later UI rows. Record that full run id as the path's startup run id.
+
 Capture the final start result, complete status inventory, JSON snapshot, and
 runs listing. A start failure is a valid diagnostic, not a pass.
 Keep `pipefail` enabled when using `tee`: otherwise the pipeline may exit zero
-even if `aptl lab start` or `aptl lab status` failed. The plain-text status
+even if `lilrae lab start` or `lilrae lab status` failed. The plain-text status
 capture is required in addition to the JSON snapshot; the latter is not a
 substitute for executing the documented user-facing command.
 
@@ -184,7 +187,7 @@ Run against the already-running lab and add live-gate evidence to the canonical
 startup run recorded by `QA-START`:
 
 ```bash
-aptl lab validate-live --skip-clean-boot --run-id <path-startup-run-id>
+lilrae lab validate-live --skip-clean-boot --run-id <path-startup-run-id>
 ```
 
 Expected: the command exits zero and every live-gate check passes, including
@@ -196,7 +199,7 @@ rendered verdict and confirm that it names the same run id recorded by
 
 Open the Wazuh dashboard at
 `https://wazuh.dashboard:<reported-host-port>` and log in using the generated
-credential referenced by `aptl lab info`. In the UI, inspect agent status and
+credential referenced by `lilrae lab info`. In the UI, inspect agent status and
 recent indexed events.
 
 Expected: the dashboard is usable, the scenario's agents are enrolled and
@@ -206,7 +209,7 @@ and a bounded recent-event view without credentials or session data.
 ### QA-DETECT: Attack and expected Wazuh rule
 
 Use the generated `.mcp.json` configuration with an MCP client to call
-`mcp-red`'s `kali_run_command`. Direct `aptl container shell aptl-kali` is
+`mcp-red`'s `kali_run_command`. Direct `lilrae container shell aptl-kali` is
 refused while required capture is active; a separate SSH command would not
 create the MCP-side session-census entry required by transcript finalization.
 Send this SQL-injection request from the realized Kali target:
@@ -224,16 +227,15 @@ id, rule id, description, and event time.
 
 ### QA-SURICATA: Network rule reaches the SIEM
 
-Docker bridge networks do not pass peer-to-peer unicast traffic to a third
-container as a passive tap. This row therefore sends the same live HTTP payload
-from the Suricata sensor's own network namespace; it validates the live capture,
-rule, and Wazuh-forwarding chain and does not claim passive visibility of the
-separate Kali flow from `QA-DETECT`.
+Docker bridge networks do not pass peer-to-peer unicast traffic to a third container as a passive tap.
+This row sends the HTTP payload from the Suricata sensor's own network namespace.
+It validates capture, rules, and Wazuh forwarding.
+It does not claim passive visibility of the separate Kali flow from `QA-DETECT`.
 
 Open a sensor shell and record a new time around the request:
 
 ```bash
-aptl container shell aptl-suricata
+lilrae container shell aptl-suricata
 date -u +%Y-%m-%dT%H:%M:%SZ
 curl -sf 'http://172.20.1.20:8080/login?username=ids_qa%27%20UNION%20SELECT%201,2,3--&password=x'
 date -u +%Y-%m-%dT%H:%M:%SZ
@@ -248,10 +250,11 @@ flow, or alert identifier.
 
 ### QA-SOAR: Real-alert Shuffle playbook
 
-In Shuffle, create or inspect a playbook that accepts the exact alert produced
-by `QA-DETECT` and performs an observable downstream action, such as the MISP
-lookup of its source IP. Run it with that alert's real id, source, and rule
-data (not a dummy or synthetic smoke payload), and monitor it to completion.
+In Shuffle, create or inspect a playbook that accepts the exact `QA-DETECT` alert.
+Select an observable downstream action, such as a MISP lookup of its source IP.
+Run it with the real alert ID, source, and rule data.
+Do not substitute a synthetic smoke payload.
+Monitor the execution to completion.
 
 Expected: the execution reaches `FINISHED`, its input can be tied to the real
 Wazuh alert, and the downstream action is visible. Capture the workflow id,
@@ -330,7 +333,7 @@ harmless real operation such as `which r2`.
 
 If the selected scenario deliberately omits the reverse target, attempt the
 client connection/tool call with the shipped server and production MCP protocol
-driver. Run this from the initialized project directory after `aptl lab start`:
+driver. Run this from the initialized project directory after `lilrae lab start`:
 
 ```bash
 set -o pipefail
@@ -378,7 +381,7 @@ PY
 This performs MCP `initialize`, `tools/list`, and `tools/call` against the built
 `mcp-reverse` artifact; it is not a declaration-only check. Record the command's
 zero exit and bounded `expected-unavailable` result. Cite both the scenario
-declaration and `aptl lab status` inventory proving that the target was
+declaration and `lilrae lab status` inventory proving that the target was
 intentionally not realized. A missing Node runtime, server artifact, registered
 `reverse_run_command` tool, complete protocol response, or structured target
 failure makes the command fail. Connection errors, internal errors, and failed
@@ -397,22 +400,20 @@ Use the canonical startup run id recorded by `QA-START` and reused by
 `QA-LIVE`:
 
 ```bash
-aptl runs list
-aptl runs show <run-id>
-aptl runs export-bundle <run-id> --output-dir qa-evidence
-aptl runs verify-bundle qa-evidence/<run-id>.evidence-bundle.tar
+lilrae runs list
+lilrae runs show <run-id>
+lilrae runs export-bundle <run-id> --output-dir qa-evidence
+lilrae runs verify-bundle qa-evidence/<run-id>.evidence-bundle.tar
 ```
 
-Expected: the run exists; its manifest identifies the expected scenario,
-backend, package version, pack/runtime evidence, and captured runtime; export
-succeeds; and independent bundle verification passes. The separate candidate
-and environment record remains authoritative for the release-PR commit and
-wheel/sdist hashes: compare its installed version and path-specific startup run
-id with this manifest, without claiming that the manifest stores artifact
-hashes it does not contain. Also compare at least one claimed container and one
-live-gate evidence item with earlier observations. Capture the run id, bundle
-root identity, member count, verification verdict, cross-record comparison,
-and the two inspected claims.
+Expected: the run exists and its manifest identifies the scenario, backend, package version, pack/runtime evidence, and captured runtime.
+Export succeeds and independent bundle verification passes.
+The candidate and environment record owns the release-PR commit and wheel/sdist hashes.
+Compare its installed version and path-specific startup run ID with the manifest.
+Do not claim the manifest stores artifact hashes that it does not contain.
+
+Compare at least one claimed container and one live-gate evidence item with earlier observations.
+Capture the run ID, bundle root identity, member count, verification verdict, comparison, and both inspected claims.
 
 The `lab start` run is a provisional startup record, not a terminal experiment
 attempt. Its bundle may therefore verify as **unsealed** with the absent
@@ -426,7 +427,7 @@ seal but does not is a separate failure under EXP-009.
 Run:
 
 ```bash
-aptl lab stop -v -y
+lilrae lab stop -v -y
 python scripts/ci/assert_project_teardown.py .
 ```
 
@@ -492,5 +493,5 @@ Record the final decision in or from the release PR:
 | Release decision (`PASS` or `BLOCK`) | |
 | Approver and timestamp | |
 
-`PASS` requires all 36 path-specific rows to pass and the evidence review to be
+`PASS` requires all 32 path-specific rows to pass and the evidence review to be
 complete. Any other state is `BLOCK`; do not merge the release PR.

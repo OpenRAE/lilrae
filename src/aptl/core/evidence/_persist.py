@@ -3,8 +3,8 @@
 Split out of :mod:`aptl.core.evidence.coordinator` to keep that module within
 the 500-line budget and its orchestration readable. This module owns the
 coordinator-side work for one captured outcome, including failed partial data: the
-media-type check, structured redaction, content-addressed persistence (with
-the byte quota + truncation), and RAES evidence-record + reference assembly.
+media-type check, structured redaction, streamed content-addressed
+persistence, and RAES evidence-record + reference assembly.
 A collector never does any of this itself (preflight "Narrow collector
 boundary").
 """
@@ -12,14 +12,12 @@ boundary").
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
-from datetime import datetime
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 from raes_contracts.contracts import ExperimentEvidenceRecordModel
 
 from aptl.core.evidence import content_store
-from aptl.core.evidence.content_store import ContentInsertion
 from aptl.core.evidence.outcomes import (
     ABORTING_STATUSES,
     SUCCESS_STATUSES,
@@ -32,33 +30,24 @@ from aptl.core.evidence.records import (
     RecordScope,
     build_evidence_record,
 )
-from aptl.core.evidence._bounded_json import capture_prefix
-from aptl.core.experiment.capture_registry import CaptureBinding, CaptureVisibility
-from aptl.core.runstore import LocalRunStore
-from aptl.utils.redaction import redact
-
-#: Media types with a trusted, bounded redaction path before persistence.
-_JSON_MEDIA_TYPE = "application/json"
-_TEXT_MEDIA_TYPE = "text/plain"
-_JSON_MEDIA_TYPES = frozenset(
-    {_JSON_MEDIA_TYPE, "application/x-ndjson", "application/jsonl"}
+from aptl.core.experiment.capture_registry import CaptureBinding
+from aptl.core.evidence._stream_prepare import (
+    JSON_MEDIA_TYPE as _JSON_MEDIA_TYPE,
+    TEXT_MEDIA_TYPE as _TEXT_MEDIA_TYPE,
+    prepare_stream,
 )
-_REDACTABLE_MEDIA_TYPES = _JSON_MEDIA_TYPES | {_TEXT_MEDIA_TYPE}
-_REDACTION_HANDLERS = {
-    # APTL's shared recursive redactor is deliberately the stronger handler:
-    # it removes credentials and sensitivity-labelled values.  Both authored
-    # policies are named explicitly here so an unknown policy can never be
-    # treated as either one by a truthy boolean conversion.
-    "redact_secrets": redact,
-    "redact_sensitive": redact,
-}
+from aptl.core.runstore import LocalRunStore
+
+#: Redaction policies with a trusted handler. APTL's shared recursive redactor
+#: serves both. They are named explicitly so an unknown policy can never be
+#: treated as either one by a truthy boolean conversion.
+_REDACTION_POLICIES = frozenset({"redact_secrets", "redact_sensitive"})
 
 #: Run-relative subdirectory for content-addressed raw evidence blobs.
 _EVIDENCE_SUBDIR = "evidence/blobs"
 
 #: Run-relative subdirectory for the explicit, create-once evidence-record ledger.
 _LEDGER_SUBDIR = "evidence/records"
-_MAX_REDACTION_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -106,9 +95,9 @@ class EvidenceRef:
 class ProcessedOutcome:
     """The result of persisting one success outcome.
 
-    ``effective_status`` may downgrade the collector's reported status — e.g.
-    a source reported OK but the content-store truncated it to the byte quota,
-    yielding :attr:`CollectorStatus.TRUNCATION`.
+    ``effective_status`` may downgrade the collector's reported status, for
+    example to :attr:`CollectorStatus.MID_RUN_LOSS` when the source reports
+    dropped events.
     """
 
     record: ExperimentEvidenceRecordModel
@@ -134,117 +123,15 @@ def media_type_supported(outcome: CollectorOutcome, binding: CaptureBinding) -> 
     return _media_type_of(outcome, binding) in binding.expected_media_types
 
 
-def _redact_json_bytes(
-    raw: bytes, handler: Callable[[object], object]
-) -> tuple[bytes, bool]:
-    """Redact one JSON value; malformed input must never pass through raw."""
-    parsed = json.loads(raw)
-    safe = handler(parsed)
-    if safe == parsed:
-        return raw, False
-    return json.dumps(safe, separators=(",", ":")).encode("utf-8"), True
-
-
-def _prepare_bytes(
+def _prepared_chunks(
     outcome: CollectorOutcome, media_type: str, binding: CaptureBinding
-) -> tuple[Sequence[bytes], str, bool]:
-    """Redact complete bounded input before retaining an over-quota prefix.
-
-    Materialized JSON uses a separate processing ceiling for safe prefixes.
-    Streaming input and other media keep the admitted input byte limit.
-    Opaque capture cannot satisfy a required redaction policy.
-    """
-    if media_type not in _REDACTABLE_MEDIA_TYPES:
-        if binding.redaction_required:
-            raise ValueError("capture media type has no trusted redaction adapter")
-        return outcome.chunks, "none", False
-
-    input_limit = binding.limits.max_bytes
-    if media_type == _JSON_MEDIA_TYPE and isinstance(outcome.chunks, (tuple, list)):
-        input_limit = max(input_limit, _MAX_REDACTION_BYTES)
-    raw = _consume_bounded_chunks(outcome.chunks, input_limit)
-    handler = _redaction_handler(binding)
-    redacted, changed = _prepare_redactable_bytes(raw, media_type, handler)
-    truncated = len(redacted) > binding.limits.max_bytes
-    if truncated and media_type == _JSON_MEDIA_TYPE:
-        prefix = capture_prefix(json.loads(redacted), {}, binding.limits.max_bytes)
-        redacted = json.dumps([prefix], separators=(",", ":")).encode()
-    return [redacted], ("redacted" if changed else "none"), truncated
-
-
-def _consume_bounded_chunks(chunks: Sequence[bytes], max_bytes: int) -> bytes:
-    """Join a complete stream without reading beyond its admitted byte budget."""
-
-    raw = bytearray()
-    for chunk in chunks:
-        if len(chunk) > max_bytes - len(raw):
-            raise BufferError("capture exceeds its admitted byte budget")
-        raw.extend(chunk)
-    return bytes(raw)
-
-
-def _redaction_handler(
-    binding: CaptureBinding,
-) -> Callable[[object], object] | None:
-    """Resolve only the binding's explicitly admitted trusted handler."""
-
-    handler = None
-    if binding.redaction_required:
-        handler = _REDACTION_HANDLERS.get(binding.redaction_policy or "")
-        if handler is None:
-            raise ValueError("capture redaction policy has no trusted handler")
-    return handler
-
-
-def _prepare_redactable_bytes(
-    raw: bytes,
-    media_type: str,
-    handler: Callable[[object], object] | None,
-) -> tuple[bytes, bool]:
-    """Validate and optionally redact one complete structured/text payload."""
-
-    if media_type == _JSON_MEDIA_TYPE:
-        if handler is not None:
-            prepared = _redact_json_bytes(raw, handler)
-        else:
-            json.loads(raw)
-            prepared = raw, False
-    elif media_type == _TEXT_MEDIA_TYPE:
-        prepared = _prepare_text_bytes(raw, handler)
-    else:
-        prepared = _prepare_json_lines(raw, handler)
-    return prepared
-
-
-def _prepare_text_bytes(
-    raw: bytes, handler: Callable[[object], object] | None
-) -> tuple[bytes, bool]:
-    """Decode complete UTF-8 text and apply its trusted redaction policy."""
-
-    text = raw.decode("utf-8")
-    safe = handler(text) if handler is not None else text
-    if not isinstance(safe, str):
-        raise TypeError("text redaction handler returned non-text")
-    return safe.encode("utf-8"), safe != text
-
-
-def _prepare_json_lines(
-    raw: bytes, handler: Callable[[object], object] | None
-) -> tuple[bytes, bool]:
-    """Validate and optionally redact every non-empty NDJSON record."""
-
-    lines: list[tuple[bytes, bool]] = []
-    for line in raw.splitlines():
-        if not line.strip():
-            continue
-        if handler is None:
-            json.loads(line)
-            lines.append((line, False))
-        else:
-            lines.append(_redact_json_bytes(line, handler))
-    changed = any(was_changed for _, was_changed in lines)
-    redacted = b"\n".join(line for line, _ in lines) + (b"\n" if lines else b"")
-    return redacted, changed
+) -> Iterable[bytes]:
+    """Return the complete stream to persist, redacted when the binding asks."""
+    if binding.redaction_required and binding.redaction_policy not in _REDACTION_POLICIES:
+        raise ValueError("capture redaction policy has no trusted handler")
+    return prepare_stream(
+        outcome.chunks, media_type, redacted=binding.redaction_required
+    )
 
 
 def persist_success_outcome(
@@ -259,36 +146,26 @@ def persist_success_outcome(
 ) -> ProcessedOutcome:
     """Persist one captured outcome content-addressably and build its RAES record.
 
-    Enforces the binding's byte quota during streaming (truncation flips the
-    effective status and adds a mandatory loss disclosure), redacts structured
-    payloads, and derives a deterministic evidence-record identity.
-    ``WITHHELD``-visibility evidence keeps its bytes but is recorded as
-    ``redaction_state="withheld"`` so a participant projection can drop it.
-    The record's capture time is the collector's observed finish time.
+    Streams the complete content to the run store, redacting structured
+    payloads only when the binding applies a redaction policy, and derives a
+    deterministic evidence-record identity. Evaluator-only references stay
+    excluded from participant projections. The record's capture time is the
+    collector's observed finish time.
     """
     captured_at = outcome.finished_at
     media_type = _media_type_of(outcome, binding)
-    chunks, structured_redaction_state, prepared_truncation = _prepare_bytes(
-        outcome, media_type, binding
-    )
-
     content = content_store.create_content_addressed(
         run_store,
         run_id,
-        chunks,
+        _prepared_chunks(outcome, media_type, binding),
         subdir=_EVIDENCE_SUBDIR,
-        max_bytes=binding.limits.max_bytes,
     )
+    effective_status = _effective_status(outcome)
 
-    if prepared_truncation:
-        content = replace(content, truncated=True)
-    effective_status = _effective_status(outcome, content=content, binding=binding)
-
-    withheld = binding.visibility_class in (
-        CaptureVisibility.EVALUATOR_ONLY,
-        CaptureVisibility.APPARATUS_ONLY,
-    )
-    redaction_state = "withheld" if withheld else structured_redaction_state
+    # A binding that applies a redaction policy records that policy, so its
+    # state is "redacted" even when the policy changed no bytes. RAES rejects
+    # a record with a policy and the state "none".
+    redaction_state = "redacted" if binding.redaction_policy else "none"
     loss_disclosure = _loss_disclosure(
         outcome, effective_status=effective_status, redaction_state=redaction_state
     )
@@ -329,14 +206,10 @@ def persist_success_outcome(
     return ProcessedOutcome(record=record, ref=ref, effective_status=effective_status)
 
 
-#: Bound for the observer effect retained in a failure-fact record.
-_OBSERVER_EFFECT_FACT_LIMIT = 500
-
-
 def _failure_fact_blob(
     binding: CaptureBinding, status: CollectorStatus, effect: str
 ) -> tuple[str, bytes]:
-    """Render bounded, core-owned failure facts in a media type the binding retains."""
+    """Render core-owned failure facts in a media type the binding retains."""
     expected = binding.expected_media_types
     if expected and _JSON_MEDIA_TYPE not in expected and _TEXT_MEDIA_TYPE in expected:
         text = f"status={status.value}; observer_effect={effect}"
@@ -373,7 +246,7 @@ def retained_failure_outcome(
         return outcome
     if phase is not AcquisitionPhase.PREPARATION and outcome.observer_effect is None:
         return outcome
-    effect = (outcome.observer_effect or "unknown")[:_OBSERVER_EFFECT_FACT_LIMIT]
+    effect = outcome.observer_effect or "unknown"
     media, blob = _failure_fact_blob(binding, outcome.status, effect)
     return CollectorOutcome(
         status=outcome.status,
@@ -401,8 +274,6 @@ _REDACTION_DISCLOSURES = {
 #: Disclosure text per limit/loss status the coordinator enforces. ``{dropped}``
 #: is filled from the outcome's dropped-event count.
 _STATUS_DISCLOSURES = {
-    CollectorStatus.TIMEOUT: "collector exceeded the admitted duration; capture is incomplete",
-    CollectorStatus.TRUNCATION: "content truncated to the admitted quota; {dropped} event(s) dropped",
     CollectorStatus.MID_RUN_LOSS: "{dropped} event(s) dropped mid-run",
 }
 
@@ -427,33 +298,11 @@ def _record_sensitivity(value: str) -> str:
         raise ValueError("unsupported evidence-record sensitivity") from exc
 
 
-def _elapsed_seconds(outcome: CollectorOutcome) -> float:
-    """Return the collector's observed run duration in seconds (0.0 if unparseable)."""
-    try:
-        start = datetime.fromisoformat(outcome.started_at.replace("Z", "+00:00"))
-        end = datetime.fromisoformat(outcome.finished_at.replace("Z", "+00:00"))
-    except ValueError, AttributeError:
-        return 0.0
-    return max(0.0, (end - start).total_seconds())
+def _effective_status(outcome: CollectorOutcome) -> CollectorStatus:
+    """Downgrade a reported OK to ``MID_RUN_LOSS`` when the source dropped events.
 
-
-def _effective_status(
-    outcome: CollectorOutcome, *, content: ContentInsertion, binding: CaptureBinding
-) -> CollectorStatus:
-    """Downgrade a reported OK to a limit/loss status the coordinator enforces.
-
-    The binding's admitted duration, artifact-count, and byte limits are ALL
-    enforced here (not just the byte quota the content store applied): an
-    over-duration run is a ``TIMEOUT``, an over-byte or over-count capture is a
-    ``TRUNCATION``, and any mid-run drop is a ``MID_RUN_LOSS``. Each is a hard
-    failure the disposition invalidates unless the policy accepted the
-    degradation — a dropped-event capture is never silently OK / seal-ready.
+    A dropped-event capture is never silently OK or seal-ready.
     """
-    limits = binding.limits
-    if _elapsed_seconds(outcome) > limits.max_duration_s:
-        return CollectorStatus.TIMEOUT
-    if content.truncated or outcome.event_count > limits.max_artifact_count:
-        return CollectorStatus.TRUNCATION
     return CollectorStatus.MID_RUN_LOSS if outcome.dropped_count > 0 else outcome.status
 
 

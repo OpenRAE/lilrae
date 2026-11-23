@@ -30,8 +30,6 @@ from aptl.utils.pathsafe import (
 )
 
 _ROOT = Path(".aptl/lifecycle/lilrae-native-evidence-v1")
-_LIMIT = 128 * 1024
-_FILES = 1024
 _CLEANUP_CAUSES = frozenset({"after-remove", "already-absent"})
 # Fields that a later observation of the same absence may change.
 _WITNESS_FREE = frozenset({"cause", "recorded_at"})
@@ -78,11 +76,10 @@ def confirm_native_absence(
     if (
         result.returncode != 0
         or not isinstance(result.stdout, str)
-        or len(result.stdout) > 64 * 1024
     ):
         raise OwnershipConflictError("native absence could not be established")
     identities = result.stdout.splitlines()
-    if len(identities) > _FILES or any(
+    if any(
         not re.fullmatch(
             r"[A-Za-z0-9][A-Za-z0-9_.-]*"
             if receipt.kind == "volume"
@@ -98,17 +95,12 @@ def confirm_native_absence(
 
 
 def _read(root: Path, path: Path) -> bytes:
-    """Read one protected native evidence file within its byte bound."""
+    """Read one complete protected native evidence file."""
     with open_contained_nofollow(root, path) as handle:
         info = os.fstat(handle.fileno())
         if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600:
             raise OwnershipConflictError("native evidence is not protected")
-        if info.st_size > _LIMIT:
-            raise BufferError("native proof exceeds its byte bound")
-        data = handle.read(_LIMIT + 1)
-    if len(data) > _LIMIT:
-        raise BufferError("native proof exceeds its byte bound")
-    return data
+        return handle.read()
 
 
 def _publish(root: Path, path: Path, data: bytes) -> None:
@@ -218,8 +210,6 @@ def _files(root: Path, directory: Path) -> tuple[Path, ...]:
         if exc.reason == REASON_NOT_FOUND:
             return ()
         raise
-    if len(names) > _FILES:
-        raise BufferError("native evidence exceeds its artifact bound")
     return tuple(directory / name for name in names if name.endswith(".json"))
 
 
@@ -369,6 +359,4 @@ def native_evidence_artifacts(
     artifacts += _creation_artifacts(store)
     artifacts += _readback_artifacts(store, attempt_id, daemon_id)
     artifacts += _recording_artifacts(store)
-    if len(artifacts) > _FILES:
-        raise BufferError("native evidence exceeds its artifact bound")
     return tuple(artifacts)

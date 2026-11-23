@@ -94,6 +94,12 @@ from aptl.core.lab_types import LabResult
 if TYPE_CHECKING:
     from raes_processor.models import ExecutionPlan
 
+    from aptl.backends.scenario_capture import ResolvedScenarioCapture
+    from aptl.backends.scenario_startup import ScenarioStartupSelection
+    from aptl.core.experiment.capture_plan import CapturePlan
+    from aptl.core.participant_binding import LilraeParticipantBinding
+    from aptl.core.scenario_bundle import ScenarioBundle
+
     from aptl.core.deployment.backend import DeploymentBackend
     from aptl.core.runstore import RunStorageBackend
 
@@ -227,6 +233,9 @@ def admit_raes_scenario(
     scenario, parameters, capture_plan = prepare_admission_scenario(
         bundle, parameters, capture_selection, parser=parse_sdl_file
     )
+    bindings = _trial_participant_bindings(
+        bundle, startup_selection, admission_run, selected.autonomous_bindings
+    )
     from aptl.core.mcp_policy import select_scenario_servers
 
     mcp_server_ids = select_scenario_servers(scenario, config.mcp)
@@ -251,7 +260,7 @@ def admit_raes_scenario(
         backend=backend,
         bundle=bundle,
         options=RuntimeTargetOptions(
-            autonomous_bindings=selected.autonomous_bindings,
+            autonomous_bindings=bindings,
             artifact_availability=availability,
             capture_plan=capture_plan,
             observability_scope=observability_scope_decision(scenario),
@@ -263,6 +272,10 @@ def admit_raes_scenario(
             ),
         ),
     )
+    trial_capture_plan = _admitted_trial_capture_plan(
+        admission_run, capture_plan, capture_selection
+    )
+    target.provisioner.trial_capture_plan = trial_capture_plan
     # Planning needs no runtime owner. The one runtime for the run is created
     # for apply and kept for the whole interaction (OpenRAE/rae#1660).
     execution_plan = plan_aptl_scenario(
@@ -296,19 +309,66 @@ def admit_raes_scenario(
     participant_delivery_plan = bind_admitted_participant_runtime(
         target, execution_plan, bundle, config, realization, scenario, capture_plan
     )
-    participant_delivery_plan = replace(participant_delivery_plan, mcp_server_ids=mcp_server_ids)
+    participant_delivery_plan = replace(
+        participant_delivery_plan, mcp_server_ids=mcp_server_ids
+    )
     return AdmittedScenarioStart(
         bundle=bundle,
         target=target,
         execution_plan=execution_plan,
         realization=realization,
         capture_plan=capture_plan,
+        trial_capture_plan=trial_capture_plan,
         runtime_materialization_failure=materialization_failure,
         startup_selection=startup_selection,
         capture_selection=capture_selection,
         scenario=scenario,
         participant_delivery_plan=participant_delivery_plan,
         mcp_server_ids=mcp_server_ids,
+    )
+
+
+def _trial_participant_bindings(
+    bundle: ScenarioBundle,
+    startup_selection: ScenarioStartupSelection,
+    admission_run: ScenarioAdmissionRun,
+    bindings: tuple[LilraeParticipantBinding, ...],
+) -> tuple[LilraeParticipantBinding, ...]:
+    """Return the caller's bindings, or the installed trial adapter's bindings."""
+    factory = getattr(
+        startup_selection.provider if startup_selection is not None else None,
+        "trial_participant_bindings",
+        None,
+    )
+    if bundle.trial is None or bindings or not callable(factory):
+        return bindings
+    from aptl.core.participant_binding import LilraeParticipantBinding
+
+    installed = factory(bundle, family=admission_run.trial.family)
+    if not isinstance(installed, tuple) or not all(
+        isinstance(item, LilraeParticipantBinding) for item in installed
+    ):
+        raise ValueError("installed trial participant bindings are invalid")
+    return installed
+
+
+def _admitted_trial_capture_plan(
+    admission_run: ScenarioAdmissionRun,
+    capture_plan: CapturePlan,
+    capture_selection: ResolvedScenarioCapture | None,
+) -> CapturePlan | None:
+    """Admit the trial's measurement demands against the selected capture registry."""
+    from aptl.core.experiment.capture_plan import admit_capture_demands
+
+    from raes_processor.capture_admission import compile_capture_spec_demands
+
+    measurement_demands = compile_capture_spec_demands(admission_run.trial_capture_specs)
+    if not measurement_demands or capture_selection is None:
+        return None
+    return admit_capture_demands(
+        measurement_demands,
+        source_identity=capture_plan.source_identity,
+        registry=capture_selection.registry,
     )
 
 

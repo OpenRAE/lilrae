@@ -126,7 +126,7 @@ def capture_source_context(
     )
 
     def read_output(artifact_name: str, output_name: str) -> bytes:
-        """Read one bounded generated output explicitly granted by the adapter."""
+        """Read one complete generated output explicitly granted by the adapter."""
 
         allowed = request.capture_selection.contribution.generated_output_refs
         if GeneratedOutputReference(artifact_name, output_name) not in allowed:
@@ -144,10 +144,7 @@ def capture_source_context(
         try:
             root = artifact_source_path(request.project_dir, artifacts[0])
             with open_contained_nofollow(root, outputs[0].path) as handle:
-                data = handle.read(2 * 1024 * 1024 + 1)
-            if len(data) > 2 * 1024 * 1024:
-                raise ValueError
-            return data
+                return handle.read()
         except Exception:
             raise ValueError("capture-output-unavailable") from None
 
@@ -212,7 +209,14 @@ def family_capture_sources(
     if (
         not isinstance(sources, Mapping)
         or len(sources) > 256
-        or not set(sources).issubset(contribution.native_registration_ids)
+        or not set(sources).issubset(
+            contribution.native_registration_ids
+            | (
+                contribution.measurement_registration_ids
+                if not context.may_prepare
+                else frozenset()
+            )
+        )
         or any(
             not isinstance(source, WindowedSource) or not callable(source.fetch)
             for source in sources.values()
@@ -314,6 +318,8 @@ class ScenarioCaptureContribution:
         default=None, repr=False, compare=False
     )
     generated_output_refs: tuple[GeneratedOutputReference, ...] = ()
+    #: Sources collected only during trial measurement, after startup preparation.
+    measurement_registration_ids: frozenset[str] = frozenset()
 
 
 class ScenarioCaptureProvider(Protocol):

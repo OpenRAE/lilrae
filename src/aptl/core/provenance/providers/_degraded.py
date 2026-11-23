@@ -20,9 +20,7 @@ from collections.abc import Mapping
 
 from aptl.core.provenance.outcomes import (
     DETAIL_ABSENT,
-    DETAIL_BYTE_LIMIT,
     DETAIL_DEADLINE,
-    DETAIL_ENTRY_LIMIT,
     DETAIL_OWNER_FAILURE,
     DETAIL_UNREADABLE,
     ProvenanceStatus,
@@ -71,16 +69,6 @@ def absent(payload: Mapping[str, object] | None = None) -> ProviderDegraded:
 def owner_failure(payload: Mapping[str, object] | None = None) -> ProviderDegraded:
     """Return the signal for an owner adapter that raised or returned an error."""
     return ProviderDegraded(ProvenanceStatus.FAILED, DETAIL_OWNER_FAILURE, payload)
-
-
-def entry_limit(payload: Mapping[str, object] | None = None) -> ProviderDegraded:
-    """Return the signal for exceeding the declared entry budget."""
-    return ProviderDegraded(ProvenanceStatus.TRUNCATED, DETAIL_ENTRY_LIMIT, payload)
-
-
-def byte_limit(payload: Mapping[str, object] | None = None) -> ProviderDegraded:
-    """Return the signal for exceeding the declared byte budget."""
-    return ProviderDegraded(ProvenanceStatus.TRUNCATED, DETAIL_BYTE_LIMIT, payload)
 
 
 def deadline(payload: Mapping[str, object] | None = None) -> ProviderDegraded:

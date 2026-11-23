@@ -125,6 +125,31 @@ Test collection reads no lab environment file and provisions no API key.
 Superseded PR cancellation uses a PR-specific group; release and branch validation have separate groups.
 Cleanup steps retain their unconditional execution conditions.
 
+## Dev merge queue
+
+Pull requests to `dev` merge through a GitHub merge queue ([ADR-068](../adrs/adr-068-dev-merge-queue.md), #1735).
+`dev` does not require strict status checks. `main` and `go-cutover` keep them and have no queue.
+
+- A pull request must pass the required checks before it can enter the queue.
+- The queue squash-merges each pull request. The squash commit message is the PR title only.
+- The `main` to `dev` back-merge and the `go-cutover` to `dev` merge use a merge commit.
+  An administrator merges them with the admin bypass, outside the queue.
+- The queue then runs the required checks again on a merge group.
+  A merge group contains `dev`, the queued pull requests in front of it, and the pull request.
+- `checks.yml` and `pr-title-lint.yml` run on the `merge_group` event for `dev`.
+  A required context that does not report keeps the group from merging.
+- The change selector compares the merge group with `merge_group.base_sha`.
+- The PR title lint gets the pull request number from the `gh-readonly-queue` ref.
+  It validates the current title from the GitHub API.
+  It fails closed when it cannot read that title.
+- SonarCloud analyzes the merge group ref as a short-lived branch.
+- A failed required check removes the pull request from the queue. The pull request does not merge.
+- The readiness step of the GRC workflow platform adds a ready pull request to the queue.
+
+`tests/test_platform_ci_gates.py` holds these rules against `.github/branch-protection-baseline.json`.
+It fails when a required producer for `dev` has no `merge_group` trigger.
+It also fails when a branch has no strict status checks and no merge queue.
+
 ## Go cutover branch
 
 Milestone 44 ports LilRAE to Go on the long-lived `go-cutover` branch (#1584).

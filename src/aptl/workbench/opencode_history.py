@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from contextlib import closing
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 import hashlib
-import os
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 import sys
+import tempfile
 
 from aptl.core.opencode import (
     NativeHistoryObservation,
@@ -20,10 +22,9 @@ from aptl.utils.pathsafe import (
     open_contained_nofollow,
 )
 from aptl.utils.strict_json import loads_strict
+from aptl.workbench.opencode_events import PARTICIPANT_END_REASONS
 
 _DATABASE = "data/opencode/opencode.db"
-_MAX_ROWS = 4096
-_MAX_VALUE_BYTES = 1_000_000
 _FINISH_REASONS = frozenset(
     {"stop", "tool-calls", "length", "content-filter", "error", "other", "unknown"}
 )
@@ -39,8 +40,8 @@ def _identifier(value: object, prefix: str) -> str:
 
 
 def _object(raw: object) -> dict[str, object]:
-    """Decode one bounded closed native JSON object."""
-    if not isinstance(raw, str) or len(raw.encode("utf-8")) > _MAX_VALUE_BYTES:
+    """Decode one closed native JSON object."""
+    if not isinstance(raw, str):
         raise ValueError("invalid native JSON value")
     value = loads_strict(raw)
     if not isinstance(value, dict):
@@ -109,10 +110,10 @@ def _messages(
 ) -> tuple[dict[str, str], str]:
     """Validate message membership and the exact native model."""
     messages = db.execute(
-        "SELECT id, data FROM message WHERE session_id=? ORDER BY time_created, id LIMIT ?",
-        (session, _MAX_ROWS + 1),
+        "SELECT id, data FROM message WHERE session_id=? ORDER BY time_created, id",
+        (session,),
     ).fetchall()
-    if not messages or len(messages) > _MAX_ROWS:
+    if not messages:
         raise ValueError("invalid native message count")
     roles = {}
     users = []
@@ -149,7 +150,9 @@ def _read_session(
     if delivered != expected_prompt:
         raise ValueError("native prompt mismatch")
     return NativeHistoryObservation(
-        status="observed" if steps and steps[-1].finish_reason == "stop" else "partial",
+        status="observed"
+        if steps and steps[-1].finish_reason in PARTICIPANT_END_REASONS
+        else "partial",
         session_id=session,
         user_message_id=user_message_id,
         prompt_matches=True,
@@ -163,12 +166,17 @@ def _read_session(
 def _validate_message_model(
     value: dict[str, object], role: str, expected_model: str
 ) -> None:
-    """Compare the recorded provider and model with the independently retained pin."""
+    """Compare the recorded provider and model with the independently retained pin.
+
+    The pin is ``<provider>/<model>``; the model part can itself contain ``/``.
+    """
+    provider, _, model_id = expected_model.partition("/")
     model = value.get("model") if role == "user" else value
     if (
-        not isinstance(model, dict)
-        or model.get("providerID") != "openrouter"
-        or model.get("modelID") != expected_model.removeprefix("openrouter/")
+        not model_id
+        or not isinstance(model, dict)
+        or model.get("providerID") != provider
+        or model.get("modelID") != model_id
     ):
         raise ValueError("native model mismatch")
 
@@ -183,14 +191,12 @@ def _user_text(value: dict[str, object]) -> str:
 def _parts(
     db: sqlite3.Connection, session: str, roles: dict[str, str]
 ) -> tuple[bytes, list[NativeStepObservation]]:
-    """Reduce bounded part membership to prompt bytes and terminal step facts."""
+    """Reduce part membership to prompt bytes and terminal step facts."""
     parts = db.execute(
         "SELECT id, message_id, data, time_created, time_updated "
-        "FROM part WHERE session_id=? ORDER BY time_created, id LIMIT ?",
-        (session, _MAX_ROWS + 1),
+        "FROM part WHERE session_id=? ORDER BY time_created, id",
+        (session,),
     ).fetchall()
-    if len(parts) > _MAX_ROWS:
-        raise ValueError("oversized native history")
     prompt = []
     steps = []
     seen = set()
@@ -214,7 +220,6 @@ def read_native_history(
     expected_prompt: bytes,
     expected_model: str,
     session_id: str | None,
-    max_bytes: int = 16 * 1024 * 1024,
 ) -> NativeHistoryObservation:
     """Read one contained, checkpointed database; never export raw native data.
 
@@ -226,7 +231,7 @@ def read_native_history(
         return NativeHistoryObservation(status="unsupported-platform")
     try:
         observation = _contained_history(
-            work, expected_prompt, expected_model, session_id, max_bytes
+            work, expected_prompt, expected_model, session_id
         )
     except PathContainmentError as exc:
         observation = NativeHistoryObservation(
@@ -237,32 +242,104 @@ def read_native_history(
     return observation
 
 
-def _contained_history(
-    work: Path, prompt: bytes, model: str, session: str | None, max_bytes: int
-) -> NativeHistoryObservation:
-    """Read only a contained checkpointed database under SQLite resource limits."""
+def _wal_is_empty(work: Path) -> bool:
+    """Return whether the database has no pending write-ahead log content."""
     try:
         with open_contained_nofollow(work, _DATABASE + "-wal") as journal:
-            if journal.read(1):
-                return NativeHistoryObservation(status="uncheckpointed")
+            return not journal.read(1)
     except PathContainmentError as exc:
         if exc.reason != REASON_NOT_FOUND:
             raise
+    return True
+
+
+@contextmanager
+def _native_database(work: Path) -> Iterator[sqlite3.Connection]:
+    """Open the contained database read-only."""
     with open_contained_nofollow(work, _DATABASE) as source:
-        if os.fstat(source.fileno()).st_size > max_bytes:
-            return NativeHistoryObservation(status="oversized")
         uri = f"file:/proc/self/fd/{source.fileno()}?mode=ro&immutable=1"
         with closing(sqlite3.connect(uri, uri=True, timeout=0)) as db:
             db.execute("PRAGMA query_only=ON")
             db.execute("PRAGMA trusted_schema=OFF")
-            db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _MAX_VALUE_BYTES)
-            calls = 0
+            yield db
 
-            def bounded_query() -> int:
-                """Abort native queries after a bounded number of VM steps."""
-                nonlocal calls
-                calls += 1
-                return int(calls > 1000)
 
-            db.set_progress_handler(bounded_query, 1000)
-            return _read_session(db, prompt, model, session)
+@contextmanager
+def _checkpointed_root(work: Path) -> Iterator[Path]:
+    """Yield a root whose database has no pending log.
+
+    A cancelled participant can leave write-ahead log content. Its process has
+    ended, so a private copy of the database and its log is checkpointed and
+    read instead of the work tree.
+    """
+    if _wal_is_empty(work):
+        yield work
+        return
+    with tempfile.TemporaryDirectory(prefix="opencode-history-") as private:
+        target = Path(private) / _DATABASE
+        target.parent.mkdir(parents=True)
+        for suffix in ("", "-wal"):
+            with (
+                open_contained_nofollow(work, _DATABASE + suffix) as source,
+                open(f"{target}{suffix}", "wb") as copy,
+            ):
+                shutil.copyfileobj(source, copy)
+        with closing(sqlite3.connect(target, timeout=0)) as db:
+            db.execute("PRAGMA trusted_schema=OFF")
+            db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        yield Path(private)
+
+
+def _contained_history(
+    work: Path, prompt: bytes, model: str, session: str | None
+) -> NativeHistoryObservation:
+    """Read only a contained checkpointed database."""
+    with _checkpointed_root(work) as root, _native_database(root) as db:
+        return _read_session(db, prompt, model, session)
+
+
+def export_native_session(work: Path) -> dict[str, object] | None:
+    """Return every recorded session, message and part, or ``None`` when unreadable.
+
+    The export is the participant's raw chat: prompts, reasoning, replies, tool
+    calls and tool results. The caller redacts granted credentials before it
+    retains the export.
+    """
+    if sys.platform != "linux":
+        return None
+    try:
+        with _checkpointed_root(work) as root, _native_database(root) as db:
+            return _session_export(db)
+    except OSError, sqlite3.Error, ValueError, PathContainmentError:
+        return None
+
+
+def _session_export(db: sqlite3.Connection) -> dict[str, object]:
+    """Return every session, message and part row of one open database."""
+    return {
+        "schema_version": "lilrae-opencode-session/v1",
+        "sessions": _rows(db, "SELECT * FROM session ORDER BY id"),
+        "messages": _rows(
+            db,
+            "SELECT id, session_id, data, time_created, time_updated "
+            "FROM message ORDER BY time_created, id",
+        ),
+        "parts": _rows(
+            db,
+            "SELECT id, message_id, session_id, data, time_created, "
+            "time_updated FROM part ORDER BY time_created, id",
+        ),
+    }
+
+
+def _rows(db: sqlite3.Connection, query: str) -> list[dict[str, object]]:
+    """Return one table's rows by column name, decoding the native JSON data."""
+    cursor = db.execute(query)
+    names = [column[0] for column in cursor.description]
+    rows = []
+    for values in cursor.fetchall():
+        row = dict(zip(names, values, strict=True))
+        if isinstance(row.get("data"), str):
+            row["data"] = loads_strict(row["data"])
+        rows.append(row)
+    return rows

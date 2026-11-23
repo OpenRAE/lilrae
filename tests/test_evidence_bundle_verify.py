@@ -1,8 +1,8 @@
-"""Tests for the standalone, streaming, resource-bounded bundle verifier.
+"""Tests for the standalone, streaming bundle verifier.
 
 Proves the happy path, that the verifier imports no APTL internals, and that it
 rejects tampered digests, inventory/archive disagreement, unsafe member paths,
-link members, and a member-count blow-up. Input it cannot open or read fails
+link members, and an oversized envelope. Input it cannot open or read fails
 with a report instead of an exception.
 """
 
@@ -134,12 +134,19 @@ class TestRejections:
         assert not report.ok
         assert any("link member rejected" in issue for issue in report.issues)
 
-    def test_member_count_bound_fires(self, tmp_path: Path, monkeypatch) -> None:
+    def test_member_count_and_size_have_no_verifier_limit(self, tmp_path: Path) -> None:
         out, _ = _build(tmp_path)
-        monkeypatch.setattr(verify_mod, "_MAX_MEMBERS", 1)
+        assert not hasattr(verify_mod, "_MAX_MEMBERS")
+        assert not hasattr(verify_mod, "_MAX_MEMBER_BYTES")
+        assert not hasattr(verify_mod, "_MAX_TOTAL_BYTES")
+        assert verify_bundle(out).ok
+
+    def test_oversized_envelope_is_rejected(self, tmp_path: Path, monkeypatch) -> None:
+        out, _ = _build(tmp_path)
+        monkeypatch.setattr(verify_mod, "_MAX_ENVELOPE_BYTES", 1)
         report = verify_bundle(out)
         assert not report.ok
-        assert any("member count exceeds" in issue for issue in report.issues)
+        assert any("envelope exceeds" in issue for issue in report.issues)
 
 
 class TestEnvelopeStructure:

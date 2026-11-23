@@ -36,7 +36,6 @@ from aptl.backends.scenario_startup import (
 from aptl.core.config import AptlConfig
 from aptl.core.evidence.adapters.wiring import build_collectors
 from aptl.core.experiment.capture_registry import (
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
     CollectorRegistry,
@@ -79,7 +78,6 @@ def _registration() -> CollectorRegistration:
         supports_retention=True,
         supports_loss_disclosure=True,
         visibility_class=CaptureVisibility.EVALUATOR_ONLY,
-        limits=CaptureLimits(4096, 10, 60),
     )
 
 

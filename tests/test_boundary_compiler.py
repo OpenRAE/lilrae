@@ -4,7 +4,11 @@ import pytest
 
 from aptl.core.appliance_boundary import ApplianceBoundaryPolicy
 from tests.seat_policy_fixture import protected_seat_policy
-from aptl.core.deployment.boundary import BoundaryNetwork, BoundaryWorkload
+from aptl.core.deployment.boundary import (
+    BoundaryNetwork,
+    BoundaryWorkload,
+    SeatPermittedFlow,
+)
 from aptl.core.deployment.boundary_compiler import (
     BoundaryCompileError,
     compile_raes_boundary,
@@ -407,4 +411,17 @@ def test_seat_protection_requires_exact_complete_realization_networks() -> None:
             policy_digest="sha256:" + "a" * 64,
             networks=complete_networks,
             owner="seat-17",
+        )
+
+
+def test_seat_permitted_flow_rejects_ports_the_helper_would_refuse() -> None:
+    # The helper refuses unsorted ports, so the spec must refuse them first.
+    with pytest.raises(ValueError, match="permitted flow"):
+        SeatPermittedFlow(
+            source="ordinary-range-workload",
+            destination="management-control",
+            protocol="tcp",
+            ports=(9443, 8443),
+            purpose="reviewed management callback",
+            probe_identity="reviewed-management-callback",
         )

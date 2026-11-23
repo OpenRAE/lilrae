@@ -14,16 +14,16 @@ from pathlib import PurePosixPath
 from dataclasses import dataclass, field
 from datetime import datetime
 from subprocess import TimeoutExpired
+from typing import IO
 
 from aptl.core.evidence.adapters.sources import (
     CallableWindowedSource,
     SourceResult,
     WindowedSource,
-    capture_read_bytes,
 )
 from aptl.core.evidence.outcomes import CollectorStatus
+from aptl.core.evidence.spool import JsonArrayWriter, iter_spool, new_spool, spool_size
 from aptl.core.runstore import RunStorageBackend
-from aptl.utils.redaction import redact
 from aptl.utils.pathsafe import (
     PathContainmentError,
     open_contained_nofollow,
@@ -89,99 +89,74 @@ class RunArchiveSource:
         return SourceResult(status=status, records=records, dropped_count=dropped)
 
 
-def _partial_read_record(name: str, exc: Exception) -> dict[str, object]:
-    """Retain accepted streams from an interrupted source read."""
-
-    def text(value: object) -> str:
-        """Decode accepted source output without exposing exception diagnostics."""
-        if isinstance(value, bytes):
-            return value.decode("utf-8", errors="replace")
-        return value if isinstance(value, str) else ""
-
-    return {
-        "container": name,
-        "status": "timeout" if isinstance(exc, TimeoutExpired) else "interrupted-read",
-        "output": text(getattr(exc, "stdout", None)),
-        "stderr": text(getattr(exc, "stderr", None)),
-        "window_coverage": "partial",
-    }
+def _instant(value: str) -> datetime:
+    """Parse a source timestamp and require an explicit time zone."""
+    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if result.tzinfo is None:
+        raise ValueError("file timestamp requires a time zone")
+    return result
 
 
-def _select_file_window(
-    records: list[dict[str, object]],
+def _select_lines(
+    source: IO[bytes],
+    target: IO[bytes],
     timestamp_of: Callable[[str], str],
-    start_iso: str,
-    end_iso: str,
+    start: datetime,
+    end: datetime,
 ) -> int:
-    """Select complete raw lines by an adapter-owned timestamp decoder."""
-
-    def instant(value: str) -> datetime:
-        """Parse a source timestamp and require an explicit time zone."""
-        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if result.tzinfo is None:
-            raise ValueError("file timestamp requires a time zone")
-        return result
-
-    start, end = instant(start_iso), instant(end_iso)
-    if end < start:
-        raise ValueError("file capture window is invalid")
+    """Copy the lines of ``source`` inside ``[start, end]``; return the dropped count."""
     dropped = 0
-    for record in records:
-        selected = []
-        for line in record.get("output", "").splitlines(keepends=True):
+    pending = b""
+    for chunk in [*iter_spool(source), b""]:
+        pending += chunk
+        lines = pending.splitlines(keepends=True)
+        pending = lines.pop() if chunk and lines and not lines[-1].endswith(b"\n") else b""
+        for raw in lines:
+            line = raw.decode("utf-8", errors="replace")
             try:
-                observed = instant(timestamp_of(line))
+                observed = _instant(timestamp_of(line))
             except ValueError, TypeError, KeyError, AttributeError:
                 dropped += 1
                 continue
             if start <= observed <= end:
-                selected.append(line)
-        record["output"] = "".join(selected)
-        record["window_coverage"] = "selected-records"
-        record["coverage_limitations"] = [
-            "History coverage depends on the adapter-selected current and rotated files."
-        ]
+                target.write(raw)
     return dropped
 
 
 @dataclass
-class _ReadResult:
-    """Accepted native rows and the limits or failures observed while reading them."""
+class _ReadFlags:
+    """Failures observed while streaming native sources."""
 
-    records: list[dict[str, object]] = field(default_factory=list)
-    consumed_bytes: int = 0
-    failed: bool = False
-    truncated: bool = False
+    failed: list[dict[str, object] | str] = field(default_factory=list)
     timed_out: bool = False
     interrupted: bool = False
 
-    def add(self, other: _ReadResult) -> None:
-        """Accumulate accepted rows without losing a peer's failure or limit flags."""
-        self.records.extend(other.records)
-        self.consumed_bytes += other.consumed_bytes
-        self.failed |= other.failed
-        self.truncated |= other.truncated
-        self.timed_out |= other.timed_out
-        self.interrupted |= other.interrupted
+    def status(self, default: CollectorStatus) -> CollectorStatus:
+        """Apply the loss-status precedence consistently across native sources."""
+        priorities = (
+            (self.timed_out, CollectorStatus.TIMEOUT),
+            (self.interrupted, CollectorStatus.MID_RUN_LOSS),
+            (bool(self.failed), CollectorStatus.SOURCE_UNAVAILABLE),
+        )
+        return next((status for applies, status in priorities if applies), default)
 
 
-def _read_status(result: _ReadResult, default: CollectorStatus) -> CollectorStatus:
-    """Apply the existing loss-status precedence consistently across native sources."""
-    priorities = (
-        (result.truncated, CollectorStatus.TRUNCATION),
-        (result.timed_out, CollectorStatus.TIMEOUT),
-        (result.interrupted, CollectorStatus.MID_RUN_LOSS),
-        (result.failed, CollectorStatus.SOURCE_UNAVAILABLE),
-    )
-    return next((status for applies, status in priorities if applies), default)
+def _exit_status(ended: object) -> str | None:
+    """Return the record status for a streamed read that did not end cleanly."""
+    if getattr(ended, "timed_out", False):
+        return "timeout"
+    if getattr(ended, "failed_pipe", False):
+        return "interrupted-read"
+    return None
 
 
 class ContainerFileSource:
     """Read selected files, keeping raw lines within an adapter-decoded window.
 
     The adapter selects current/rotated paths and decodes each line's timestamp.
-    A decoder is required before reading. History gaps, failed files,
-    malformed lines and bounded reads remain explicit partial data.
+    A decoder is required before reading. Each file is streamed completely.
+    History gaps, failed files, and malformed lines remain explicit partial
+    data.
     """
 
     def __init__(
@@ -189,17 +164,10 @@ class ContainerFileSource:
         operations: object,
         files: Sequence[tuple[str, str]],
         *,
-        max_bytes: int = 1024 * 1024,
         timestamp_of: Callable[[str], str],
     ) -> None:
-        if type(max_bytes) is not int or not 1 <= max_bytes <= 8 * 1024 * 1024:
-            raise ValueError("log file byte limit is invalid")
         self._files = tuple(dict.fromkeys(files))
-        if len(self._files) > 256:
-            raise ValueError("too many log file sources")
         for name, path in self._files:
-            if not name:
-                raise ValueError("log file source is invalid")
             if not all(
                 (
                     name,
@@ -211,222 +179,148 @@ class ContainerFileSource:
                 )
             ):
                 raise ValueError("log file source is invalid")
-        self._operations, self._limit = operations, max_bytes
+        self._operations = operations
         if not callable(timestamp_of):
             raise ValueError("file timestamp decoder is invalid")
         self._timestamp_of = timestamp_of
 
-    @staticmethod
-    def _partial_file(
-        name: str, path: str, remaining: int, exc: Exception
-    ) -> _ReadResult:
-        """Keep accepted streams from an interrupted file read within the shared quota."""
-        record = {**_partial_read_record(name, exc), "path": path}
-        result = _ReadResult(
-            records=[record],
-            timed_out=isinstance(exc, TimeoutExpired),
-            interrupted=True,
-        )
-        for key in ("output", "stderr"):
-            raw = record[key].encode("utf-8")
-            result.truncated |= len(raw) > remaining
-            record[key] = raw[:remaining].decode("utf-8", errors="ignore")
-            consumed = min(len(raw), remaining)
-            result.consumed_bytes += consumed
-            remaining -= consumed
-        return result
-
-    def _read_file(self, name: str, path: str, remaining: int) -> _ReadResult:
-        """Read one admitted file while preserving failed and interrupted source data."""
-        try:
-            result = self._operations.container_exec(
-                name, ["head", "-c", str(remaining + 1), "--", path], timeout=30
-            )
-            return self._file_result(name, path, remaining, result)
-        except (TimeoutExpired, InterruptedError) as exc:
-            return self._partial_file(name, path, remaining, exc)
-        except Exception:
-            return _ReadResult(
-                records=[
-                    {"container": name, "path": path, "status": "source-unavailable"}
+    def _read_file(
+        self,
+        name: str,
+        path: str,
+        window: tuple[datetime, datetime],
+        writer: JsonArrayWriter,
+        flags: _ReadFlags,
+    ) -> int:
+        """Stream one admitted file; return the count of undecodable lines."""
+        base = {"container": name, "path": path}
+        with new_spool() as raw, new_spool() as stderr, new_spool() as selected:
+            try:
+                ended = self._operations.container_exec_stream(
+                    name, ["cat", "--", path], stdout=raw, stderr=stderr
+                )
+            except TimeoutExpired:
+                writer.add({**base, "status": "timeout", "window_coverage": "partial"})
+                flags.timed_out = flags.interrupted = True
+                return 0
+            except Exception:
+                writer.add({**base, "status": "source-unavailable"})
+                flags.failed.append(base)
+                return 0
+            status = _exit_status(ended)
+            flags.timed_out |= status == "timeout"
+            flags.interrupted |= status is not None
+            if status is None and ended.returncode:
+                status = "source-unavailable"
+                flags.failed.append(base)
+            dropped = _select_lines(raw, selected, self._timestamp_of, *window)
+            fields: dict[str, object] = {
+                **base,
+                "window_coverage": "partial" if status else "selected-records",
+                "coverage_limitations": [
+                    "History coverage depends on the adapter-selected current and rotated files."
                 ],
-                failed=True,
-            )
-
-    @staticmethod
-    def _file_result(
-        name: str, path: str, remaining: int, result: object
-    ) -> _ReadResult:
-        """Retain raw bytes from one file without exceeding its remaining source share."""
-        raw = result.stdout.encode("utf-8")
-        retained = raw[:remaining].decode("utf-8", errors="ignore")
-        record = {
-            "container": name,
-            "path": path,
-            "output": retained,
-            "truncated": len(raw) > len(retained.encode("utf-8")),
-        }
-        if result.returncode:
-            record["status"] = "source-unavailable"
-        return _ReadResult(
-            records=[record],
-            consumed_bytes=min(len(raw), remaining),
-            failed=bool(result.returncode),
-            truncated=len(raw) > remaining,
-        )
+            }
+            if status:
+                fields["status"] = status
+            streams = {"output": selected}
+            if status in {"timeout", "interrupted-read"} and spool_size(stderr):
+                streams["stderr"] = stderr
+            writer.add(fields, streams)
+            return dropped
 
     def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
-        """Retain selected file lines and disclose gaps, read failures, and byte limits."""
-        collected, failed = _ReadResult(), []
-        remaining = self._limit
-        for index, (name, path) in enumerate(self._files):
-            if remaining <= 0:
-                collected.truncated = True
-                collected.records.extend(
-                    {"container": name, "path": path, "status": "not-read-byte-limit"}
-                    for name, path in self._files[index:]
-                )
-                break
-            result = self._read_file(name, path, remaining)
-            collected.add(result)
-            remaining -= result.consumed_bytes
-            if result.failed:
-                failed.append({"container": name, "path": path})
-        for row in collected.records:
-            row["requested_window"] = [start_iso, end_iso]
-        dropped = _select_file_window(
-            collected.records, self._timestamp_of, start_iso, end_iso
-        )
+        """Retain selected file lines and disclose gaps and read failures."""
+        window = (_instant(start_iso), _instant(end_iso))
+        if window[1] < window[0]:
+            raise ValueError("file capture window is invalid")
+        writer, flags = JsonArrayWriter(), _ReadFlags()
+        dropped = 0
+        for name, path in self._files:
+            dropped += self._read_file(name, path, window, writer, flags)
         return SourceResult(
-            status=_read_status(collected, CollectorStatus.MID_RUN_LOSS),
-            records=collected.records,
+            status=flags.status(CollectorStatus.MID_RUN_LOSS),
+            chunks=writer.finish(),
             dropped_count=dropped,
             source_pipeline={
                 "method": "windowed-file-lines",
                 "requested_window": [start_iso, end_iso],
-                "failed_sources": failed,
-                "truncated": collected.truncated,
+                "failed_sources": flags.failed,
             },
         )
 
 
 class ContainerLogSource:
-    """A windowed source over ``DeploymentBackend.container_logs_capture``.
+    """A windowed source over ``DeploymentBackend.container_logs_stream``.
 
     A non-zero returncode (or a backend error) for any container is a
-    ``SOURCE_UNAVAILABLE`` — the returncode is the distinct failure signal the
-    raw ``collect_container_logs`` helper discards. Each captured container's
-    output becomes one ``{container, output}`` record.
+    ``SOURCE_UNAVAILABLE``. Each captured container's complete output becomes
+    one ``{container, output}`` record.
     """
 
-    def __init__(
-        self,
-        backend: object,
-        containers: Sequence[str],
-        *,
-        max_bytes: int = 1024 * 1024,
-    ) -> None:
+    def __init__(self, backend: object, containers: Sequence[str]) -> None:
         """Bind to a DeploymentBackend and the containers whose logs to capture."""
         self._backend = backend
         self._containers = tuple(containers)
-        if type(max_bytes) is not int or not 1024 <= max_bytes <= 8 * 1024 * 1024:
-            raise ValueError("log capture byte limit is invalid")
-        self._limit = max_bytes
 
     def _read_container(
-        self, container: str, start: str, end: str, limit: int
-    ) -> _ReadResult:
+        self,
+        container: str,
+        window: tuple[str, str],
+        writer: JsonArrayWriter,
+        flags: _ReadFlags,
+    ) -> None:
         """Keep each container's read outcome independent of its peers."""
-        try:
-            result = self._backend.container_logs_capture(
-                container, since=start, until=end, timeout=30, max_bytes=limit
-            )
-        except (TimeoutExpired, InterruptedError) as exc:
-            return _ReadResult(
-                records=[_partial_read_record(container, exc)],
-                failed=True,
-                timed_out=isinstance(exc, TimeoutExpired),
-                interrupted=True,
-            )
-        except Exception:
-            return _ReadResult(
-                records=[{"container": container, "status": "source-unavailable"}],
-                failed=True,
-            )
-        return _log_result(container, result)
+        with new_spool() as output, new_spool() as stderr:
+            try:
+                ended = self._backend.container_logs_stream(
+                    container,
+                    since=window[0],
+                    until=window[1],
+                    stdout=output,
+                    stderr=stderr,
+                )
+            except TimeoutExpired:
+                writer.add({"container": container, "status": "timeout"})
+                flags.timed_out = True
+                return
+            except Exception:
+                writer.add({"container": container, "status": "source-unavailable"})
+                flags.failed.append(container)
+                return
+            status = _exit_status(ended)
+            flags.timed_out |= status == "timeout"
+            flags.interrupted |= status == "interrupted-read"
+            failed = status is None and ended.returncode != 0
+            if failed:
+                writer.add({"container": container, "status": "source-unavailable"})
+                flags.failed.append(container)
+            # A failed command's stderr is its error text, not container data.
+            keep_stderr = not failed and spool_size(stderr)
+            if not (spool_size(output) or keep_stderr or status):
+                return
+            fields: dict[str, object] = {"container": container}
+            if status:
+                fields["status"] = status
+            streams = {"output": output}
+            if keep_stderr:
+                streams["stderr"] = stderr
+            writer.add(fields, streams)
 
     def fetch(self, start_iso: str, end_iso: str) -> SourceResult:
         """Capture each container's window of logs, distinguishing failure from empty."""
-        collected, failed = _ReadResult(), []
-        budget = min(
-            capture_read_bytes(self._limit), probe_output_byte_limit() or self._limit
-        )
-        per_source = max(
-            1,
-            (budget - 512 * len(self._containers)) // max(1, 6 * len(self._containers)),
-        )
+        writer, flags = JsonArrayWriter(), _ReadFlags()
         for container in self._containers:
-            result = self._read_container(container, start_iso, end_iso, per_source)
-            collected.add(result)
-            if result.failed:
-                failed.append(container)
-        _limit_log_records(collected, per_source)
-        default = CollectorStatus.OK if collected.records else CollectorStatus.EMPTY_OK
+            self._read_container(container, (start_iso, end_iso), writer, flags)
+        default = CollectorStatus.OK if writer.count else CollectorStatus.EMPTY_OK
         return SourceResult(
-            status=_read_status(collected, default),
-            records=collected.records,
+            status=flags.status(default),
+            chunks=writer.finish(),
             source_pipeline={
                 "requested_sources": list(self._containers),
-                "failed_sources": failed,
+                "failed_sources": flags.failed,
             },
         )
-
-
-def _log_output(
-    container: str, result: object, truncated: bool, timed_out: bool
-) -> list[dict[str, object]]:
-    """Keep stderr as container data only after success or an accepted bounded read."""
-    output = result.stdout or ""
-    stderr = (
-        (result.stderr or "")
-        if any((result.returncode == 0, truncated, timed_out))
-        else ""
-    )
-    records = []
-    if any((output, stderr, truncated, timed_out)):
-        record = {"container": container, "output": output}
-        if truncated or timed_out:
-            record["status"] = "truncation" if truncated else "timeout"
-        if stderr:
-            record["stderr"] = stderr
-        records.append(record)
-    return records
-
-
-def _log_result(container: str, result: object) -> _ReadResult:
-    """Translate native stream flags without hiding accepted partial stdout."""
-    truncated = getattr(result, "truncated", False) is True
-    timed_out = getattr(result, "timed_out", False) is True
-    failed = result.returncode != 0 and not any((truncated, timed_out))
-    records = (
-        [{"container": container, "status": "source-unavailable"}] if failed else []
-    )
-    records.extend(_log_output(container, result, truncated, timed_out))
-    return _ReadResult(
-        records=records, failed=failed, truncated=truncated, timed_out=timed_out
-    )
-
-
-def _limit_log_records(result: _ReadResult, per_source: int) -> None:
-    """Redact complete values before bounding alternate backend output to its source share."""
-    for record in result.records:
-        for key in ("output", "stderr"):
-            value = record.get(key)
-            if isinstance(value, str) and len(value.encode("utf-8")) > per_source:
-                safe = redact(value).encode("utf-8")
-                record[key] = safe[:per_source].decode("utf-8", errors="ignore")
-                record["truncated"] = True
-                result.truncated = True
 
 
 def soc_windowed_source(

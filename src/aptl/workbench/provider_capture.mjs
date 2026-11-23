@@ -3,7 +3,7 @@
 import { constants, openSync, fstatSync, writeSync, closeSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
-function observeResponse(response, requestId, append, maxBytes) {
+function observeResponse(response, requestId, append) {
   if (!response.body) {
     append("request-finished", requestId, { status: response.status, empty_body: true });
     return response;
@@ -27,7 +27,6 @@ function observeResponse(response, requestId, append, maxBytes) {
   }
   function take(bytes, terminal = false) {
     buffered += decoder.decode(bytes, { stream: !terminal });
-    if (Buffer.byteLength(buffered) > maxBytes) throw new Error("capture limit exceeded");
     if (sse) {
       let index;
       while ((index = buffered.indexOf("\n")) >= 0) {
@@ -65,9 +64,8 @@ function observeResponse(response, requestId, append, maxBytes) {
 }
 
 export default async function capturePlugin(_input, options) {
-  const { path, maxBytes, endpoint, invocationId } = options;
-  if (typeof path !== "string" || !Number.isSafeInteger(maxBytes) || maxBytes < 1024 ||
-      maxBytes > 64 * 1024 * 1024 || !/^[A-Za-z0-9._:-]{1,128}$/.test(invocationId)) {
+  const { path, endpoint, invocationId } = options;
+  if (typeof path !== "string" || !/^[A-Za-z0-9._:-]{1,128}$/.test(invocationId)) {
     throw new Error("capture configuration refused");
   }
   const allowed = new Set([`${endpoint}/chat/completions`, `${endpoint}/responses`]);
@@ -84,7 +82,6 @@ export default async function capturePlugin(_input, options) {
         sequence: sequence++, observed_at: new Date().toISOString(),
         monotonic_ms: performance.now(), ...fields,
       }) + "\n");
-      if (record.length > maxBytes - stat.size) throw new Error("capture limit exceeded");
       let offset = 0;
       while (offset < record.length) offset += writeSync(descriptor, record, offset);
     } finally {
@@ -116,7 +113,7 @@ export default async function capturePlugin(_input, options) {
               append("request-failed", requestId);
               throw error;
             }
-            return observeResponse(response, requestId, append, maxBytes);
+            return observeResponse(response, requestId, append);
           },
         };
       },

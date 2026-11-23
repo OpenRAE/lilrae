@@ -22,9 +22,13 @@ import os
 import tarfile
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aptl.core.archival.legacy_manifest import summarize_manifest
 from aptl.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from aptl.core.runstore import LocalRunStore
 
 log = get_logger("exporter")
 
@@ -147,8 +151,6 @@ def export_local(
         OSError: If a symlink sits at the archive path, or the archive
             cannot be written.
     """
-    from aptl.core.runstore import LocalRunStore
-
     run_path = store.get_run_path(run_id)
     if not run_path.exists():
         raise FileNotFoundError(f"Run directory not found: {run_path}")

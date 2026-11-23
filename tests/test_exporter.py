@@ -428,18 +428,13 @@ class TestExportS3:
         assert archive.exists()
 
 
-class TestExportRedactionChain:
-    """Exporter is packaging-only (ADR-029): it must not be the first
-    place secrets are sanitized. These tests pin the chain — secrets
-    written through the runstore arrive in the exported archive already
-    redacted, with no raw secret left for the exporter to leak."""
+class TestExportContentChain:
+    """Exporter is packaging-only: it archives the run-store bytes unchanged."""
 
-    def test_export_archive_contains_redacted_json(self, tmp_path):
+    def test_export_archive_contains_original_json(self, tmp_path):
         store = LocalRunStore(tmp_path / "runs")
         store.create_run("rx")
         store.write_json("rx", "manifest.json", {"run_id": "rx", "scenario_name": "s"})
-        # A control-plane-shaped secret routed through the runstore
-        # must arrive on disk redacted.
         store.write_json(
             "rx",
             "soc/wazuh.json",
@@ -460,9 +455,5 @@ class TestExportRedactionChain:
             extracted_e = tar.extractfile(events_member)
             assert extracted_e is not None
             events_text = extracted_e.read().decode("utf-8")
-        wazuh_data = json.loads(wazuh_text)
-        assert wazuh_data == {"api_key": "[REDACTED]", "host": "wazuh.indexer.lab"}
-        assert "SECRET_AK" not in wazuh_text
-        # Inline-secret form inside a string value is masked too.
-        assert "XYZ.TOKEN" not in events_text
-        assert "Bearer [REDACTED]" in events_text
+        assert json.loads(wazuh_text) == {"api_key": "SECRET_AK", "host": "wazuh.indexer.lab"}
+        assert "Bearer XYZ.TOKEN" in events_text

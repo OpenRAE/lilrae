@@ -23,7 +23,7 @@ Code observations below refer to the checked-in baseline `5b076560`.
 Extend the existing OpenCode executor and shared participant runtime. Do not
 add another provider framework, scheduler, MCP gateway, credential broker, or
 evidence store. ADR-025, ADR-029, ADR-033, ADR-044, ADR-050, ADR-052,
-ADR-057, ADR-064, and ADR-065 already assign the relevant responsibilities;
+ADR-057, ADR-064, and ADR-070 already assign the relevant responsibilities;
 no new ADR is necessary. The [action enforcement design](participant-action-enforcement.md)
 and its executable component/action models remain the integration boundary.
 

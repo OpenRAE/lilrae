@@ -203,3 +203,43 @@ describe('loadLabConfig tool result budget', () => {
     );
   });
 });
+
+describe('loadLabConfig TLS verification (SEC-009)', () => {
+  async function loadWith(api: Record<string, unknown>, queries?: Record<string, unknown>) {
+    const root = mkdtempSync(join(tmpdir(), 'aptl-tls-verification-'));
+    const configPath = join(root, 'docker-lab-config.json');
+    writeFileSync(configPath, JSON.stringify({
+      server: { name: 'test' }, lab: { name: 'tls-lab' }, api, queries,
+    }));
+    vi.stubEnv('APTL_MCP_DISABLE_DOTENV', '1');
+    try {
+      const { loadLabConfig } = await import('../src/config.js');
+      return await loadLabConfig(configPath);
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('refuses api.verify_ssl false', async () => {
+    await expect(loadWith({ baseUrl: 'https://127.0.0.1:9200', verify_ssl: false })).rejects.toThrow(
+      /^api\.verify_ssl: TLS verification cannot be disabled/,
+    );
+  });
+
+  it('refuses a query that sets verify_ssl false', async () => {
+    const queries = { query_alerts: { url: 'https://127.0.0.1:9200/_search', method: 'POST',
+      description: 'Search alerts', verify_ssl: false } };
+
+    await expect(loadWith({ baseUrl: 'https://127.0.0.1:9200' }, queries)).rejects.toThrow(
+      /^queries\.query_alerts\.verify_ssl: TLS verification cannot be disabled/,
+    );
+  });
+
+  it('accepts a verified configuration with a CA path', async () => {
+    const config = await loadWith({ baseUrl: 'https://127.0.0.1:9200', verify_ssl: true,
+      ca_cert_path: '/etc/ssl/root-ca.pem' });
+
+    expect(config.api?.ca_cert_path).toBe('/etc/ssl/root-ca.pem');
+  });
+});

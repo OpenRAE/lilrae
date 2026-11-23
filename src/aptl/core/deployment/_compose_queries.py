@@ -9,9 +9,10 @@ import stat
 import subprocess
 import tempfile
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import IO, Any
 
-from aptl.core.deployment._cleanup_budget import cleanup_command_timeout
+from aptl.core.deployment._compose_log_capture import StreamExit, stream_command
+from aptl.core.evidence.deadline import current_progress_timeout
 from aptl.core.deployment._proc_net_listeners import (
     ContainerListeners,
     read_container_listeners,
@@ -268,30 +269,51 @@ class ComposeQueryMixin(object):
         since: str | None = None,
         until: str | None = None,
         timeout: int | None = None,
-        max_bytes: int | None = None,
     ) -> subprocess.CompletedProcess:
-        native_id = self._resolve_owned_container_id(name)
+        return self._run(self._logs_command(name, since, until), timeout=timeout)
+
+    def _logs_command(
+        self, name: str, since: str | None, until: str | None
+    ) -> list[str]:
         cmd = ["docker", "logs"]
         if since is not None:
             cmd.extend(["--since", since])
         if until is not None:
             cmd.extend(["--until", until])
-        cmd.append(native_id)
-        if max_bytes is None:
-            return self._run(cmd, timeout=timeout)
-        if type(max_bytes) is not int or not 1 <= max_bytes <= 8 * 1024 * 1024:
-            raise ValueError("log capture byte limit is invalid")
-        from aptl.core.deployment._compose_log_capture import capture_logs
+        cmd.append(self._resolve_owned_container_id(name))
+        return cmd
 
-        timeout = cleanup_command_timeout(timeout)
-        kwargs = self._command_kwargs(cmd, streaming=False, timeout=timeout)
-        return capture_logs(
+    def _stream(
+        self, cmd: list[str], stdout: IO[bytes], stderr: IO[bytes]
+    ) -> StreamExit:
+        kwargs = self._command_kwargs(cmd, streaming=False, timeout=None)
+        return stream_command(
             cmd,
             cwd=kwargs["cwd"],
             env=kwargs.get("env"),
-            timeout=timeout if timeout is not None else 30,
-            max_bytes=max_bytes,
+            stdout=stdout,
+            stderr=stderr,
+            progress_timeout=current_progress_timeout(),
         )
+
+    def container_logs_stream(
+        self,
+        name: str,
+        *,
+        since: str | None,
+        until: str | None,
+        stdout: IO[bytes],
+        stderr: IO[bytes],
+    ) -> StreamExit:
+        """Stream a container's complete log window into two spool files."""
+        return self._stream(self._logs_command(name, since, until), stdout, stderr)
+
+    def container_exec_stream(
+        self, name: str, cmd: list[str], *, stdout: IO[bytes], stderr: IO[bytes]
+    ) -> StreamExit:
+        """Run a read-only command in a container, streaming its output."""
+        argv = ["docker", "exec", self._resolve_owned_container_id(name), *cmd]
+        return self._stream(argv, stdout, stderr)
 
     def container_shell(self, name: str, *, shell: str | None = None) -> int:
         native_id = self._resolve_owned_container_id(name)

@@ -114,7 +114,6 @@ from aptl.core.opencode import OpenRouterRoute
 from aptl.core.evidence.participant_capture import ParticipantCaptureArchive
 from aptl.core.runstore import LocalRunStore
 from aptl.workbench.process import AgentExecutionError, REASON_TIMEOUT, REASON_CANCELLED
-from aptl.core.experiment.capture_registry import CaptureLimits
 from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
 from raes_contracts.canonical import canonical_contract_digest
 from tests.test_participant_capture import _grant
@@ -126,7 +125,6 @@ mode,role=sys.argv[6:8]
 values={"model":"openrouter/test/model", "prompt_ref":"content.test@v1", "prompt_sha256":hashlib.sha256(b"Return transport completion.").hexdigest(), "timeout_seconds":20 if mode=="timeout" else 60, "gateway_endpoint":endpoint, "serving_provider":"test-provider", "max_output_tokens":128}
 result=realize_participant_configuration(participant_address=f"participant.behavior.{role}", manifest=manifest, manifest_ref="participant-implementation-manifests.opencode.v1", manifest_digest=canonical_contract_digest(manifest), overrides=[ConfigurationOverrideModel(target_id=k,value={"kind":"literal","value":v}) for k,v in values.items()], validator=OpenCodeConfigurationValidator(frozenset({values["model"]})))
 grant=replace(_grant(), participant_address=result.participant_address, configuration_digest=result.configuration_digest)
-grant=replace(grant,binding=replace(grant.binding,limits=CaptureLimits(2*1024*1024,100,120)))
 archive=ParticipantCaptureArchive(LocalRunStore(Path(sys.argv[5])/"runs"),grant)
 options=OpenCodeOptions(executable=Path(sys.argv[3]),work_root=Path(sys.argv[5]),environment={"OPENROUTER_API_KEY":"private-test-credential"},route=OpenRouterRoute(endpoint=endpoint,serving_provider="test-provider"),capture=archive,request_observation_required=sys.argv[8]=="true")
 active=configured_opencode_executor(options=options, configuration=result, manifest=manifest,prompt="Return transport completion.",prompt_ref=values["prompt_ref"],supported_models=frozenset({values["model"]}))
@@ -526,7 +524,6 @@ from aptl.core.opencode import OpenRouterRoute
 from aptl.backends.lilrae_participant_configuration import opencode_manifest, OpenCodeConfigurationValidator
 from aptl.workbench.opencode_bootstrap import OpenCodeParticipantRequest, managed_opencode_executor
 from aptl.workbench.process import AgentExecutionError
-from aptl.core.experiment.capture_registry import CaptureLimits
 from raes_contracts.contracts.participant_configuration import ConfigurationOverrideModel, realize_participant_configuration
 from raes_contracts.canonical import canonical_contract_digest
 project=AptlConfig.model_validate_json(pathlib.Path(sys.argv[5]).read_bytes())

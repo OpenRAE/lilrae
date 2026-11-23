@@ -213,8 +213,6 @@ class RuntimeFactsProvider:
 
         containers = tuple(getattr(snapshot, "containers", ()) or ())
         # +3 for the tool-versions, range-snapshot, and host-facts leaves.
-        if len(containers) + 3 > context.max_entries:
-            raise _degraded.entry_limit()
 
         try:
             leaves, without_digest = self._image_leaves(containers)

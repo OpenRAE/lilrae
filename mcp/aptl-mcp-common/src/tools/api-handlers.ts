@@ -96,19 +96,36 @@ function argumentMapping(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-// Resolve the effective request body for a predefined query. A string passes
-// through as a raw payload (e.g. XML for Wazuh rule uploads); undefined/null
-// falls back to the template body; otherwise the provided body is merged over
-// the template object.
+// Resolve the effective request body for a predefined query. A query that
+// declares `content_type` sends a string body raw (e.g. XML for Wazuh rule
+// uploads). Every other query sends JSON: a string body must be JSON object
+// text, undefined/null falls back to the template body, and the provided body
+// is merged over the template object.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- body is untyped (MCP SDK args); behavior must match the prior `any` flow
 function resolveQueryBody(body: unknown, queryConfig: QueryConfig): any {
   if (typeof body === 'string') {
-    return body;
+    if (queryConfig.content_type) {
+      return body;
+    }
+    body = parseJsonObject(body);
   }
   if (body === undefined || body === null) {
     return queryConfig.body;
   }
   return queryConfig.body ? { ...queryConfig.body, ...(body as Record<string, unknown>) } : body;
+}
+
+function parseJsonObject(text: string): Record<string, unknown> {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    value = undefined;
+  }
+  if (!argumentMapping(value)) {
+    throw new QueryArgumentError('body must be a JSON object for this query');
+  }
+  return value;
 }
 
 // A path segment is a string or a finite number. Stringifying any other shape
@@ -161,6 +178,16 @@ function buildQueryUrl(
   return { url, queryParams };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- finalBody is untyped (MCP SDK args); behavior must match the prior `any` flow
+function requestOptions(queryConfig: QueryConfig, params: Record<string, unknown>, body: any) {
+  return {
+    params,
+    body,
+    responseType: queryConfig.response_type || 'json',
+    ...(queryConfig.content_type ? { headers: { 'Content-Type': queryConfig.content_type } } : {}),
+  };
+}
+
 // Execute a predefined query, using per-query auth when specified (via a
 // temporary HTTP client) otherwise the default client.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- finalBody is untyped (MCP SDK args); behavior must match the prior `any` flow
@@ -174,14 +201,11 @@ function runPredefinedQuery(
   if (queryConfig.auth) {
     // Create temporary HTTP client with query-specific auth.
     // SEC-006 / ADR-034 § Gotchas: both `verify_ssl` and
-    // `ca_cert_path` must inherit from the top-level api config
-    // when the query does not override them. Treating
-    // `queryConfig.verify_ssl !== false` as the verify decision
-    // forced verification on whenever a query had its own auth
-    // block but no explicit `verify_ssl`, which silently broke the
-    // documented local-debug override at the api level and made
-    // every predefined query repeat the flag. Explicit query
-    // override first, then fall back to the api setting.
+    // `ca_cert_path` inherit from the top-level api config when the
+    // query does not override them, so a query with its own auth
+    // block keeps the api CA. Explicit query override first, then
+    // the api setting. SEC-009: the HTTPClient refuses
+    // `verify_ssl: false`.
     const queryAPIConfig = {
       baseUrl: '', // Not used since we have full URL
       auth: queryConfig.auth,
@@ -189,17 +213,9 @@ function runPredefinedQuery(
       ca_cert_path: queryConfig.ca_cert_path ?? context.labConfig.api?.ca_cert_path,
     };
     const queryClient = new HTTPClient(queryAPIConfig);
-    return queryClient.makeRequest(url, queryConfig.method, {
-      params: queryParams,
-      body: finalBody,
-      responseType: queryConfig.response_type || 'json',
-    });
+    return queryClient.makeRequest(url, queryConfig.method, requestOptions(queryConfig, queryParams, finalBody));
   }
-  return context.httpClient.makeRequest(url, queryConfig.method, {
-    params: queryParams,
-    body: finalBody,
-    responseType: queryConfig.response_type || 'json',
-  });
+  return context.httpClient.makeRequest(url, queryConfig.method, requestOptions(queryConfig, queryParams, finalBody));
 }
 
 // Base API handler functions — each casts args to its specific interface.

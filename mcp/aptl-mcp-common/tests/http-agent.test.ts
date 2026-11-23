@@ -1,6 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ClientRequest } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Mock node:https before importing HTTPClient
 vi.mock('node:https', () => {
@@ -57,21 +60,31 @@ function fakeRequest(response: IncomingMessage): ClientRequest & { writtenData: 
   return req;
 }
 
-describe('HTTPClient — verify_ssl=false path', () => {
+describe('HTTPClient — CA agent path (node:https)', () => {
+  let workdir: string;
+  let caPath: string;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    workdir = mkdtempSync(join(tmpdir(), 'mcp-agent-test-'));
+    caPath = join(workdir, 'root-ca.pem');
+    writeFileSync(caPath, '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n');
+  });
+
+  afterEach(() => {
+    rmSync(workdir, { recursive: true, force: true });
   });
 
   function createClient(overrides = {}) {
     return new HTTPClient({
       baseUrl: 'https://wazuh.local:9200',
       auth: { type: 'basic' as const, username: 'admin', password: 'admin' },
-      verify_ssl: false,
+      ca_cert_path: caPath,
       ...overrides,
     });
   }
 
-  it('uses node:https transport when verify_ssl is false', async () => {
+  it('uses node:https transport when a CA is configured', async () => {
     const res = fakeResponse(200, '{"status":"ok"}');
     const req = fakeRequest(res);
     mockedHttpsRequest.mockImplementation((_opts: any, cb: any) => {
@@ -87,7 +100,7 @@ describe('HTTPClient — verify_ssl=false path', () => {
     expect(result.data).toEqual({ status: 'ok' });
   });
 
-  it('passes insecure agent in request options', async () => {
+  it('passes the verifying CA agent in request options', async () => {
     const res = fakeResponse(200, '{}');
     const req = fakeRequest(res);
     mockedHttpsRequest.mockImplementation((_opts: any, cb: any) => {
@@ -100,7 +113,8 @@ describe('HTTPClient — verify_ssl=false path', () => {
 
     const opts = mockedHttpsRequest.mock.calls[0][0] as any;
     expect(opts.agent).toBeDefined();
-    expect(opts.agent.options.rejectUnauthorized).toBe(false);
+    expect(opts.agent.options.rejectUnauthorized).toBe(true);
+    expect(String(opts.agent.options.ca)).toContain('fixture');
   });
 
   it('sets Content-Length header when body is provided', async () => {

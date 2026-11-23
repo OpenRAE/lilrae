@@ -18,7 +18,7 @@ test("requests and retries retain membership without changing transport bytes", 
     return new Response(response, { headers: { "content-type": "text/event-stream" } });
   };
   const { default: plugin } = await import(pluginURL);
-  const hooks = await plugin({}, { path, maxBytes: 65536, endpoint: "http://127.0.0.1:7000/api/v1", invocationId: "outer-red" });
+  const hooks = await plugin({}, { path, endpoint: "http://127.0.0.1:7000/api/v1", invocationId: "outer-red" });
   const options = await hooks.auth.loader();
   const input = "http://127.0.0.1:7000/api/v1/chat/completions";
   const init = { method: "POST", headers: { authorization: "Bearer private-key" }, body: JSON.stringify({ model: "requested-model", messages: [{ role: "user", content: "prompt" }], max_tokens: 20 }) };
@@ -42,4 +42,23 @@ test("requests and retries retain membership without changing transport bytes", 
   assert.ok(records.every((row) => row.invocation_id === "outer-red"));
   await assert.rejects(options.fetch("https://unapproved.invalid/chat/completions", init));
   assert.equal(calls.length, 2);
+});
+
+test("a large request and response are recorded completely", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lilrae-capture-large-"));
+  const path = join(root, "capture.jsonl");
+  writeFileSync(path, "", { mode: 0o600 });
+  const content = "x".repeat(2 * 1024 * 1024);
+  const response = `data: ${JSON.stringify({ id: "gen-2", choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`;
+  globalThis.fetch = async () => new Response(response, { headers: { "content-type": "text/event-stream" } });
+  const { default: plugin } = await import(pluginURL);
+  const hooks = await plugin({}, { path, endpoint: "http://127.0.0.1:7000/api/v1", invocationId: "outer-large" });
+  const options = await hooks.auth.loader();
+  const body = JSON.stringify({ model: "requested-model", messages: [{ role: "user", content }] });
+  const result = await options.fetch("http://127.0.0.1:7000/api/v1/chat/completions", { method: "POST", body });
+  assert.equal(await result.text(), response);
+  const records = readFileSync(path, "utf8").trim().split("\n").map(JSON.parse);
+  assert.equal(records.find((row) => row.kind === "request").body, body);
+  assert.ok(records.some((row) => row.kind === "response" && JSON.parse(row.json).choices[0].delta.content === content));
+  assert.ok(records.some((row) => row.kind === "request-finished"));
 });
