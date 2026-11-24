@@ -486,9 +486,11 @@ def test_missing_shared_lock_reports_unsupported_not_busy(
         guard.os, "close", lambda fd: (closed.append(fd), real_close(fd))[1]
     )
 
-    with pytest.raises(guard.LifecycleLockUnavailableError) as raised:
-        with guard.lifecycle_observation_lock(tmp_path):
-            pytest.fail("observation must not proceed without a shared lock")
+    with (
+        pytest.raises(guard.LifecycleLockUnavailableError) as raised,
+        guard.lifecycle_observation_lock(tmp_path),
+    ):
+        pass
 
     assert not isinstance(raised.value, LifecycleBusyError)
     assert "shared lifecycle lock is not supported" in str(raised.value)
@@ -503,9 +505,11 @@ def test_missing_exclusive_lock_reports_unavailable_not_busy(tmp_path, monkeypat
     monkeypatch.setattr(guard, "fcntl", None)
     monkeypatch.setattr(guard, "msvcrt", None)
 
-    with pytest.raises(
-        guard.LifecycleLockUnavailableError,
-        match="no cross-process file-lock implementation",
+    with (
+        pytest.raises(
+            guard.LifecycleLockUnavailableError,
+            match="no cross-process file-lock implementation",
+        ),
+        guard.lifecycle_mutation_lock(tmp_path),
     ):
-        with guard.lifecycle_mutation_lock(tmp_path):
-            pytest.fail("mutation must not proceed without a lock")
+        pass
