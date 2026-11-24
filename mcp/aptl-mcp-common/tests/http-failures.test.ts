@@ -1,19 +1,27 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { once } from 'node:events';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { HTTPClient, HTTPTimeoutError } from '../src/http.js';
 import { markToolFailure, observeToolOutcome } from '../src/lilrae-tool-outcome.js';
 
-// The node:http request path (verify_ssl=false) and the wazuh-jwt token
+// The node:http request path (a configured CA) and the wazuh-jwt token
 // exchange, against a local server: a failure keeps its HTTP status and body,
 // and a timeout is an HTTPTimeoutError, so tool responses can classify both.
 describe('HTTPClient failure classification', () => {
   let server: Server;
   let baseUrl: string;
+  let workdir: string;
+  let caPath: string;
 
   beforeAll(async () => {
+    workdir = mkdtempSync(join(tmpdir(), 'mcp-http-failures-'));
+    caPath = join(workdir, 'lab-ca.pem');
+    writeFileSync(caPath, '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n');
     server = createServer((request, response) => {
       if (request.url === '/slow') {
         return;
@@ -31,13 +39,14 @@ describe('HTTPClient failure classification', () => {
     server.closeAllConnections();
     server.close();
     await once(server, 'close');
+    rmSync(workdir, { recursive: true, force: true });
   });
 
   function client(auth?: object): HTTPClient {
     return new HTTPClient({
       baseUrl,
       auth: auth ?? { type: 'apikey', header: 'X-Test-Key', apiKey: 'fixture' },
-      verify_ssl: false,
+      ca_cert_path: caPath,
       timeout: 200,
     } as any);
   }
@@ -76,7 +85,8 @@ describe('HTTPClient failure classification', () => {
     const stopped = new AbortController();
     const started = once(server, 'request');
     const requester = path === 'token' ? jwtClient('/slow') : new HTTPClient({
-      baseUrl, auth: { type: 'none' }, verify_ssl: path === 'fetch', timeout: 10000,
+      baseUrl, auth: { type: 'none' }, timeout: 10000,
+      ...(path === 'agent' ? { ca_cert_path: caPath } : {}),
     } as any);
     const execution = observeToolOutcome(async () => {
       try { await requester.makeRequest('/slow'); }

@@ -253,19 +253,53 @@ def test_transcript_empty_census_is_legitimate_empty():
 
 
 def test_transcript_parser_rejects_accepted_ledger_without_matching_sessions():
-    from aptl.core.experiment.capture_registry import CaptureLimits
     from aptl_techvault.evidence.transcript_parsing import transcript_sessions
 
-    limits = CaptureLimits(max_bytes=10000, max_artifact_count=10, max_duration_s=60)
     with pytest.raises(ValueError, match="broker ledger"):
         transcript_sessions(
             {
                 "expected_session_ids": ["session-1"],
                 "accepted_session_ids": ["session-1"],
                 "sessions": [],
-            },
-            limits,
+            }
         )
+
+
+def test_transcript_parser_keeps_frames_and_sessions_of_any_size():
+    import base64
+
+    from aptl_techvault.evidence.transcript_parsing import transcript_sessions
+
+    # One frame larger than the old 4 MiB frame bound, in more sessions than
+    # the old artifact count allowed.
+    data = b"a" * (5 * 1024 * 1024)
+    ids = [f"session-{index}" for index in range(3000)]
+    sessions = [
+        {
+            "session_id": session_id,
+            "started_at": _START,
+            "finished_at": _END,
+            "close_reason": "closed",
+            "final_chain_digest": "sha256:" + "0" * 64,
+            "frames": [
+                {
+                    "sequence": 0,
+                    "timestamp": _START,
+                    "direction": "output",
+                    "data_b64": base64.b64encode(data if index == 0 else b"x").decode(),
+                }
+            ],
+        }
+        for index, session_id in enumerate(ids)
+    ]
+
+    expected, parsed = transcript_sessions(
+        {"expected_session_ids": ids, "sessions": sessions}
+    )
+
+    assert expected == tuple(ids)
+    assert parsed[0].frames[0].data == data
+    assert len(parsed) == 3000
 
 
 def test_portable_transcript_validator_rejects_contradictory_gap_report():

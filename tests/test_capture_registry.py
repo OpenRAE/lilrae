@@ -27,7 +27,6 @@ from aptl.core.experiment.capture_registry import (
     DEFAULT_COLLECTOR_REGISTRY,
     OBSERVATION_EVIDENCE_CONTRACTS,
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
     CollectorRegistry,
@@ -37,7 +36,6 @@ from aptl.core.experiment.capture_registry import (
 
 CORPUS_ROOT = corpus_family_root(FIXTURES)
 
-_LIMITS = CaptureLimits(max_bytes=1_048_576, max_artifact_count=100, max_duration_s=300)
 
 
 def _read(*parts: str) -> bytes:
@@ -97,7 +95,6 @@ def _covering_registration(**overrides: object) -> CollectorRegistration:
         ),
         "supports_loss_disclosure": True,
         "visibility_class": CaptureVisibility.EVALUATOR_ONLY,
-        "limits": _LIMITS,
     }
     fields.update(overrides)
     return CollectorRegistration(**fields)

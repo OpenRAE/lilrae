@@ -362,11 +362,10 @@ class DockerMaterializationExecutor(DockerMaterializationObservationMixin):
         self, node_address: str, op: InstallDependencyManifestOp
     ) -> None:
         directory = str(PurePosixPath(op.path).parent)
+        # Range egress is default-deny, so the node installs from what its image holds.
         self._require_ok(
             node_address,
-            manifest_install_argv(
-                op.ecosystem, directory, offline=self._offline_staged
-            ),
+            manifest_install_argv(op.ecosystem, directory, offline=True),
             "install dependency manifest",
         )
 
@@ -380,9 +379,8 @@ class DockerMaterializationExecutor(DockerMaterializationObservationMixin):
                 f"unsupported software component ecosystem on {node_address}"
             )
         directory = str(PurePosixPath(op.manifest_path).parent)
-        install_argv = ["npm", "--prefix", directory, "ci", "--include=dev"]
-        if self._offline_staged:
-            install_argv.append("--offline")
+        # Range egress is default-deny: install from the node image's npm cache.
+        install_argv = ["npm", "--prefix", directory, "ci", "--include=dev", "--offline"]
         self._require_ok(node_address, install_argv, "install software component")
         self._require_ok(
             node_address,

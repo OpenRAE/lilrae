@@ -11,6 +11,7 @@ from raes_contracts.contracts import (
 )
 
 from aptl.backends.lilrae_participant_configuration import configured_opencode_executor
+from aptl.core._credential_sources import AttachedServiceAccountSource
 from aptl.core.config import ProcessEnvironmentCredentialSource
 from aptl.workbench.credentials import EphemeralCredentialBroker
 from aptl.workbench.lilrae_opencode import LilraeOpenCodeExecutor, OpenCodeOptions
@@ -38,13 +39,17 @@ def managed_opencode_executor(
     options: OpenCodeOptions,
     request: OpenCodeParticipantRequest,
     run_id: str,
-    credential_source: ProcessEnvironmentCredentialSource,
+    credential_source: ProcessEnvironmentCredentialSource | AttachedServiceAccountSource,
     source_environment: Mapping[str, str],
     timeout_seconds: float | None = None,
 ) -> Iterator[tuple[LilraeOpenCodeExecutor, CredentialBindingEvidence]]:
     """Use inside the trial owner; drain its RAES runtime before context exit."""
     if options.environment:
         raise ValueError("managed OpenCode requires its configured credential source")
+    if isinstance(credential_source, AttachedServiceAccountSource):
+        # Tokens come from the metadata server; no key exists to deliver or remove.
+        yield from _attached_executor(options, request, run_id, credential_source, timeout_seconds)
+        return
     credentials, evidence = ProcessEnvironmentCredentialResolver(
         source_environment
     ).acquire(
@@ -83,3 +88,45 @@ def managed_opencode_executor(
         broker.destroy_named("opencode", run_id)
         credentials.clear()
         observe_local_cleanup(evidence, succeeded=True)
+
+
+def _attached_executor(
+    options: OpenCodeOptions,
+    request: OpenCodeParticipantRequest,
+    run_id: str,
+    source: AttachedServiceAccountSource,
+    timeout_seconds: float | None,
+) -> Iterator[tuple[LilraeOpenCodeExecutor, CredentialBindingEvidence]]:
+    """Run one Vertex AI participant with the host's attached service account."""
+    evidence = CredentialBindingEvidence(
+        provider="vertex",
+        run_id=run_id,
+        source_kind=source.kind,
+        descriptor_sha256=None,
+        config_ref="experiment.participant_credential_sources.vertex",
+        delivery_contract="aptl.vertex-attached-service-account/v1",
+        acquisition="attached-service-account",
+    )
+    active = configured_opencode_executor(
+        options=cast(
+            OpenCodeOptions,
+            replace(options, environment={"GOOGLE_CLOUD_PROJECT": source.project}),
+        ),
+        configuration=request.configuration,
+        manifest=request.manifest,
+        prompt=request.prompt,
+        prompt_ref=request.prompt_ref,
+        supported_models=request.supported_models,
+        timeout_seconds=timeout_seconds,
+    )
+    try:
+        evidence.isolation_controls_applied = (
+            "minimal-child-environment",
+            "private-home",
+            "private-xdg-directories",
+            "explicit-provider-route",
+            "default-deny-tools",
+        )
+        yield active, evidence
+    finally:
+        active.close()

@@ -68,8 +68,7 @@ C extension is absent. The
 [upstream advisory](https://github.com/msgpack/msgpack-python/security/advisories/GHSA-j586-36cw-2gc2)
 states that this fallback does not exhibit the flaw.
 
-The existing Trivy exception mechanism records this false positive for that
-exact package version. The Debian substrate build checks the fallback inside
-the built image. The regression test checks the locked copy's version, the
-absence of the C extension, and the fallback implementation. The normal scan
-still records the finding in SARIF; the exception applies only to the gate.
+Issue #1447 recorded this false positive as a Trivy exception for that exact
+package version. pip 26.3 vendors msgpack 1.2.4, which contains the upstream fix.
+The lock now pins pip 26.3, so the exception, the Debian fallback check, and the
+regression test are removed.

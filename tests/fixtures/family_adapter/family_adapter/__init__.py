@@ -14,7 +14,6 @@ from raes_contracts.vocabulary import ObservationStrength
 from aptl.core.evidence.adapters.sources import SourceResult
 from aptl.core.evidence.outcomes import CollectorStatus
 from aptl.core.experiment.capture_registry import (
-    CaptureLimits,
     CaptureVisibility,
     CollectorRegistration,
 )
@@ -134,7 +133,6 @@ class Capture(Provider):
             supports_retention=True,
             supports_loss_disclosure=True,
             visibility_class=CaptureVisibility.EVALUATOR_ONLY,
-            limits=CaptureLimits(4096, 10, 60),
             redaction_policies=frozenset({"redact_secrets"}),
             retention_policies=frozenset({"run_lifetime"}),
             capture_offer=offer,

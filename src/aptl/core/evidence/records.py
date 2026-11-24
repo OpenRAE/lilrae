@@ -14,8 +14,8 @@ Evidence-record identity derives from stable run / planned-trial / capture-spec
 / requirement / window / collector-config / retained-content identity via
 RFC-8785 canonical JSON + SHA-256 — NEVER from ``captured_at``, filesystem
 order, or ingestion order (preflight). The checksum in the record identifies
-the bytes actually retained; when the source was truncated or lossy, a
-mandatory ``loss_disclosure`` records it.
+the complete retained bytes; when the source was lossy, a mandatory
+``loss_disclosure`` records it.
 """
 
 from __future__ import annotations
@@ -38,13 +38,10 @@ from raes_contracts.contracts.experiment_capture import (
 )
 
 from aptl.core.evidence.content_store import ContentInsertion
+from aptl.utils.redaction import redact
 from aptl.core.evidence.outcomes import AcquisitionPhase
 from aptl.core.evidence.protocol import CollectorOutcome
 from aptl.core.experiment.capture_registry import CaptureBinding
-
-#: Bound for the observer-effect reference so a source cannot write an
-#: unbounded string into the portable evidence record.
-_OBSERVER_EFFECT_REF_LIMIT = 500
 
 #: Versioned domain separator for evidence-record ID derivation (independent
 #: of the trial-plan / seed domains so an algorithm revision never collides).
@@ -129,6 +126,12 @@ def _raw_content(
         payload_summary=f"{event_count} event(s), {content.size} byte(s) retained",
         loss_disclosure=loss_disclosure,
     )
+
+
+def _typed_description(binding: CaptureBinding, outcome: CollectorOutcome) -> object:
+    """Return the typed description, redacted only when the binding asks."""
+    description = outcome.source_pipeline.get("typed_description")
+    return redact(description) if binding.redaction_required else description
 
 
 def build_evidence_record(
@@ -218,7 +221,7 @@ def build_evidence_record(
                         ref_kind="other",
                         ref_id=(
                             "observer-effect:"
-                            + outcome.observer_effect[:_OBSERVER_EFFECT_REF_LIMIT]
+                            + outcome.observer_effect
                         ),
                     )
                 ]
@@ -237,4 +240,5 @@ def build_evidence_record(
         sensitivity=disclosure.sensitivity,
         redaction_state=disclosure.redaction_state,
         redaction_policy=redaction_policy,
+        typed_description=_typed_description(binding, outcome),
     )

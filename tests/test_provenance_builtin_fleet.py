@@ -85,11 +85,11 @@ class TestBuiltinRegistrations:
             "runtime-facts",
         }
 
-    def test_every_registration_declares_positive_limits(self):
+    def test_every_registration_declares_only_a_positive_timeout(self):
         for item in BUILTIN_REGISTRATIONS:
-            assert item.limits.max_bytes > 0
-            assert item.limits.max_entries > 0
             assert item.limits.timeout_s > 0
+            assert not hasattr(item.limits, "max_bytes")
+            assert not hasattr(item.limits, "max_entries")
 
     def test_the_default_profile_validates_against_the_default_registry(self):
         DEFAULT_SEAL_PROFILE.validate_against(DEFAULT_PROVENANCE_REGISTRY)
@@ -115,7 +115,7 @@ class TestBuiltinRegistrations:
             owner_adapter="tests",
             seal_point=SealPoint.RUN_READY_TO_SEAL,
             requiredness_policy_key="future-required",
-            limits=ProvenanceLimits(max_bytes=1, max_entries=1, timeout_s=1),
+            limits=ProvenanceLimits(timeout_s=1),
         )
         extended = ProvenanceProviderRegistry(BUILTIN_REGISTRATIONS + (extra,))
         assert extended.get("future-source") is not None
@@ -276,3 +276,27 @@ class TestFleetFuzz:
         )
         assert collection.sections["detection-content"].status in set(ProvenanceStatus)
         assert "SECRET" not in json.dumps(collection.projection())
+
+
+def test_configured_progress_timeout_applies_to_every_builtin_provider():
+    from types import SimpleNamespace
+
+    from aptl.core.provenance.registrations import (
+        BUILTIN_REGISTRATIONS,
+        DEFAULT_PROVENANCE_REGISTRY,
+        PROVIDER_TIMEOUT_SECONDS,
+        _configured_registry,
+    )
+
+    assert {item.limits.timeout_s for item in BUILTIN_REGISTRATIONS} == {
+        PROVIDER_TIMEOUT_SECONDS
+    }
+    assert _configured_registry(None) is DEFAULT_PROVENANCE_REGISTRY
+    config = SimpleNamespace(
+        run_storage=SimpleNamespace(capture_progress_timeout_seconds=7)
+    )
+    configured = _configured_registry(config)
+    assert {item.limits.timeout_s for item in configured.registrations} == {7}
+    assert {item.provider_id for item in configured.registrations} == {
+        item.provider_id for item in BUILTIN_REGISTRATIONS
+    }

@@ -151,6 +151,7 @@ class DockerComposeBackend(
         docker_socket_path: Path | None = None,
         environment_grants: Sequence[EnvironmentGrant] = (),
         range_egress_allowances: Sequence[object] = (),
+        dedicated_vm: bool = False,
     ) -> None:
         if docker_socket_path is not None and not docker_socket_path.is_absolute():
             raise ValueError("managed Docker socket must be absolute")
@@ -176,6 +177,7 @@ class DockerComposeBackend(
             | None
         ) = None
         self._range_egress_allowances = tuple(range_egress_allowances)
+        self._dedicated_vm = dedicated_vm
         self._boundary_receipts: dict[str, dict[str, object]] = {}
         self._boundary_specs: dict[str, object] = {}
         self._boundary_helper_image = DEFAULT_BOUNDARY_HELPER_IMAGE

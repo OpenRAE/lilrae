@@ -51,9 +51,9 @@ def test_release_manual_requires_valid_browser_trust_for_soc_uis() -> None:
     assert "config/soc_certs/lab-ca.pem" in manual
     assert "https://wazuh.dashboard:<reported-host-port>" in manual
     assert "443` is only the default" in manual
-    assert "aptl lab status --json --output qa-start-status.json" in manual
+    assert "lilrae lab status --json --output qa-start-status.json" in manual
     assert "certificate warning" in manual
-    assert "aptl container shell aptl-suricata" in manual
+    assert "lilrae container shell aptl-suricata" in manual
     assert "does not claim passive visibility" in manual
 
 

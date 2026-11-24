@@ -13,9 +13,10 @@ local or remote.
 """
 
 import subprocess
-from typing import Any, Protocol
+from typing import IO, Any, Protocol
 
 from aptl.core.deployment._proc_net_listeners import ContainerListeners
+from aptl.core.deployment._compose_log_capture import StreamExit
 
 
 class ContainerOpsBackend(Protocol):
@@ -59,7 +60,6 @@ class ContainerOpsBackend(Protocol):
         since: str | None = None,
         until: str | None = None,
         timeout: int | None = None,
-        max_bytes: int | None = None,
     ) -> subprocess.CompletedProcess:
         """Capture a container's logs (for programmatic consumption).
 
@@ -70,11 +70,34 @@ class ContainerOpsBackend(Protocol):
             timeout: Optional timeout in seconds. Set this for
                 archive collection so a stalled docker daemon doesn't
                 hang the run forever.
-            max_bytes: Optional combined stream budget for bounded capture.
 
         Returns:
-            CompletedProcess with captured stdout/stderr. Bounded reads also
-            expose truncated and timed_out flags.
+            CompletedProcess with captured stdout/stderr.
+        """
+        ...
+
+    def container_logs_stream(
+        self,
+        name: str,
+        *,
+        since: str | None,
+        until: str | None,
+        stdout: IO[bytes],
+        stderr: IO[bytes],
+    ) -> StreamExit:
+        """Stream a container's complete log window into two files.
+
+        The read fails as timed out only when no output arrives for the
+        current evidence progress timeout. Output is never cut.
+        """
+        ...
+
+    def container_exec_stream(
+        self, name: str, cmd: list[str], *, stdout: IO[bytes], stderr: IO[bytes]
+    ) -> StreamExit:
+        """Run a read-only command in a container and stream its output.
+
+        The same progress timeout as :meth:`container_logs_stream` applies.
         """
         ...
 

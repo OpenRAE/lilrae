@@ -51,16 +51,6 @@ class ProvenanceContext:
         """Return the provider's declared wall budget for this invocation."""
         return float(self.registration.limits.timeout_s)
 
-    @property
-    def max_bytes(self) -> int:
-        """Return the provider's declared byte budget."""
-        return self.registration.limits.max_bytes
-
-    @property
-    def max_entries(self) -> int:
-        """Return the provider's declared entry budget."""
-        return self.registration.limits.max_entries
-
     def expired(self) -> bool:
         """Return whether the declared deadline has already passed.
 

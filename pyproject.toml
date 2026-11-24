@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lilrae"
-version = "10.1.0"
+version = "10.2.0"
 description = "Advanced Purple Team Lab CLI"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
@@ -46,6 +46,7 @@ dependencies = [
     # Imported by aptl.core.host_keys on every CLI start; raes 7 supplied it
     # only transitively.
     "asyncssh>=2.17.0",
+    "ijson>=3.3,<4",
 ]
 
 [project.urls]
@@ -136,7 +137,7 @@ build = [
     "hatchling>=1.27.0",
     # Ubuntu cloud images provide Python without pip or ensurepip. The signed
     # offline payload uses this locked wheel as its bootstrap installer.
-    "pip>=26.2.1",
+    "pip>=26.3",
     # hatchling imports `editables` to build an editable wheel. Under build
     # isolation it would fetch this itself; with isolation off it has to be
     # present (and hashed) up front, or every `pip install -e .` fails at

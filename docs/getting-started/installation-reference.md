@@ -14,7 +14,9 @@ Package migration does not move project data or Docker volumes.
 ## Command Compatibility
 
 The release after 8.1.0 introduced `lilrae` and `lilrae-misp-suricata-sync`.
-The deprecated `aptl` and `aptl-misp-suricata-sync` aliases remain until 10.0.0.
+The candidate package still registers the deprecated `aptl` and `aptl-misp-suricata-sync` aliases.
+Their planned removal target was 10.0.0; issue #1403 tracks removal.
+Use package entry points to establish availability in a specific release.
 They use the same options, stdout, JSON output, and exit status as the supported commands.
 Each invocation emits a stderr notice:
 

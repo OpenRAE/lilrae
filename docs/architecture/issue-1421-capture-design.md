@@ -5,6 +5,9 @@ The [source revision `6d35d245f11a`](https://github.com/OpenRAE/lilrae/blob/6d35
 Version-specific examples and qualification statements keep their original scope.
 This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
 
+Pull request #1773 later removed the capture byte, count, and prefix limits that this design describes.
+Capture now streams complete content; see [experiment runs](../reference/experiment-runs.md#run-directory-structure).
+
 
 [Issue #1421](https://github.com/OpenRAE/lilrae/issues/1421) governs this delivery.
 Collect the requested RPT observations through the existing backend interfaces.

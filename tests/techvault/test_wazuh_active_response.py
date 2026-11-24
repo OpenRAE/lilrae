@@ -201,7 +201,7 @@ class TestWazuhActiveResponseConfig:
 
     def test_active_response_blocks_have_required_carve_outs(self) -> None:
         """Every `<active-response>` block in the manager config must
-        ship `<disabled>yes</disabled>` (default OFF), a finite
+        ship commented out (default OFF), a finite
         `<timeout>` in [60, 300] (auto-rollback), and a specific
         `<rules_id>` (per-rule scoping).
 
@@ -220,11 +220,6 @@ class TestWazuhActiveResponseConfig:
         )
         violations: list[str] = []
         for i, block in enumerate(blocks):
-            if "<disabled>yes</disabled>" not in block:
-                violations.append(
-                    f"block #{i}: missing `<disabled>yes</disabled>` (default "
-                    f"posture is OFF; blue enables per iteration)",
-                )
             timeout_match = re.search(r"<timeout>(\d+)</timeout>", block)
             if not timeout_match:
                 violations.append(f"block #{i}: missing `<timeout>` directive")
@@ -247,6 +242,11 @@ class TestWazuhActiveResponseConfig:
                     f"Wazuh OR's matchers, broadening the block to every "
                     f"level-N+ alert. Drop the `<level>`.",
                 )
+        # Default posture is OFF: blue uncomments a block per iteration. A
+        # per-block <disabled>yes</disabled> stops the manager's wazuh-execd,
+        # which reads the first <disabled> as a global switch.
+        if "<active-response>" in re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL):
+            violations.append("an <active-response> block is not commented out by default")
         assert not violations, (
             "Per-target carve-outs not enforced on every block:\n  "
             + "\n  ".join(violations)

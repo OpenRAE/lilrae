@@ -635,9 +635,7 @@ def test_create_aptl_manifest_is_canonical_backend_manifest_v2():
     assert payload["capabilities"]["participant_runtime"] is not None
     assert manifest.has_time is False
     assert manifest.orchestrator is not None
-    assert {"injects", "events", "scripts", "stories"} <= set(
-        manifest.orchestrator.supported_sections
-    )
+    assert manifest.orchestrator.supported_sections == frozenset({"workflows"})
     participant_delivery_manifest = create_aptl_manifest(
         participant_inject_delivery=True
     )
@@ -4554,11 +4552,12 @@ def test_a_name_derived_alias_collision_is_still_ambiguous(tmp_path):
     )
 
 
-def test_large_apply_details_compact_without_losing_added_apparatus():
+def test_nonconformant_apply_details_compact_without_losing_added_apparatus():
+    # RAES rejects the oversized realization string, so the details compact.
     import json
     from types import SimpleNamespace
 
-    from aptl.backends.raes_provisioner import _bounded_apply_details
+    from aptl.backends.raes_provisioner import _conformant_apply_details
 
     apparatus = [{"runtime_address": "apparatus.capture.kali-session-capture"}]
     realization = SimpleNamespace(
@@ -4582,7 +4581,7 @@ def test_large_apply_details_compact_without_losing_added_apparatus():
         persistent_volumes=(),
     )
 
-    bounded = _bounded_apply_details(
+    compact = _conformant_apply_details(
         {
             "realization": realization.details(),
             "observation_evidence": {"one": {}, "two": {}},
@@ -4591,13 +4590,13 @@ def test_large_apply_details_compact_without_losing_added_apparatus():
         realization,
     )
 
-    assert len(json.dumps(bounded).encode("utf-8")) < 65_536
-    assert bounded["capture_apparatus"] == apparatus
-    assert bounded["observation_evidence"] == {
+    assert "x" * 70_000 not in json.dumps(compact)
+    assert compact["capture_apparatus"] == apparatus
+    assert compact["observation_evidence"] == {
         "projection": "runtime-snapshot",
         "record_count": 2,
     }
-    assert bounded["realization"]["nodes"][0]["address"] == "provision.node.kali"
+    assert compact["realization"]["nodes"][0]["address"] == "provision.node.kali"
 
 
 def test_runtime_selection_evidence_reports_the_admitted_provider() -> None:

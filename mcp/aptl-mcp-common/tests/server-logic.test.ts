@@ -109,6 +109,7 @@ const ruleFileConfig = {
     create_detection_rule: {
       url: 'https://wazuh.example:55000/rules/files/{filename}',
       method: 'PUT',
+      content_type: 'application/octet-stream',
       path_param_patterns: { filename: '[A-Za-z0-9][A-Za-z0-9_.-]*\\.xml' },
       description: 'Upload a custom Wazuh rules file'
     }
@@ -586,11 +587,12 @@ describe('tool arguments over an MCP transport', () => {
   it.each([
     ['the API call tool', apiConfig, 'wazuh_api_call',
       { endpoint: '/rules/files/custom_rules.xml', method: 'PUT', params: { overwrite: true }, body: RULE_XML },
-      '/rules/files/custom_rules.xml'],
+      '/rules/files/custom_rules.xml', {}],
     ['a predefined query', ruleFileConfig, 'wazuh_create_detection_rule',
       { params: { filename: 'custom_rules.xml', overwrite: true }, body: RULE_XML },
-      'https://wazuh.example:55000/rules/files/custom_rules.xml'],
-  ])('dispatches a raw-string body through %s unchanged', async (_label, config, tool, args, url) => {
+      'https://wazuh.example:55000/rules/files/custom_rules.xml',
+      { headers: { 'Content-Type': 'application/octet-stream' } }],
+  ])('dispatches a raw-string body through %s unchanged', async (_label, config, tool, args, url, headers) => {
     fakes.http.makeRequest.mockResolvedValue({ status: 200, data: { error: 0 } });
     const client = await connect(config);
 
@@ -602,8 +604,34 @@ describe('tool arguments over an MCP transport', () => {
     expect(fakes.http.makeRequest).toHaveBeenCalledWith(
       url,
       'PUT',
-      { params: { overwrite: true }, body: RULE_XML, responseType: 'json' },
+      { params: { overwrite: true }, body: RULE_XML, responseType: 'json', ...headers },
     );
+  });
+
+  it('sends a JSON-text body to a JSON query as the merged JSON object', async () => {
+    fakes.http.makeRequest.mockResolvedValue({ status: 200, data: { hits: {} } });
+    const client = await connect(queryConfig);
+
+    const result = await client.callTool({
+      name: 'wazuh_query_alerts',
+      arguments: { body: '{"query": {"match_all": {}}}' },
+    });
+
+    expect(payload(result)).toMatchObject({ success: true, status: 200 });
+    expect(fakes.http.makeRequest).toHaveBeenCalledWith(
+      'https://indexer.example:9200/wazuh-alerts-*/_search',
+      'POST',
+      { params: {}, body: { size: 1, query: { match_all: {} } }, responseType: 'json' },
+    );
+  });
+
+  it.each(['<group/>', '[1]', '"text"'])('refuses the non-object body %j for a JSON query', async (body) => {
+    const client = await connect(queryConfig);
+
+    const result = await client.callTool({ name: 'wazuh_query_alerts', arguments: { body } });
+
+    expect(payload(result)).toMatchObject({ success: false, error: 'body must be a JSON object for this query' });
+    expect(fakes.http.makeRequest).not.toHaveBeenCalled();
   });
 
   it('advertises the closed schemas it enforces', async () => {

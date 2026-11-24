@@ -1,199 +1,74 @@
-To get started and run a scenario with LilRÆ, see [Run Your First Lab](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/quick-start.md).
-
-[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=Brad-Edwards_aptl&token=4dd88be3421d6d030a4615b86ac8ab0e3c9eb4d3)](https://sonarcloud.io/summary/new_code?id=Brad-Edwards_aptl)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/OpenRAE/lilrae/badge)](https://scorecard.dev/viewer/?uri=github.com/OpenRAE/lilrae)
-
-🎤 **Accepted to [Black Hat USA Arsenal 2026](https://blackhat.com/us-26/arsenal/schedule/#aptl-advanced-purple-team-labs-52322), [SecTor Arsenal 2026](https://blackhat.com/sector/arsenal/schedule/index.html#aptl-advanced-purple-team-labs-54785), and SecTor 2026 Briefings.**
-
 # LilRAE (formerly APTL)
 
-> **APTL is now LilRAE, and the package is now `lilrae`.** The Advanced Purple
-> Team Lab (APTL) repository moved to
-> [github.com/OpenRAE/lilrae](https://github.com/OpenRAE/lilrae) and was
-> renamed. It is the same project, with the same source, history, features,
-> and issue tracker. Releases publish to PyPI as
-> [`lilrae`](https://pypi.org/project/lilrae/) from version 8.0.0.
-> `aptl-labs` 7.0.0 was the last `aptl-labs` release. The command is now
-> `lilrae`. The `aptl` command is a deprecated alias that LilRAE 10.0.0
-> removes. The import package is still `aptl`, and existing configuration,
-> state directories, and runtime identifiers keep their `aptl` names. Where
-> current pages still say APTL, they mean LilRAE. See
-> [ADR-062](https://github.com/OpenRAE/lilrae/blob/main/docs/adrs/adr-062-lilrae-name-and-naming-convention.md)
-> and [Move from the aptl command](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installation.md#move-from-the-aptl-command).
->
-> The two distributions install the same `aptl` package. Do not
-> install `lilrae` over `aptl-labs`, because one installation overwrites the
-> files of the other. Remove `aptl-labs` first, then install `lilrae` with the
-> same extras.
->
-> With pipx:
->
-> ```shell
-> pipx uninstall aptl-labs
-> pipx install lilrae
-> lilrae --version
-> ```
->
-> With pip in a virtual environment, for example with the `[s3]` extra:
->
-> ```shell
-> python -m pip uninstall aptl-labs
-> python -m pip install "lilrae[s3]"
-> ```
->
-> To roll back, remove `lilrae`, then install the last legacy release:
->
-> ```shell
-> pipx uninstall lilrae
-> pipx install "aptl-labs==7.0.0"
-> ```
->
-> The [installation guide](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installation.md#move-from-aptl-labs-to-lilrae)
-> has the full procedure. All earlier `aptl-labs` releases stay on PyPI.
+LilRAE is a local purple-team lab for human operators and AI agents.
+It runs intentionally vulnerable services for authorized research, training, and assessment.
+Scenario documents select the range. The `lilrae` CLI manages its lifecycle and run records.
 
-LilRAE is a local purple-team lab where human operators and AI agents exercise
-red- and blue-team workflows against an intentionally vulnerable enterprise
-range. Scenario documents select and realize the target, attacker, and SOC
-topology; the CLI owns validation, startup, readiness, access discovery,
-teardown, and run records.
+[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=Brad-Edwards_aptl)](https://sonarcloud.io/summary/new_code?id=Brad-Edwards_aptl)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/OpenRAE/lilrae/badge)](https://scorecard.dev/viewer/?uri=github.com/OpenRAE/lilrae)
 
-Use cases include autonomous cyber-operations research, purple-team training,
-and AI threat-actor assessment.
+Accepted to [Black Hat USA Arsenal 2026](https://blackhat.com/us-26/arsenal/schedule/#aptl-advanced-purple-team-labs-52322),
+[SecTor Arsenal 2026](https://blackhat.com/sector/arsenal/schedule/index.html#aptl-advanced-purple-team-labs-54785), and SecTor 2026 Briefings.
 
 ## Status And Safety
 
-**Active development. Not for production. Not hardened.** LilRAE gives AI agents
-penetration-testing tools and starts intentionally vulnerable services. Use a
-dedicated, rebuildable host, keep unrelated credentials and workloads
-elsewhere, control the surrounding network, and operate only on systems you are
-authorized to test.
+**Active development. Not for production. Not hardened.**
 
-Ordinary `lilrae lab start` uses the selected Docker daemon. On native Linux that
-can give the lab and its control components authority over the physical host's
-Docker engine; Docker Desktop or another Docker VM changes that placement but
-is not, by its name alone, a qualified containment boundary. `lilrae lab start`
-and `lilrae lab info` report the observed transport and boundary, or `unknown`
-when they cannot establish one. See [tested profiles, host exposure and
-limits](docs/getting-started/prerequisites.md#tested-execution-profiles-and-limits).
+Use a dedicated, rebuildable environment and keep unrelated credentials elsewhere.
+Operate only on systems you are authorized to test.
+Native Docker can expose the host. A VM boundary reduces risk but does not remove it.
 
-For stronger host and cross-seat isolation on Linux/KVM, use a disposable
-[`lilrae seat`](docs/reference/appliance-seat-launcher.md). A VM boundary reduces
-risk but does not eliminate it; keep the host kernel and hypervisor current. A
-seat needs KVM, QEMU, OVMF, adequate per-seat resources and a verified image;
-it does not make the workloads inside its guest mutually isolated.
-**Seats have no default outbound network controls.** The guest can initiate
-ordinary internet and LAN connections through user-mode NAT, subject to the
-host network and any rules defined by the selected scenario. Event-specific
-outbound restrictions are the operator's responsibility.
+Seats have no default outbound network controls.
+Read the [execution boundaries and limits](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/execution-boundaries.md) before starting a lab.
 
 ## Quick Start
 
-Install the released CLI and materialize its bundled lab assets. No source
-checkout is required:
-
-```shell
-pipx install lilrae
-lilrae lab init my-lab
-cd my-lab
-lilrae lab start --scenario techvault
-```
-
-Startup validates the selected scenario, creates private project state,
-realizes the topology, waits for required readiness checks, and reports a
-structured outcome with the observed execution boundary. Inspect the fresh
-runtime-derived state, boundary and access information:
-
-```shell
-lilrae lab status
-lilrae lab info
-lilrae container list
-```
-
-URLs, host ports, available containers, usernames, and credential locations
-belong to the realized project. Use `lilrae lab info`; do not rely on static
-values copied from documentation.
-
-At the end of the session:
-
-```shell
-lilrae lab stop      # preserve project volumes
-lilrae lab stop -v   # confirm and destroy project volume data
-```
-
-Read the [first-lab guide](docs/getting-started/quick-start.md) for scenario
-selection, safe activity, result inspection, troubleshooting, and teardown.
+Follow [Run your first lab](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/quick-start.md).
+For an older installation, use the [package migration guide](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installation.md#move-from-aptl-labs-to-lilrae).
 
 ## Requirements
 
-- Python 3.14 and [pipx](https://pipx.pypa.io/)
-- Docker Engine 28.0 or newer (native, or inside Docker Desktop or Colima)
-  with Compose and Buildx, on a cgroup v2 host
-- OpenSSH client with `ssh-keygen` on `PATH`
-- Node.js 22.23.4+, 24.22.1+, or 26.12.1+ and npm for MCP artifact builds
-- 20GB or more of free disk space
-- Sufficient Docker memory for the selected scenario; the full acquired
-  TechVault stack needs more than 20GB
-
-See [Prerequisites](docs/getting-started/prerequisites.md) for platform-specific
-setup and verification.
+Check the [prerequisites](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/prerequisites.md) and [host requirements](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/host-requirements.md).
+These pages own the supported versions and resource limits.
 
 ## Supported Interfaces
 
-- [CLI](docs/reference/cli.md) is the primary lab control plane.
-- [MCP servers](docs/reference/mcp.md) give authorized agents scenario-aware
-  red- and blue-team tools through generated private client configuration.
-- [Web interface](docs/reference/web.md) provides a loopback-first local
-  operator UI and typed API.
-
-The APTL operator UI, vulnerable target applications, and third-party SOC
-interfaces are separate surfaces. The selected scenario determines which ones
-exist.
+Use the [CLI](https://github.com/OpenRAE/lilrae/blob/main/docs/reference/cli.md), [MCP](https://github.com/OpenRAE/lilrae/blob/main/docs/reference/mcp.md), and [web](https://github.com/OpenRAE/lilrae/blob/main/docs/reference/web.md) references for supported interfaces.
+Use `lilrae lab info` for the current project's URLs and credential locations.
 
 ## Scenarios
 
-The APTL startup catalog exposes the scenario selections supported by the
-installed release. Reusable environment-pack definitions and authoring support
-live in the companion [OpenRAE/env-packs](https://github.com/OpenRAE/env-packs)
-repository; APTL owns admission, realization, readiness, and operation of the
-selected scenario in the local lab.
+The installed LilRAE startup catalog determines available scenarios.
+[Scenario Pack installation](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installing-packs.md) describes selection and acquisition.
+Reusable definitions live in [OpenRAE/env-packs](https://github.com/OpenRAE/env-packs).
+LilRAE owns local admission, realization, readiness, and operation.
 
 ## Documentation
 
-The published site is the canonical user manual:
+The [published manual](https://openrae.github.io/lilrae/) has four reader routes:
 
-- [Documentation home](https://openrae.github.io/lilrae/)
-- [Installation](docs/getting-started/installation.md)
-- [Run your first lab](docs/getting-started/quick-start.md)
-- [Troubleshooting](docs/troubleshooting/index.md)
-- [Architecture and historical records](docs/architecture/index.md)
-- [Design-check tools](docs/architecture/design-checks.md)
-- [OpenSSF Best Practices assessment](docs/security/openssf-best-practices.md)
-
-The README is the GitHub and package-index gateway, not a second copy of the
-manual.
+| Reader need | Route |
+| --- | --- |
+| Learn through an exercise | [Tutorials: first lab](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/quick-start.md) |
+| Complete a task | [How-to guides: install LilRAE](https://github.com/OpenRAE/lilrae/blob/main/docs/getting-started/installation.md) |
+| Look up exact facts | [Reference: CLI](https://github.com/OpenRAE/lilrae/blob/main/docs/reference/cli.md) |
+| Understand reasons and relationships | [Explanation: architecture](https://github.com/OpenRAE/lilrae/blob/main/docs/architecture/index.md) |
 
 ## Project Links
 
-- [Get support](https://github.com/OpenRAE/lilrae/blob/dev/SUPPORT.md)
-- [Contribute](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md)
-- [Report a vulnerability privately](https://github.com/OpenRAE/lilrae/security/advisories/new)
-- [Review the OpenSSF Best Practices assessment](docs/security/openssf-best-practices.md)
-
-Do not put vulnerability details in a public issue, pull request, or
-discussion. The [security policy](SECURITY.md) describes scope and the private
-fallback contact path.
+- [Get support](https://github.com/OpenRAE/lilrae/blob/dev/SUPPORT.md).
+- [Contribute](https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md).
+- [Report a vulnerability privately](https://github.com/OpenRAE/lilrae/security/advisories/new).
+- Read the [security policy](https://github.com/OpenRAE/lilrae/blob/main/SECURITY.md) and [OpenSSF assessment](https://github.com/OpenRAE/lilrae/blob/main/docs/security/openssf-best-practices.md).
 
 ## Ethics And Disclaimer
 
-APTL uses commodity services and standard security tooling. AI agents get Kali
-access; this public repository does not add red-team enhancements to their
-latent capabilities. You are responsible for following all applicable laws and
-for obtaining authorization before testing a system.
-
-The repository contains intentional test credentials used only by lab
-fixtures. They are not production secrets. Runtime control-plane credentials
-are generated into private project files and must not be committed or shared.
+Follow applicable laws and obtain authorization before testing.
+Do not disclose vulnerabilities in public issues or discussions.
+Lab test credentials are fixtures. Keep generated control-plane credentials private.
+LilRAE uses standard security tools and gives agents Kali access.
+This public repository adds no red-team enhancements to their existing capabilities.
 
 ## License
 
-MIT
+[MIT](https://github.com/OpenRAE/lilrae/blob/main/LICENSE).

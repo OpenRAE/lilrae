@@ -65,9 +65,7 @@ class OcsfProjection:
     @staticmethod
     def project(ctx: ProjectionContext) -> ProjectionResult:
         try:
-            digest, size, body = _io.read_source(
-                ctx.run_dir, _SOURCE_RELPATH, max_bytes=ctx.limits.max_member_bytes
-            )
+            digest, size, body = _io.read_source(ctx.run_dir, _SOURCE_RELPATH)
         except _io.SourceMissing:
             return ProjectionResult(
                 descriptor=None,

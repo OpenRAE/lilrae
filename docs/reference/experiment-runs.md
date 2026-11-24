@@ -70,7 +70,17 @@ See [prepare run evidence](run-operations.md#clean-state-between-runs) for the d
 ## Run Directory Structure
 
 Runs live in the run store, which `run_storage.local_path` in `aptl.json` sets
-(default `./runs`, relative to the project directory). Each run is one
+(default `./runs`, relative to the project directory).
+Two more `run_storage` settings control evidence capture:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `free_space_reserve_percent` | `10.0` | Percent of the run-store filesystem that evidence writes leave free. Readiness fails, and a capture write fails, when free space is below it. |
+| `capture_progress_timeout_seconds` | `1800` | Seconds that one evidence read can go without new data. A read that stalls this long fails as a timeout. |
+
+Evidence capture keeps the complete source content. It does not cut, prefix,
+or cap content by size or count.
+ Each run is one
 directory, `<run store>/<run_id>/`. `lilrae lab start` creates one run per start
 and names it `run_<UTC timestamp>`, for example `run_20261011T135200Z`. The
 `lilrae runs` commands list only run directories that contain a `manifest.json`,
@@ -179,9 +189,11 @@ Neither record is a seal. They carry no signature or attestation claim.
 | `sections[]` | One entry per provenance source: status, declaration digest, content identity, and a bounded payload |
 | `limitations[]` | Every source that did not fully collect, with a stable reason code |
 
-Each source is collected by a code-owned provider under declared byte, entry,
-and time limits. A source that is unavailable, denied, unsupported, truncated,
-timed out, or failed appears in `limitations[]` with a stable reason code. Such
+Each source is collected by a code-owned provider. Every provider has the same time limit, `run_storage.capture_progress_timeout_seconds`.
+Provenance content is not cut or capped by size or entry count.
+
+A source that is unavailable, denied, unsupported, timed out, or failed appears
+in `limitations[]` with a stable reason code. Such
 a source is never silently omitted and never given a fabricated digest. A plain
 `lilrae lab start` has no admitted experiment plan and no installed participants,
 so its provisional record reports those two sources `unavailable`. It does not omit them.

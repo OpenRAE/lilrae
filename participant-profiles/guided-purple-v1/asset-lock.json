@@ -43,7 +43,7 @@
       "asset_id": "compose-model",
       "kind": "project-file",
       "source": "docker-compose.yml",
-      "sha256": "bf40ff69bdf0bfa358de4c2ef84ad7f72f8991c9be6a800a160cacf9cad7110c"
+      "sha256": "895503f1742076a49734853c1e7e5ff4b4dfa605784e9a03365bc6d57ba896ed"
     },
     {
       "asset_id": "mcp-red-build",
@@ -55,7 +55,7 @@
       "asset_id": "mcp-red-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-red/package-lock.json",
-      "sha256": "cbae644631a76a59e00e1bfaaa8be9dd0e212150c51f6c4842bc142cf1e7a249"
+      "sha256": "da43658c7fc1a8a311a2d5cc0b8fee467025d5f44d3965cfe3a6b36b12195f2a"
     },
     {
       "asset_id": "mcp-red-config",
@@ -73,13 +73,13 @@
       "asset_id": "mcp-indexer-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/package-lock.json",
-      "sha256": "00b13858f757271d99b38f939714913e7b36d8d3a19f92559ab7d8f947e2f038"
+      "sha256": "d4079b950c09b698016b5bd43d2925696a2d3ab5ce1df09a9a21cbda3bd1c9d6"
     },
     {
       "asset_id": "mcp-indexer-config",
       "kind": "project-file",
       "source": "mcp/mcp-indexer/docker-lab-config.json",
-      "sha256": "e388fbb0e04446c7db2635bfc7d1bdedb686f5b41497a63dd981ff24d8b61b66"
+      "sha256": "e080820f8ca430a814ab7a99ab1093388cf62e0577783b713bd25b3137d67afd"
     },
     {
       "asset_id": "mcp-wazuh-build",
@@ -91,13 +91,13 @@
       "asset_id": "mcp-wazuh-dependencies",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/package-lock.json",
-      "sha256": "3e1fb963fbdab9385346d67e405d489731fa83404785bb4317034262f7f3245e"
+      "sha256": "281127265941bb40a57d96b5e29a2e2e4042d06baf2bf2445a8be4c632d1569c"
     },
     {
       "asset_id": "mcp-wazuh-config",
       "kind": "project-file",
       "source": "mcp/mcp-wazuh/docker-lab-config.json",
-      "sha256": "f049642d65e0b09cb72f33d805fd39e7221f60416e5e690a5a079c0327bc29b5"
+      "sha256": "9ef193fa6214458364a8963d24ad89bcc1ad0e131ea6236bc4788849ccfc13c1"
     },
     {
       "asset_id": "image-kali",

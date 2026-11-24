@@ -80,8 +80,6 @@ class ParticipantApparatusProvider:
         """Build each participant's leaf, or declare a degradation."""
         if not self._apparatus_by_address:
             raise _degraded.absent()
-        if len(self._apparatus_by_address) > context.max_entries:
-            raise _degraded.entry_limit()
 
         leaves: list[ProvenanceLeaf] = []
         participants: dict[str, object] = {}

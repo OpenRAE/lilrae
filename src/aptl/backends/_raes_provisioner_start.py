@@ -23,7 +23,7 @@ from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 from raes_processor.planner import realization_authority_disclosure
 
 from aptl.backends._raes_apply_reporting import (
-    bounded_apply_details as _bounded_apply_details,
+    conformant_apply_details as _conformant_apply_details,
     capture_apparatus_observations,
 )
 from aptl.backends._lilrae_catalog_image_observation import catalog_images_unverified
@@ -280,7 +280,7 @@ class ProvisionerStartMixin(object):
             readback_diagnostics, _ = realization_authority_disclosure(
                 plan,
                 validation_snapshot,
-                manifest=create_aptl_manifest(),
+                manifest=self.reporting_manifest or create_aptl_manifest(),
             )
             settling, unobserved = _unsettled_readback(
                 plan, validation_snapshot, readback_diagnostics
@@ -323,7 +323,7 @@ class ProvisionerStartMixin(object):
         from aptl.backends.lilrae_apparatus_reporting import append_verified_apparatus
 
         return append_verified_apparatus(
-            result, self._lilrae_apparatus_resources, apparatus_observations
+            result, self._lilrae_apparatus_resources, apparatus_observations, plan
         )
 
     def _realized_snapshot(
@@ -363,7 +363,7 @@ class ProvisionerStartMixin(object):
     ) -> dict[str, object]:
         """Project verified deployment and apparatus evidence into bounded details."""
 
-        return _bounded_apply_details(
+        return _conformant_apply_details(
             {
                 "profiles": self.selected_profiles(realization),
                 "realization": realization.details(),
@@ -396,7 +396,7 @@ def _unverified_catalog_image_result(
         success=False,
         snapshot=snapshot,
         diagnostics=diagnostics,
-        details=_bounded_apply_details(
+        details=_conformant_apply_details(
             {
                 "profiles": selected_profiles,
                 "realization": realization.details(),

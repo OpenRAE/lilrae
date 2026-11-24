@@ -119,7 +119,7 @@ class ClaudeCodeHostParticipantAdapter:
         *,
         runner: ProcessRunner | None = None,
         timeout_seconds: float = 600.0,
-        max_output_bytes: int = 2_000_000,
+        max_output_bytes: int | None = None,
     ) -> None:
         """Admit an installed executable and bind its bounded runner."""
 

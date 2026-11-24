@@ -1,17 +1,14 @@
 # Lab fixture pack
 
-APTL's tests of its own lab machinery use a small environment pack that APTL
-owns, instead of the released TechVault pack. A pack release therefore can't
-break a test of pack admission, content resolution, realization, or the live
-gate. Issue #985 introduced it.
+Use this guide to maintain the owned fixture pack for generic lab-machinery tests.
+It covers pack admission, content resolution, realization, and the live gate.
+Issue #985 introduced it to keep those tests independent of released TechVault content.
 
 ## Where it lives and why
 
-The pack is `tests/fixtures/packs/materialization-envelope/`. It stays in this
-repository and is **not published**. Its only consumers are this test suite and
-this repository's CI, so a separate distribution would add a release process
-with no one outside the repository to serve. Publish it only when an external
-consumer needs it, and keep this in-tree copy as the one the tests use.
+Keep the fixture in `tests/fixtures/packs/materialization-envelope/`.
+It is not published. This repository and its CI are its only consumers.
+Publish only when an external consumer needs it, while retaining this canonical test copy.
 
 The pack contains:
 
@@ -35,9 +32,7 @@ gates, exactly as it does for a released pack. The module is import-safe: it
 reads no project `.env` and runs no lab script.
 
 Generic resolver, content, realization, and live-gate cases use the fixture.
-Cases that pin a released pack stay on TechVault and remain separate: its
-exact content identity, its evidence contracts, plugin compatibility, and the
-TechVault realization, static, and live gates.
+TechVault cases separately pin released content identity, evidence contracts, plugin compatibility, and realization, static, and live gates.
 
 ## Choose the input for a new test
 
@@ -64,8 +59,9 @@ prove admission.
 
 ## Changing the pack
 
-Every member is byte-bound, so any edit, including to the SDL, needs a new
-manifest before the pack validates again:
+Every member is bound by its digest.
+Run fixture regeneration and behavior checks only in CI or an approved isolated VM.
+After an intended member edit, update the manifest:
 
 1. Edit the member. To add a member, also add its entry to
    `associated-artifacts.json`, since the manifest must list the pack's exact
@@ -88,7 +84,7 @@ manifest before the pack validates again:
    EOF
    ```
 
-3. Run `tests/test_scenario_bundle.py` and the tests that read the fixture.
+3. In CI or an approved isolated VM, run `tests/test_scenario_bundle.py` and affected fixture consumers.
 
 Never re-derive the manifest to make an unexplained byte change pass: a failing
 digest means something changed a member. `.gitattributes` marks the pack

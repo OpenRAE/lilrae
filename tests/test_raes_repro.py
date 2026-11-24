@@ -108,8 +108,8 @@ class TestReproRecord:
         # They must be separate objects, not merged
         assert record["raes"]["runtime_snapshot"] is not record["backend_evidence"]["range_snapshot"]
 
-    def test_sensitive_value_redacted_on_write(self, tmp_path):
-        """Confirm write_json redacts sensitive realization details."""
+    def test_scenario_value_preserved_on_write(self, tmp_path):
+        """Confirm write_json keeps credential-shaped realization details."""
         from aptl.core.runstore import LocalRunStore
 
         sensitive_key = "".join(("pass", "word"))
@@ -123,9 +123,7 @@ class TestReproRecord:
         store.write_json(run_id, "manifest.json", record)
         loaded = store.get_run_manifest(run_id)
 
-        raw = json.dumps(loaded)
-        assert sentinel_value not in raw
-        assert "[REDACTED]" in raw
+        assert loaded["raes"]["realization"] == {sensitive_key: sentinel_value}
 
     def test_runtime_parameters_are_intentionally_omitted(self):
         record = _dummy_record()

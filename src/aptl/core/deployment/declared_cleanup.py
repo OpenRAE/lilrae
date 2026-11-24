@@ -93,8 +93,6 @@ class ReceiptCleanup:
             if kind == "native-resource-receipt/v1":
                 receipt = _decode_receipt(data)
                 retained.setdefault((receipt.kind, receipt.native_id), receipt)
-        if len(retained) > 4096:
-            raise BufferError("cleanup receipt inventory exceeds its bound")
         self._active_receipts = current
         for receipt in retained.values():
             if (

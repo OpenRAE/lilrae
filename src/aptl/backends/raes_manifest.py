@@ -168,9 +168,7 @@ _SUPPORTED_CONTRACT_VERSIONS = _BASE_SUPPORTED_CONTRACT_VERSIONS | (
 # does not drive (scenarios using those get an explicit planner diagnostic).
 _ORCHESTRATOR = OrchestratorCapabilities(
     name="aptl-rte-orchestrator",
-    supported_sections=frozenset(
-        {"events", "injects", "scripts", "stories", "workflows"}
-    ),
+    supported_sections=frozenset({"workflows"}),
     supports_workflows=True,
     supported_workflow_features=frozenset(
         {

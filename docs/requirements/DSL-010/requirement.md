@@ -69,7 +69,7 @@ Extends DSL-008. APTL on origin/main already realizes ACES SDL onto real Docker 
 - IMPLEMENTS → CODE_FILE `tools/check_architecture.py` (Enrolled transitive layers and conventions)
 - IMPLEMENTS → CODE_FILE `tools/check_lilrae_participant_architecture.py` (Executable dependency ownership check)
 - IMPLEMENTS → DOCUMENTATION `docs/architecture/participant-action-enforcement.md` (Composition controls and qualification boundaries)
-- IMPLEMENTS → DOCUMENTATION `docs/adrs/adr-065-executable-participant-action-boundaries.md` (Executable architecture decision)
+- IMPLEMENTS → DOCUMENTATION `docs/adrs/adr-070-executable-participant-action-boundaries.md` (Executable architecture decision)
 - TESTS → TEST `tests/test_lilrae_participant_action_model.py` (Finite state exploration and negative controls)
 - TESTS → TEST `tests/test_lilrae_participant_architecture.py` (Component dependency controls and mutations)
 - TESTS → TEST `tests/test_lilrae_participant_tools.py` (Exact mapping, refusal, replay, and redaction)

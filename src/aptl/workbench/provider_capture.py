@@ -88,7 +88,7 @@ def _update_claims(response: Mapping[str, object], claims: dict[str, object]) ->
         ("provider", "served_provider"),
     ):
         candidate = response.get(source)
-        if isinstance(candidate, str) and len(candidate) <= 256:
+        if isinstance(candidate, str):
             inconsistent |= target in claims and claims[target] != candidate
             claims[target] = candidate
     return inconsistent
@@ -292,8 +292,6 @@ def _read_capture_rows(
     if not _identity(invocation_id):
         raise ValueError("capture bounds refused")
     for index, line in enumerate(data.splitlines()):
-        if index >= 4096:
-            raise ValueError("capture item bound exceeded")
         row = loads_strict(line)
         _validate_frame(row, index, invocation_id)
         _admit_capture_row(row, index, requests)
@@ -323,14 +321,13 @@ def reduce_provider_capture(
     *,
     invocation_id: str,
     secrets: tuple[str, ...],
-    max_bytes: int,
 ) -> ProviderCapture:
-    """Preserve accepted prefixes, never treating missing membership as empty success."""
+    """Reduce the complete journal, never treating missing membership as empty success."""
     records: list[dict[str, object]] = []
     requests: dict[str, list[dict[str, object]]] = {}
-    complete = bool(data) and len(data) <= max_bytes
+    complete = bool(data)
     try:
-        _read_capture_rows(data[:max_bytes], invocation_id, records, requests)
+        _read_capture_rows(data, invocation_id, records, requests)
     except ValueError, KeyError, TypeError, RecursionError:
         complete = False
     calls, calls_complete = _reduce_calls(requests)

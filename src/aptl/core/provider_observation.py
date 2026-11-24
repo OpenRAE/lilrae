@@ -96,12 +96,12 @@ class ProviderResponseObservation(SafeObservation):
 class ProviderCallObservation(SafeObservation):
     """Membership, timing, controls and available results for one fetch call."""
 
-    call_id: Annotated[int, Field(ge=1, le=10_000)]
+    call_id: Annotated[int, Field(ge=1)]
     requested_at_ms: Count
     completed_at_ms: Count | None = None
     controls: ObservedRequestControls
     context: Annotated[
-        tuple[ObservedContext, ...], Field(min_length=1, max_length=4096)
+        tuple[ObservedContext, ...], Field(min_length=1)
     ]
     http_status: Annotated[int, Field(ge=100, le=599)] | None = None
     state: Literal["dispatched", "completed", "failed", "cancelled"] = "dispatched"
@@ -116,7 +116,7 @@ class RequestObservation(SafeObservation):
     )
     status: Literal["observed", "partial", "missing", "invalid", "oversized"]
     observer_sha256: Digest
-    calls: Annotated[tuple[ProviderCallObservation, ...], Field(max_length=10_000)] = ()
+    calls: tuple[ProviderCallObservation, ...] = ()
     native_turn_limit: Annotated[int, Field(ge=1, le=10_000)] | None = None
     source: Literal["provider-fetch"] = "provider-fetch"
 

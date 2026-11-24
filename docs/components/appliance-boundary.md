@@ -94,7 +94,7 @@ a mutable local tag. Developer-local RAES runs may build the checked-in helper,
 but that path is not appliance evidence.
 
 The signed image uses `aptl.seat-image/v3`, boundary policy generation 4, and
-network-helper wire tag 6. An older V2 image or observation cannot satisfy this
+network-helper wire tag 8. An older V2 image or observation cannot satisfy this
 gate. Qualification accepts only an immutable signed image digest. It exercises the normal launcher, first-boot service, readiness channel, clean start, warm restart, reset, and second clean start. The retired smoke service that disabled
 first boot is not qualification evidence.
 

@@ -61,39 +61,15 @@ misconfigurations:
 # stops matching and the gate checks it again. These still appear in the
 # recorded SARIF and in code scanning; the waiver relaxes only the gate.
 vulnerabilities:
-  # pip 26.2.1, the newest release and the version the lock pins, vendors these.
+  # pip 26.3, the newest release and the version the lock pins, vendors these.
   # The runtime venv in the Debian systemd base keeps pip because the
   # materializer installs a node's declared pip packages with it.
-  - id: GHSA-6v7p-g79w-8964
-    purls: [pkg:pypi/msgpack@1.1.2]
-    statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors msgpack >= 1.2.1 yet.
-  # The locked pip 26.2.2 wheel contains only msgpack's Python fallback.
-  # GHSA-j586-36cw-2gc2 identifies a C-extension defect; that extension is absent.
-  # tests/test_platform_ci_gates.py verifies the locked install's implementation.
-  - id: CVE-2026-114613
-    purls: [pkg:pypi/msgpack@1.1.2]
-    statement: >-
-      Not affected: pip 26.2.2 vendors the pure-Python fallback, not the compiled
-      extension affected by GHSA-j586-36cw-2gc2
-      (https://github.com/msgpack/msgpack-python/security/advisories/GHSA-j586-36cw-2gc2).
-      The Debian substrate build and regression test verify the fallback and
-      absence of the C extension. Remove this entry when pip updates its
-      vendored version.
   - id: CVE-2025-47273
     purls: [pkg:pypi/setuptools@70.3.0]
-    statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors setuptools >= 78.1.1 yet.
+    statement: Vendored by pip 26.3 (pip/_vendor); no pip release vendors setuptools >= 78.1.1 yet.
   - id: CVE-2026-59890
     purls: [pkg:pypi/setuptools@70.3.0]
-    statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors setuptools >= 83.0.0 yet.
-  - id: CVE-2026-97687
-    purls: [pkg:pypi/urllib3@2.7.0]
-    statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors urllib3 >= 2.8.0 yet.
-  - id: CVE-2026-97688
-    purls: [pkg:pypi/urllib3@2.7.0]
-    statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors urllib3 >= 2.8.0 yet.
-  - id: CVE-2026-97689
-    purls: [pkg:pypi/urllib3@2.7.0]
-    statement: Vendored by pip 26.2.1 (pip/_vendor); no pip release vendors urllib3 >= 2.8.0 yet.
+    statement: Vendored by pip 26.3 (pip/_vendor); no pip release vendors setuptools >= 83.0.0 yet.
   # npm 11.21.0, the newest release, bundles these. The node22 substrate keeps
   # npm because materialized nodes install from its offline cache with it.
   - id: CVE-2026-102276
