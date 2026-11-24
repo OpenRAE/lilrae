@@ -174,6 +174,21 @@ Loopback binding is a network guardrail, not a substitute for authentication,
 TLS verification, generated-secret handling, or least-privilege Docker
 orchestration. A scoped Docker socket proxy is a separate shared API-boundary design. Per-service volume changes cannot replace that design and verification.
 
+## Wazuh Verification Amendment
+
+SEC-009 replaces SEC-004 (issue #1767). The lab Wazuh CA of INF-005 signs the
+indexer and manager API certificates. Both certificates also name `localhost`
+and `127.0.0.1`, because host-run clients use the loopback publications. The
+manager API serves the generated manager certificate, not its self-signed
+certificate.
+
+`mcp-wazuh`, `mcp-indexer`, `mcp-network`, and the host-side readiness probes
+verify TLS against the lab Wazuh CA. `aptl-mcp-common` has no agent that
+disables certificate verification, and it refuses a configuration with
+`verify_ssl: false`. This amendment supersedes the Wazuh allowance of the
+Decision section and the non-goal about local-debug insecure overrides for MCP
+clients. The INF-005 chain stays, so the non-goal about that chain still applies.
+
 ## Non-Goals
 
 - Do not redesign the Docker Compose deployment model or introduce a second
@@ -181,7 +196,7 @@ orchestration. A scoped Docker socket proxy is a separate shared API-boundary de
 - Do not replace Wazuh's existing INF-005 certificate chain unless explicitly
   required by a separate Wazuh-focused requirement.
 - Do not remove the explicit local-debug insecure overrides; make them opt-in
-  and narrow.
+  and narrow. The Wazuh Verification Amendment removes them for MCP clients.
 - Do not move SOC API keys or private key material from `.env` / generated
   state into `aptl.json`, MCP JSON config, README snippets, or run artifacts.
 - Do not make collector persistence, OTel tracing, or export packaging the

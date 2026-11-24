@@ -293,9 +293,17 @@ class AptlEvaluator(object):
                 diagnostics=registration.diagnostics,
             )
 
-        drive_evaluations(
+        truth_results = project_proposition_truth_results(
             plan,
             working_snapshot,
+            evidence_records=self._evidence_records,
+            proposition_interpreter=self.proposition_interpreter,
+        )
+        drive_evaluations(
+            plan,
+            working_snapshot.with_entries(
+                registration.entries, proposition_truth_results=truth_results
+            ),
             registration.operation_payloads,
             registration.states,
             registration.history,
@@ -310,15 +318,6 @@ class AptlEvaluator(object):
             address: [dict(event) for event in events]
             for address, events in registration.history.items()
         }
-        # ADR-069 §3 / issue #889: project truth for the observed-state assertions
-        # APTL can corroborate (the service-materialization readback), reading the
-        # realized service_materialization concern from the provisioning snapshot.
-        truth_results = project_proposition_truth_results(
-            plan,
-            working_snapshot,
-            evidence_records=self._evidence_records,
-            proposition_interpreter=self.proposition_interpreter,
-        )
         result = ApplyResult(
             success=True,
             snapshot=working_snapshot.with_entries(

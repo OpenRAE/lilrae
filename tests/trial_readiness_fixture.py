@@ -53,7 +53,7 @@ def readiness_for(
         lambda binding: (
             source.fetch(clock.now(), clock.now()).status is CollectorStatus.EMPTY_OK
         ),
-        CaptureDestinationReadiness(lambda required: True),
+        CaptureDestinationReadiness(lambda: True),
     )
     selected = ReadinessOwners(
         target_identity=lambda: "approved-daemon",

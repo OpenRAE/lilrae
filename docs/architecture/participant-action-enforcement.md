@@ -6,7 +6,7 @@ Version-specific examples and qualification statements keep their original scope
 This editorial rewrite does not qualify a provider, approve a VM, or authorize a service.
 
 
-Status: implementation design for #1418, under ADR-065.
+Status: implementation design for #1418, under ADR-070.
 
 ## Purpose and ownership
 
@@ -71,11 +71,23 @@ The model reads compiled relations and installed offers.
 It introduces no second scenario language or mandatory external policy service.
 Native mappings are backend configuration, not new required SDL author detail.
 
+Native invocation admission matches bound temporal guarantees against installed constraint addresses and contract digests.
+Clock release constraints remain under scheduler control.
+Unbound temporal contexts retain exact constraint-name matching.
+Native return or confirmed process cleanup supplies end-event evidence on the admitted stepped clock.
+This logical coordinate does not measure elapsed wall time.
+Prelaunch refusals and unknown native outcomes supply no end-event proof.
+
 ## Installed mappings and controllers
 
 An installed tool binding names one server and tool, an affordance, an action, a boundary, and an execution offer.
 It binds the complete compiled action specification and effective server configuration by canonical digest.
 The server detaches that configuration once and uses it for both admission and native execution.
+
+The installed binding can supply a fixed configuration digest or a trusted, read-only digest supplier.
+The supplier resolves runtime-assigned endpoints after service realization and before call admission.
+Its result must be a valid SHA256 digest and match the full effective configuration exactly.
+The trial recorder forwards the executor's tool evidence sink without changing admission or completion authority.
 
 A trusted argument matcher selects the binding for the complete validated call.
 Zero matches and multiple matches are refusals.
@@ -86,6 +98,11 @@ A broad shell contract may declare broad effects; the adapter must not invent na
 
 Each invocation receives its own RAES port and cancellation signal.
 The native executor receives a tool session only for that invocation.
+
+The backend declares up to 4,096 tool calls per invocation, with four concurrent calls.
+The RAES runtime enforces this declared limit across the invocation.
+This invocation can include many model turns within its declared duration.
+
 Existing executors without tools retain their current call interface.
 Executors with tools must implement the explicit tool-session interface.
 The same interface accepts automated harnesses and management-owned interactive controllers.

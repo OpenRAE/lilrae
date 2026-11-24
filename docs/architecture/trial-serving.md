@@ -53,6 +53,45 @@ A durable project fence also excludes ordinary lifecycle mutation after a crash.
 
 ## Required readiness
 
+### CLI trial integration
+
+The admitted trial path must use the runtime that owns its scenario execution.
+The CLI must retain that owner through participant execution, measurement, and evaluation.
+It must not reconstruct a second scenario after startup or run an independent participant scheduler.
+
+```mermaid
+flowchart LR
+    I[Admitted entry and SDL] --> R[RAE runtime]
+    R --> P[Installed participant execution]
+    R --> C[Admitted capture plan]
+    P --> E[Original participant evidence]
+    C --> E
+    E --> V[Runtime evaluation]
+    V --> S[Sealed run]
+    E --> S
+```
+
+Participant context assets remain ordered, content-identified SDL inputs.
+An inject is required when the SDL declares an inject delivery.
+The shared episode bound and participant action limits must be executable SDL controls.
+The installed process and tool adapters enforce those controls before dispatch.
+Capture starts before the shared participant start barrier.
+An invocation failure cancels its peer when the admitted policy requires that action.
+
+The seal derives capture completeness from admitted requirements and retained acquisition outcomes.
+It must not substitute a fixed list of filenames for the capture plan.
+Evaluation results remain separate from execution, capture, and cleanup status.
+Missing evidence retains an unknown result or a capture limitation.
+A completed process never supplies an objective verdict.
+
+Image identities and reviewed image contents may supply static apparatus facts.
+Such facts must retain their actual evidence basis; they cannot be labelled as independent guest readback.
+Runtime changes still require the observations demanded by their admitted contracts.
+
+`StartedTrialRuntime` transfers the startup runtime to the CLI.
+The same `AptlRuntimeManager` drives native participant execution, `CapturePlan` acquisition, and evaluation.
+Tests cover native cancellation, missing or changed evidence, and boolean observation records.
+
 Readiness belongs to the exact admitted runtime target and approved placement.
 One shared gate binds clean placement, preparation, and live observations.
 A second runtime or an unverified endpoint cannot supply equivalent proof.

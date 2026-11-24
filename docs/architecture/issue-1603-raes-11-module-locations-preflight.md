@@ -36,7 +36,7 @@ The structural adapter fixture must accept the same release set.
 - Keep credential environment grants, private files, bounded process controls, and redaction.
 - Preserve canonical storage identities and immutable archive seals in `LocalRunStore`.
 - Follow [ADR-064](../adrs/adr-064-layered-architecture-and-code-conventions.md) for dependency directions.
-- Follow [ADR-066](../adrs/adr-066-runtime-readback-reports-realized-state.md) for observed runtime state.
+- Follow [ADR-071](../adrs/adr-071-runtime-readback-reports-realized-state.md) for observed runtime state.
 
 Do not restore the removed planning, ordering, or content-attestation bridge.
 Do not add local schema, digest, or validator substitutes.

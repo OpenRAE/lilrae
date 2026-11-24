@@ -1,13 +1,14 @@
-"""Standalone, streaming, resource-bounded evidence-bundle verifier.
+"""Standalone, streaming evidence-bundle verifier.
 
 A third party validates a bundle with THIS module and nothing else from APTL:
 it imports only the standard library plus ``rfc8785`` and never ``import
 aptl`` (asserted by test), so it can be lifted out of the tree and run
-anywhere. It streams the archive (never ``extractall``), enforces its OWN
-conservative safety bounds (a verifier must not trust limits declared inside the
-artifact it is verifying), recomputes every member digest/size against the
-inventory, recomputes the reproducible bundle root identity, and rejects a
-malformed envelope or a self-declared verified seal.
+anywhere. It streams the archive (never ``extractall``) and hashes members in
+constant memory. Members and the bundle have no size limit. Its own bounds on
+paths and on the metadata envelope never trust limits declared inside the
+bundle. It recomputes every member digest and size against the inventory,
+recomputes the reproducible bundle root identity, and rejects a malformed
+envelope or a self-declared verified seal.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tarfile
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO
@@ -23,9 +25,6 @@ import rfc8785
 
 # Self-contained safety bounds. Deliberately independent of the producer's
 # declared profile: a hostile bundle cannot raise its own ceiling.
-_MAX_MEMBERS = 200_000
-_MAX_MEMBER_BYTES = 1024 * 1024 * 1024
-_MAX_TOTAL_BYTES = 16 * 1024 * 1024 * 1024
 _MAX_PATH_LENGTH = 255
 _MAX_PATH_DEPTH = 16
 _MAX_ENVELOPE_BYTES = 8 * 1024 * 1024
@@ -124,19 +123,32 @@ def _member_problem(member: tarfile.TarInfo) -> str | None:
     return f"member {problem}" if problem else None
 
 
-def _read_member(tar: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
-    """Stream one member's bytes, raising ``_Fatal`` past the member byte bound."""
+def _member_chunks(tar: tarfile.TarFile, member: tarfile.TarInfo) -> Iterator[bytes]:
+    """Yield one member's bytes in chunks."""
     handle = tar.extractfile(member)
     if handle is None:
-        return b""
+        return
+    while chunk := handle.read(_READ_CHUNK):
+        yield chunk
+
+
+def _hash_member(tar: tarfile.TarFile, member: tarfile.TarInfo) -> str:
+    """Return the ``sha256:<hex>`` digest of one member in constant memory."""
+    digest = hashlib.sha256()
+    for chunk in _member_chunks(tar, member):
+        digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _read_member(
+    tar: tarfile.TarFile, member: tarfile.TarInfo, limit: int
+) -> bytes:
+    """Read one metadata member, raising ``_Fatal`` past ``limit`` bytes."""
     data = bytearray()
-    while True:
-        chunk = handle.read(_READ_CHUNK)
-        if not chunk:
-            break
+    for chunk in _member_chunks(tar, member):
         data.extend(chunk)
-        if len(data) > _MAX_MEMBER_BYTES:
-            raise _Fatal(0, ["member exceeds byte limit while streaming"])
+        if len(data) > limit:
+            raise _Fatal(0, ["metadata member exceeds byte limit while streaming"])
     return bytes(data)
 
 
@@ -243,7 +255,6 @@ def _scan_members(
     digests: dict[str, str] = {}
     sizes: dict[str, int] = {}
     names: set[str] = set()
-    total = 0
     for member in members:
         problem = _member_problem(member)
         if problem:
@@ -252,15 +263,8 @@ def _scan_members(
         if member.name in names:
             issues.append(f"duplicate member: {member.name!r}")
             continue
-        if member.size > _MAX_MEMBER_BYTES:
-            issues.append(f"member exceeds byte limit: {member.name!r}")
-            continue
-        total += member.size
-        if total > _MAX_TOTAL_BYTES:
-            issues.append("total bytes exceed limit")
-            break
         names.add(member.name)
-        digests[member.name] = _sha256_hex(_read_member(tar, member))
+        digests[member.name] = _hash_member(tar, member)
         sizes[member.name] = member.size
     return names, digests, sizes
 
@@ -302,9 +306,9 @@ def _load_envelope(
     """
     if _ENVELOPE_NAME not in names:
         raise _Fatal(member_count, issues + ["missing bundle.json envelope"])
-    env_bytes = _read_member(tar, tar.getmember(_ENVELOPE_NAME))
-    if len(env_bytes) > _MAX_ENVELOPE_BYTES:
+    if tar.getmember(_ENVELOPE_NAME).size > _MAX_ENVELOPE_BYTES:
         raise _Fatal(member_count, issues + ["envelope exceeds metadata size limit"])
+    env_bytes = _read_member(tar, tar.getmember(_ENVELOPE_NAME), _MAX_ENVELOPE_BYTES)
     try:
         envelope = json.loads(env_bytes)
     except ValueError as exc:
@@ -318,12 +322,14 @@ def _load_envelope(
 
 
 def _verify_archive(tar: tarfile.TarFile) -> VerificationReport:
-    """Verify an opened archive, accumulating issues into one final report."""
+    """Verify an opened archive, accumulating issues into one final report.
+
+    An archive that ends early or has corrupt headers makes ``tarfile`` raise
+    from ``getmembers`` or a member read; that is reported as a failure too.
+    """
     issues: list[str] = []
-    members = tar.getmembers()
     try:
-        if len(members) > _MAX_MEMBERS:
-            raise _Fatal(len(members), ["member count exceeds limit"])
+        members = tar.getmembers()
         names, digests, sizes = _scan_members(tar, members, issues)
         envelope = _load_envelope(tar, names, len(members), issues)
         root_identity = _root_identity(envelope)
@@ -343,6 +349,10 @@ def _verify_archive(tar: tarfile.TarFile) -> VerificationReport:
         )
     except _Fatal as fatal:
         return VerificationReport(False, None, fatal.member_count, None, fatal.issues)
+    except tarfile.TarError as exc:
+        return VerificationReport(
+            False, None, 0, None, [f"archive is truncated or corrupt: {exc}"]
+        )
 
 
 def verify_stream(fileobj: BinaryIO) -> VerificationReport:
@@ -358,9 +368,16 @@ def verify_stream(fileobj: BinaryIO) -> VerificationReport:
 
 
 def verify_bundle(path: str | Path) -> VerificationReport:
-    """Verify a bundle archive at ``path``."""
-    with open(path, "rb") as fileobj:
-        return verify_stream(fileobj)
+    """Verify a bundle archive at ``path``.
+
+    A path that cannot be opened or read, such as a missing file or a directory,
+    gives a failed report that names the OS error rather than raising it.
+    """
+    try:
+        with open(path, "rb") as fileobj:
+            return verify_stream(fileobj)
+    except OSError as exc:
+        return VerificationReport(False, None, 0, None, [f"cannot read bundle: {exc}"])
 
 
 __all__ = ["VerificationReport", "verify_bundle", "verify_stream"]

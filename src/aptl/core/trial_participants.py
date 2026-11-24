@@ -15,6 +15,7 @@ from raes_contracts.runtime_state import RuntimeSnapshot
 from raes_contracts.trial_unit import TrialUnitRequest
 from aptl.core.agent_errors import AgentExecutionError
 from aptl.core.participant_tools.contracts import ToolSession
+from aptl.core.participant_requests import ParticipantRequest, ParticipantRequestBinding
 
 
 @dataclass(frozen=True)
@@ -106,6 +107,8 @@ class PendingTrialParticipant:
     configuration_result: ParticipantConfigurationResultModel
     timeout_seconds: float
     tool_inventory: frozenset[tuple[str, str]] = frozenset()
+    request: ParticipantRequest | None = None
+    request_binding: ParticipantRequestBinding | None = None
 
     def __call__(self, action_id: str, cancellation: Event) -> str:
         raise AgentExecutionError("participant trial has not been configured")

@@ -16,7 +16,6 @@ from aptl.core.evidence_bundle import codes
 from aptl.core.evidence_bundle.archive import BundleMember
 from aptl.core.evidence_bundle.closure import ClosureLimitation
 from aptl.core.evidence_bundle.envelope import ProjectionDescriptor, ProjectionFieldMap
-from aptl.core.evidence_bundle.errors import BundleError
 from aptl.core.evidence_bundle.projections.registry import (
     ProjectionContext,
     ProjectionResult,
@@ -79,18 +78,9 @@ class JsonlProjection:
                 ),
             )
         records = sorted(ctx.records, key=lambda record: record["evidence_record_id"])
-        if len(records) > ctx.limits.max_jsonl_rows:
-            raise BundleError(
-                codes.REJECTED_SOURCE, "jsonl projection exceeds row limit"
-            )
-        rows: list[bytes] = []
-        for record in records:
-            # Canonicalize the SOURCE dict directly: an explicit ``null`` field
-            # stays present as null, distinct from an absent field.
-            row = rfc8785.dumps(record)
-            if len(row) > ctx.limits.max_jsonl_row_bytes:
-                raise BundleError(codes.REJECTED_SOURCE, "jsonl row exceeds byte limit")
-            rows.append(row)
+        # Canonicalize the SOURCE dict directly: an explicit ``null`` field
+        # stays present as null, distinct from an absent field.
+        rows = [rfc8785.dumps(record) for record in records]
         body = b"\n".join(rows) + b"\n"
         member = BundleMember(
             bundle_path=_BUNDLE_PATH,

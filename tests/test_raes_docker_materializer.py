@@ -393,10 +393,14 @@ class TestDependencyManifest:
             "n.node",
             InstallDependencyManifestOp(ecosystem="pip", path="/app/pyproject.toml"),
         )
+        # Range egress is default-deny: the install never resolves from an index.
         assert fake.calls[-1][1] == [
             "pip",
             "install",
             "--break-system-packages",
+            "--no-index",
+            "--no-deps",
+            "--no-build-isolation",
             "/app",
         ]
 
@@ -459,7 +463,7 @@ class TestSoftwareComponent:
         _executor(fake).install_software_component("n.node", op)
 
         assert fake.argvs() == [
-            ["npm", "--prefix", "/opt/mcp/common", "ci", "--include=dev"],
+            ["npm", "--prefix", "/opt/mcp/common", "ci", "--include=dev", "--offline"],
             ["npm", "--prefix", "/opt/mcp/common", "run", "build", "--if-present"],
         ]
 

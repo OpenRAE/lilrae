@@ -153,7 +153,7 @@ def test_generated_config_reserves_the_baked_disks_virtual_size(
     assert written["binding"]["boundary_helper_image"].startswith(
         "aptl-network-boundary-helper@sha256:"
     )
-    assert "aptl-network-boundary-helper:7" in image_references
+    assert "aptl-network-boundary-helper:8" in image_references
 
 
 def test_bake_uses_the_proven_offline_guest_provisioning() -> None:

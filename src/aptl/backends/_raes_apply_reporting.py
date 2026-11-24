@@ -24,9 +24,6 @@ if TYPE_CHECKING:
     from aptl.core.deployment.observation import DeploymentObservationContext
     from aptl.core.deployment.realization import DeploymentRealizationSpec
 
-_MAX_APPLY_DETAILS_BYTES = 65_536
-
-
 def source_image_evidence(details: dict[str, object]) -> dict[str, object]:
     """Extract the small backend projection from full or compact apply details."""
 
@@ -79,19 +76,21 @@ def _compact_realization_details(realization: AptlRealization) -> dict[str, obje
     }
 
 
-def bounded_apply_details(
+def conformant_apply_details(
     details: dict[str, object], realization: AptlRealization
 ) -> dict[str, object]:
-    """Keep RAES ApplyResult details finite without losing observer additions."""
+    """Keep RAES ApplyResult details conformant without losing observer additions.
+
+    Details that are not JSON or not a conformant realization value point to
+    the runtime snapshot, which keeps the full observation evidence.
+    """
 
     try:
-        serialized_size = len(json.dumps(details, allow_nan=False).encode("utf-8"))
+        json.dumps(details, allow_nan=False)
+        conformant = validate_realization_value(details).conformant
     except (TypeError, ValueError):
-        serialized_size = _MAX_APPLY_DETAILS_BYTES + 1
-    if (
-        serialized_size <= _MAX_APPLY_DETAILS_BYTES
-        and validate_realization_value(details).conformant
-    ):
+        conformant = False
+    if conformant:
         return details
     compact = {**details, "realization": _compact_realization_details(realization)}
     evidence = compact.get("observation_evidence")
@@ -184,7 +183,7 @@ def with_artifact_satisfactions(
 
 
 __all__ = (
-    "bounded_apply_details",
+    "conformant_apply_details",
     "capture_apparatus_observations",
     "with_artifact_satisfactions",
 )

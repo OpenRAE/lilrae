@@ -139,7 +139,7 @@ jobs:
           tests/test_hosted_seat_helper.py tests/test_stage_hosted_seat_payload.py
       - name: Vale prose lint (full lintable corpus, ADR-038)
         run: bash tools/vale-lint-all.sh
-      - name: STE corpus report (legacy findings are advisory)
+      - name: STE corpus report (includes preserved source records)
         run: |
           git ls-files -z '*.md' | xargs -0 -r bash tools/ste-lint.sh --fail-over -1 --format github
       - name: STE rewritten pages (no selected findings)
@@ -293,6 +293,14 @@ jobs:
         run: |
           docker info > /dev/null
           python -m pytest -q -m integration tests/test_native_range_policy_integration.py
+      # The helper compares each owned rule with the kernel's listing (#1742).
+      # Only a real kernel and nft can prove that listing form. The module is
+      # integration-marked, so the runs above deselect it. The probe stops the
+      # step if Docker is missing, so the tests cannot pass by a skip.
+      - name: Appliance boundary enforcement and readback through Docker
+        run: |
+          docker info > /dev/null
+          python -m pytest -q -m integration tests/test_appliance_boundary_integration.py
       # The Samba provider runs without SYS_ADMIN (#976). Only a real domain
       # provision proves that. The step builds both Samba images first, so the
       # tests cannot pass by a skip for a missing image.

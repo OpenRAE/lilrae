@@ -3,7 +3,7 @@
 The emitted record is a public ``ExperimentEvidenceRecordModel`` (validated at
 construction and round-trippable through the RAES model), its identity is
 derived from stable inputs only (never ``captured_at`` / ingestion order), and
-a truncated/redacted/withheld record always carries the mandatory loss
+a lossy/redacted/withheld record always carries the mandatory loss
 disclosure the RAES model requires.
 """
 
@@ -22,7 +22,6 @@ from aptl.core.evidence.records import (
 from aptl.core.evidence.content_store import ContentInsertion
 from aptl.core.experiment.capture_registry import (
     CaptureBinding,
-    CaptureLimits,
     CaptureVisibility,
 )
 
@@ -49,9 +48,6 @@ def _binding(**overrides) -> CaptureBinding:
         "retention_policy": "retain",
         "loss_disclosure_required": True,
         "visibility_class": CaptureVisibility.EVALUATOR_ONLY,
-        "limits": CaptureLimits(
-            max_bytes=1024, max_artifact_count=10, max_duration_s=60
-        ),
     }
     fields.update(overrides)
     return CaptureBinding(**fields)
@@ -62,7 +58,6 @@ def _content(digest_hex="ab" * 32, size=42) -> ContentInsertion:
         relative_path=f"evidence/{digest_hex}",
         digest=f"sha256:{digest_hex}",
         size=size,
-        truncated=False,
     )
 
 
@@ -160,3 +155,106 @@ class TestLossDisclosure:
     def test_lossless_participant_visible_record_has_none(self):
         record = _record(redaction_state="none", loss_disclosure=None)
         assert record.raw_content.loss_disclosure is None
+
+
+def test_acquisition_carries_typed_false_observation_without_changing_it(tmp_path):
+    from dataclasses import replace
+    from aptl.core.evidence._persist import persist_success_outcome
+    from aptl.core.evidence.visibility import project_for_participant
+    from aptl.core.runstore import LocalRunStore
+
+    outcome = replace(
+        _outcome(),
+        chunks=(b'[{"observed":false}]',),
+        event_count=1,
+        source_pipeline={
+            "typed_description": {
+                "schema_version": "realization-description/v1",
+                "description_id": "measured-boolean",
+                "description_version": "1.0.0",
+                "semantic_profile": "recursive-realization-constraint/v1",
+                "authored_ref": {
+                    "ref_kind": "capture-spec",
+                    "ref_id": "cap-1",
+                    "ref_version": "1.0.0",
+                    "ref_digest": "sha256:" + "a" * 64,
+                },
+                "provenance": {
+                    "observer_ref": {
+                        "ref_kind": "backend",
+                        "ref_id": "native-probe",
+                        "ref_version": "1.0.0",
+                    },
+                    "recorded_at": "2026-07-20T00:00:05Z",
+                    "basis": "observed",
+                    "window_ref": "run-window",
+                    "evidence_refs": [{"ref_kind": "evidence", "ref_id": "source-1"}],
+                },
+                "facts": [
+                    {
+                        "fact_id": "healthy",
+                        "subject": "/healthy",
+                        "state": "known",
+                        "value": {
+                            "kind": "literal",
+                            "origin": "backend",
+                            "value": False,
+                        },
+                    }
+                ],
+                "coverage": [
+                    {
+                        "subject": "/healthy",
+                        "kind": "collection",
+                        "universe": "probe/v1",
+                        "profile": "native-probe/v1",
+                        "status": "complete",
+                        "fact_ids": ["healthy"],
+                    }
+                ],
+            }
+        },
+    )
+    store = LocalRunStore(tmp_path)
+    store.create_run("run-1")
+    retained = persist_success_outcome(
+        binding=_binding(redaction_policy="redact_secrets", redaction_required=True),
+        outcome=outcome,
+        run_store=store,
+        run_id="run-1",
+        planned_trial_id="trial-1",
+    )
+    record = retained.record
+    assert retained.effective_status is CollectorStatus.OK
+    assert record.redaction_state == "redacted"
+    assert record.redaction_policy == "redact_secrets"
+    assert project_for_participant((retained.ref,)) == ()
+    description = record.typed_description.model_dump(mode="json")
+    assert description["facts"][0]["value"]["value"] is False
+    assert (
+        ExperimentEvidenceRecordModel.model_validate_json(
+            record.model_dump_json(exclude_none=True)
+        )
+        == record
+    )
+
+
+def test_persist_without_redaction_policy_retains_raw_content(tmp_path):
+    from dataclasses import replace
+    from aptl.core.evidence._persist import persist_success_outcome
+    from aptl.core.runstore import LocalRunStore
+
+    raw = b'[{"password":"scenario-fixture-value"}]'
+    store = LocalRunStore(tmp_path)
+    store.create_run("run-1")
+    retained = persist_success_outcome(
+        binding=_binding(),
+        outcome=replace(_outcome(), chunks=(raw,), event_count=1),
+        run_store=store,
+        run_id="run-1",
+        planned_trial_id="trial-1",
+    )
+    record = retained.record
+    assert record.redaction_state == "none"
+    assert record.redaction_policy is None
+    assert (tmp_path / "run-1" / retained.ref.content_uri).read_bytes() == raw

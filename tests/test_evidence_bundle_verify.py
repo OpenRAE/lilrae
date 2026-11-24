@@ -1,12 +1,14 @@
-"""Tests for the standalone, streaming, resource-bounded bundle verifier.
+"""Tests for the standalone, streaming bundle verifier.
 
 Proves the happy path, that the verifier imports no APTL internals, and that it
 rejects tampered digests, inventory/archive disagreement, unsafe member paths,
-link members, and a member-count blow-up.
+link members, and an oversized envelope. Input it cannot open or read fails
+with a report instead of an exception.
 """
 
 from __future__ import annotations
 
+import errno
 import io
 import sys
 import tarfile
@@ -132,12 +134,19 @@ class TestRejections:
         assert not report.ok
         assert any("link member rejected" in issue for issue in report.issues)
 
-    def test_member_count_bound_fires(self, tmp_path: Path, monkeypatch) -> None:
+    def test_member_count_and_size_have_no_verifier_limit(self, tmp_path: Path) -> None:
         out, _ = _build(tmp_path)
-        monkeypatch.setattr(verify_mod, "_MAX_MEMBERS", 1)
+        assert not hasattr(verify_mod, "_MAX_MEMBERS")
+        assert not hasattr(verify_mod, "_MAX_MEMBER_BYTES")
+        assert not hasattr(verify_mod, "_MAX_TOTAL_BYTES")
+        assert verify_bundle(out).ok
+
+    def test_oversized_envelope_is_rejected(self, tmp_path: Path, monkeypatch) -> None:
+        out, _ = _build(tmp_path)
+        monkeypatch.setattr(verify_mod, "_MAX_ENVELOPE_BYTES", 1)
         report = verify_bundle(out)
         assert not report.ok
-        assert any("member count exceeds" in issue for issue in report.issues)
+        assert any("envelope exceeds" in issue for issue in report.issues)
 
 
 class TestEnvelopeStructure:
@@ -244,3 +253,52 @@ class TestSharedBlobExport:
         report = verify_bundle(out)
         assert report.ok, report.issues
         assert result.archive.member_count >= 1
+
+
+def _missing_path(tmp_path: Path) -> Path:
+    return tmp_path / "missing.tar"
+
+
+def _directory(tmp_path: Path) -> Path:
+    return tmp_path
+
+
+def _truncated_bundle(tmp_path: Path) -> Path:
+    """Keep a valid bundle only up to the middle of its first member's data."""
+    out, _ = _build(tmp_path)
+    with tarfile.open(out, "r:") as tar:
+        member = next(m for m in tar.getmembers() if m.size > 1)
+    truncated = tmp_path / "truncated.tar"
+    truncated.write_bytes(out.read_bytes()[: member.offset_data + member.size // 2])
+    return truncated
+
+
+def _not_a_tar(tmp_path: Path) -> Path:
+    bogus = tmp_path / "bogus.tar"
+    bogus.write_bytes(b"not a tar archive")
+    return bogus
+
+
+class TestUnreadableInput:
+    """A path or archive the verifier cannot read fails as a non-tar file does."""
+
+    @pytest.mark.parametrize(
+        ("make_input", "reason"),
+        [
+            (_missing_path, f"cannot read bundle: [Errno {errno.ENOENT}] "),
+            (_directory, f"cannot read bundle: [Errno {errno.EISDIR}] "),
+            (_truncated_bundle, "archive is truncated or corrupt: unexpected end of data"),
+            (_not_a_tar, "not an uncompressed USTAR bundle: truncated header"),
+        ],
+        ids=["missing-path", "directory", "truncated", "not-a-tar"],
+    )
+    def test_fails_with_one_issue_instead_of_raising(
+        self, tmp_path: Path, make_input, reason: str
+    ) -> None:
+        report = verify_bundle(make_input(tmp_path))
+        assert not report.ok
+        assert report.root_identity is None
+        assert report.member_count == 0
+        assert report.seal_scope is None
+        assert len(report.issues) == 1
+        assert report.issues[0].startswith(reason)

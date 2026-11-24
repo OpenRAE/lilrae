@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,6 +18,7 @@ from aptl.core.evidence.adapters.sources import (
 )
 from aptl.core.evidence.content_store import create_run_json_once
 from aptl.core.evidence.outcomes import AcquisitionPhase, CollectorStatus
+from aptl.core.evidence.deadline import progress_timeout
 from aptl.core.evidence.protocol import CollectorContext, CollectorOutcome, RunScope
 from aptl.backends.scenario_capture import capture_run_scope
 from aptl.core.experiment.capture_registry import CaptureBinding, CollectorRegistration
@@ -57,13 +58,6 @@ def _parse_timestamp(value: str) -> datetime:
     """Parse the canonical UTC timestamp form emitted by capture clocks."""
 
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def _deadline(started_at: str, seconds: float) -> str:
-    """Return the admitted deadline measured from a collector start."""
-
-    value = _parse_timestamp(started_at) + timedelta(seconds=seconds)
-    return value.isoformat().replace("+00:00", "Z")
 
 
 def _source_times_inside_actual_window(
@@ -110,10 +104,8 @@ class _OnDemandNativeCollector:
         return _OnDemandHandle(context=context, started_at=context.clock.now())
 
     def stop(self, handle: _OnDemandHandle) -> CollectorOutcome:
-        result = self._source.fetch(
-            handle.started_at,
-            _deadline(handle.started_at, handle.context.deadline_seconds),
-        )
+        with progress_timeout(handle.context.progress_timeout_seconds):
+            result = self._source.fetch(handle.started_at, handle.context.clock.now())
         finished_at = handle.context.clock.now()
         if not _source_times_inside_actual_window(
             result, handle.started_at, finished_at
@@ -144,21 +136,14 @@ def _native_bindings(
 
 def _persist_capture_plan(
     plan: CapturePlan, run_store: LocalRunStore, run_id: str
-) -> bool:
-    """Create the run and seal the admitted capture plan exactly once.
-
-    Return whether this call sealed it, which marks the trial's first capture.
-    """
+) -> None:
+    """Create the run and seal the admitted capture plan exactly once."""
 
     relative_path = f"evidence/capture-plans/{plan.plan_id}.json"
     run_store.create_run(run_id)
-    sealed_before = (run_store.get_run_path(run_id) / relative_path).exists(
-        follow_symlinks=False
-    )
     create_run_json_once(
         run_store, run_id, relative_path, json.loads(plan.canonical_bytes)
     )
-    return not sealed_before
 
 
 def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult:
@@ -173,16 +158,17 @@ def acquire_native_evidence(request: NativeEvidenceRequest) -> AcquisitionResult
         "provisioning",
     )
     bindings = _native_bindings(request.plan, request.capture_selection)
-    first_capture = _persist_capture_plan(
-        request.plan, request.run_store, request.run_id
-    )
+    _persist_capture_plan(request.plan, request.run_store, request.run_id)
     sources: Mapping[str, WindowedSource] = {}
     if request.capture_selection.contribution.native_registration_ids:
         from aptl.backends.scenario_capture import family_capture_sources
 
+        # The transcript window may seal the capture plan first. The retained
+        # enrollment marker establishes each trial once, so preparation always
+        # asks to establish; an established trial stays read-only.
         sources = family_capture_sources(
             request,
-            establish_enrollment=first_capture,
+            establish_enrollment=True,
             phase=AcquisitionPhase.PREPARATION,
         )
     collectors = {
@@ -259,11 +245,13 @@ def _add_native_sources(
     """Preserve healthy participant sources if the native source factory fails."""
     from aptl.backends.scenario_capture import family_capture_sources
 
-    if request.capture_selection.contribution.native_registration_ids:
+    contribution = request.capture_selection.contribution
+    if (
+        contribution.native_registration_ids
+        or contribution.measurement_registration_ids
+    ):
         try:
-            native = family_capture_sources(
-                request, phase=AcquisitionPhase.MEASUREMENT
-            )
+            native = family_capture_sources(request, phase=AcquisitionPhase.MEASUREMENT)
         except RuntimeError:
             native = {}
         if set(native) & set(combined):

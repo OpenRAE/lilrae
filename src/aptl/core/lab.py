@@ -13,7 +13,7 @@ import os
 import re
 import subprocess
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
 from time import monotonic, sleep
@@ -28,7 +28,13 @@ from aptl.core.certs import ensure_ssl_certs
 from aptl.core.helper_images import PINNED_HELPER_IMAGES, SURICATA_SEEDER_IMAGE
 from aptl.core.soc_ca import ensure_soc_certs
 from aptl.core.deployment._misp_server_tls import stage_misp_server_tls
-from aptl.core.config import AptlConfig, DeploymentConfig, find_config, load_config
+from aptl.core.config import (
+    AptlConfig,
+    DeploymentConfig,
+    RunStorageConfig,
+    find_config,
+    load_config,
+)
 from aptl.core.contracts import (
     backend_is_initialized,
     config_is_loaded,
@@ -129,7 +135,11 @@ if TYPE_CHECKING:
     )
     from aptl.backends.raes_realization_model import AptlRealization
     from aptl.backends.raes import AcesStartOutcome
-    from aptl.backends.raes_start_model import AcesRunTarget, AdmittedScenarioStart
+    from aptl.backends.raes_start_model import (
+        AcesRunTarget,
+        AdmittedScenarioStart,
+        ScenarioAdmissionRun,
+    )
     from aptl.core.runstore import RunStorageBackend
     from aptl.core.deployment.backend import DeploymentBackend
     from aptl.core.experiment.capture_plan import CapturePlan
@@ -375,7 +385,7 @@ def admit_start_surface(
     *,
     bundle: ScenarioBundle | None = None,
     startup_selection: ScenarioStartupSelection | None = None,
-    run_id: str | None = None,
+    run: ScenarioAdmissionRun | None = None,
 ) -> tuple["AdmittedScenarioStart", "AdmittedStartSurface"]:
     """Lazy RAES import for the one admitted execution lab start reuses."""
 
@@ -390,7 +400,7 @@ def admit_start_surface(
         scenario_path=scenario_path,
         bundle=bundle,
         startup_selection=startup_selection,
-        run_id=run_id,
+        run=run,
     )
 
 
@@ -1688,6 +1698,10 @@ def _select_start_source(ctx: _LabStartContext) -> StartStageResult:
         if failure is not None:
             return StartStageResult(error=failure.error)
         bundle = resolve_scenario_bundle(ctx.project_dir, ctx.scenario_path, config)
+        if ctx.trial is not None and ctx.trial.unit is not None:
+            from aptl.backends._raes_admission_helpers import bind_trial_unit
+
+            bundle = bind_trial_unit(bundle, config, ctx.trial)
         provider_selection = select_scenario_startup(bundle)
     except (OSError, ValueError, EnvPackError, ScenarioStartupProviderError) as exc:
         if isinstance(exc, ScenarioStartupProviderError):
@@ -2065,13 +2079,41 @@ def _load_admitted_start_surface(
             if ctx.start_selection is not None
             else {}
         )
+        trial = None
+        if ctx.start_selection is not None and ctx.start_selection.bundle.trial is not None:
+            from aptl.backends._raes_admission_helpers import family_trial_input
+
+            # Admission binds the sealed trial itself and selects its own adapters.
+            assert ctx.trial is not None
+            admission_kwargs = {
+                "bundle": replace(ctx.start_selection.bundle, trial=None),
+            }
+            trial = family_trial_input(ctx.start_selection.bundle, ctx.trial)
         ctx.run_store, ctx.run_id = _resolve_run_target(ctx)
+        from aptl.backends.raes_start_model import ScenarioAdmissionRun
+
+        from raes_contracts.contracts import ExperimentCaptureSpecModel
+
+        material = (
+            ctx.trial.unit.material
+            if ctx.trial is not None and ctx.trial.unit is not None
+            else None
+        )
+        capture_specs = (
+            tuple(
+                ExperimentCaptureSpecModel.model_validate(spec)
+                for spec in material["capture_specs"].values()
+            )
+            if material is not None
+            else ()
+        )
+
         admitted, surface = admit_start_surface(
             ctx.project_dir,
             ctx.config,
             ctx.backend,
             scenario_path=ctx.scenario_path,
-            run_id=ctx.run_id,
+            run=ScenarioAdmissionRun(run_id=ctx.run_id, trial=trial, trial_capture_specs=capture_specs),
             **admission_kwargs,
         )
     except AdmissionRejection as exc:
@@ -3265,16 +3307,19 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
         return ctx.run_store, ctx.run_id
 
     state_dir = ctx.project_dir / _STATE_DIR_NAME
+    storage = getattr(ctx.config, "run_storage", None) or RunStorageConfig()
+    settings = {
+        "free_space_reserve": storage.free_space_reserve,
+        "progress_timeout_seconds": storage.capture_progress_timeout_seconds,
+    }
     active_run_dir = None if ctx.trial is not None else resolve_active_run_dir(state_dir)
     if active_run_dir is not None:
         ctx.run_store, ctx.run_id = (
-            LocalRunStore(active_run_dir.parent),
+            LocalRunStore(active_run_dir.parent, **settings),
             active_run_dir.name,
         )
         return ctx.run_store, ctx.run_id
-    configured_path = Path(
-        getattr(getattr(ctx.config, "run_storage", None), "local_path", "./runs")
-    )
+    configured_path = Path(storage.local_path)
     if not configured_path.is_absolute():
         configured_path = ctx.project_dir / configured_path
     run_id = (
@@ -3282,7 +3327,10 @@ def _resolve_run_target(ctx: _LabStartContext) -> tuple[object, str]:
         if ctx.trial is not None
         else datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ_") + uuid4().hex[:12]
     )
-    ctx.run_store, ctx.run_id = LocalRunStore(configured_path), run_id
+    ctx.run_store, ctx.run_id = (
+        LocalRunStore(configured_path, **settings),
+        run_id,
+    )
     return ctx.run_store, ctx.run_id
 
 
@@ -4793,9 +4841,28 @@ def _orchestrate_lab_start_owned(
     )
     try:
         result = _run_lab_start_steps(ctx, after_start)
+        result = _bind_trial_start(ctx, result)
+        if ctx.trial is not None and result.run_id is not None:
+            from aptl.backends.raes_start_model import StartedTrialRuntime
+
+            if (
+                ctx.admitted_start is None
+                or ctx.run_runtime is None
+                or ctx.run_store is None
+            ):
+                raise RuntimeError("the admitted trial runtime is unavailable")
+            result.trial_runtime = StartedTrialRuntime(
+                ctx.admitted_start,
+                ctx.run_runtime,
+                ctx.backend,
+                ctx.run_store,
+                tuple(getattr(ctx.native_evidence_acquisition, "records", ())),
+            )
+            # Ownership passes to the trial CLI.
+            ctx.run_runtime = None
     finally:
         _close_run_runtime(ctx)
-    return _bind_trial_start(ctx, result)
+    return result
 
 
 def _bind_trial_start(ctx: _LabStartContext, result: LabResult) -> LabResult:
@@ -4813,7 +4880,12 @@ def _bind_trial_start(ctx: _LabStartContext, result: LabResult) -> LabResult:
         failure = "The trial start has no admitted scenario or run."
     else:
         try:
-            digest = "sha256:" + hashlib.sha256(selection.bundle.sdl_path.read_bytes()).hexdigest()
+            trial = selection.bundle.trial
+            digest = (
+                trial.snapshot_digest
+                if trial is not None
+                else "sha256:" + hashlib.sha256(selection.bundle.sdl_path.read_bytes()).hexdigest()
+            )
             TrialControl(ctx.project_dir).claim(ctx.trial)
         except (LifecycleBusyError, OSError, PathSafetyError, ValueError):
             log.exception("The trial fence could not be claimed")

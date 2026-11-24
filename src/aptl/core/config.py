@@ -30,6 +30,7 @@ from aptl.utils.logging import get_logger
 
 __all__ = [
     "AptlConfig",
+    "AttachedServiceAccountSource",
     "ContainerSettings",
     "DeploymentConfig",
     "EnvironmentGrant",
@@ -118,6 +119,18 @@ class RunStorageConfig(BaseModel):
     s3_bucket: str | None = None
     # Future
     s3_prefix: str = "runs/"
+    #: Percent of the run-store filesystem that evidence writes leave free.
+    #: The default matches the Kubernetes kubelet ``nodefs.available`` hard
+    #: eviction threshold. A capture that would cross it fails visibly.
+    free_space_reserve_percent: float = Field(default=10.0, ge=0.0, lt=100.0)
+    #: Seconds an evidence read may go without new data before it fails as
+    #: a timeout. Active sources never reach it.
+    capture_progress_timeout_seconds: int = Field(default=1800, strict=True, ge=1)
+
+    @property
+    def free_space_reserve(self) -> float:
+        """Return the reserve as a fraction of the filesystem."""
+        return self.free_space_reserve_percent / 100.0
 
 
 class ScenarioSourceConfig(BaseModel):
@@ -320,8 +333,8 @@ class InstalledParticipantCredentialSources(BaseModel):
     opencode: ProcessEnvironmentCredentialSource | None = None
     #: A Google Cloud service account key, or the host's attached account, for
     #: Vertex AI participant models.
-    vertex: ProcessEnvironmentCredentialSource | AttachedServiceAccountSource | None = Field(
-        default=None, discriminator="kind"
+    vertex: ProcessEnvironmentCredentialSource | AttachedServiceAccountSource | None = (
+        Field(default=None, discriminator="kind")
     )
 
     def source_for(
@@ -362,6 +375,10 @@ class ExperimentSettings(BaseModel):
     )
     #: The absolute path of the installed, pinned OpenCode executable.
     opencode_executable: str | None = Field(default=None, min_length=2, max_length=4096)
+    #: The shared wall-clock episode of a dispatched trial. At its end every participant
+    #: is cancelled; that is the trial's normal end. ``None`` bounds participants only by
+    #: the attempt deadline.
+    trial_episode_seconds: int | None = Field(default=None, strict=True, ge=1, le=86400)
 
     @field_validator("opencode_executable")
     @classmethod

@@ -1,4 +1,4 @@
-# ADR-065: Executable participant action boundaries
+# ADR-070: Executable participant action boundaries
 
 ## Status
 

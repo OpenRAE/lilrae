@@ -56,6 +56,136 @@ def manager_for(installed):
     return RuntimeManager(target), runtime
 
 
+def _bound_deadline_request():
+    from raes_contracts.contracts import ParticipantTemporalRuntimeContextModel
+    from aptl.backends.lilrae_participant_execution import LilraeParticipantExecution
+
+    digest = "sha256:" + "1" * 64
+    item = bindings({"red": lambda *args: "unused"})[0]
+    item = replace(
+        item,
+        execution_binding=replace(
+            item.execution_binding,
+            constraint_refs=("time.constraint.turn", "time.constraint.finish"),
+            temporal_contract_digests=(digest,),
+        ),
+    )
+    context = ParticipantTemporalRuntimeContextModel(
+        temporal_contract_id="finish-action",
+        time_domain="simulation_time",
+        clock_authority="runtime.time-coordinator",
+        event_points=["end", "deadline"],
+        observation_point="trial@tick=1",
+        shared_time={
+            "binding": {
+                "action_contract_address": item.execution_binding.action_contract_address,
+                "temporal_id": "finish-action",
+                "temporal_kind": "deadline",
+                "clock_address": "time.clock.trial",
+                "constraint_address": "time.constraint.finish",
+                "event_point": "end",
+                "evidence_mode": "event",
+                "end": {"segment": 0, "tick": 5, "microstep": 0},
+                "contract_digest": digest,
+                "time_domain": "simulation_time",
+                "clock_authority": "runtime.time-coordinator",
+                "event_points": ["end", "deadline"],
+                "reset_boundary": "fresh-segment",
+                "replay_boundary": "fresh-evidence",
+            },
+            "participant_address": "participant.behavior.red",
+            "episode_id": "red-episode",
+            "action_instance_id": "red-action",
+            "execution_scope_ref": "participant.autonomous-execution.duel",
+            "execution_generation": 0,
+            "submitted_at": {"segment": 0, "tick": 1, "microstep": 0},
+            "clock_sequence": 1,
+            "bound_end": {"segment": 0, "tick": 5, "microstep": 0},
+        },
+    )
+    execution = LilraeParticipantExecution((item,))
+    request = execution.bind(
+        "participant.behavior.red",
+        item.execution_binding.action_contract_address,
+        item.observation_boundary_address,
+        item.implementation_selection.manifest_ref,
+        "red-action",
+        (context,),
+    )
+    request = replace(
+        request,
+        target_addresses=item.execution_binding.target_addresses,
+        observation_boundary_evidence_refs=item.execution_binding.evidence_refs,
+        execution_scope_ref="participant.autonomous-execution.duel",
+        execution_generation=0,
+    )
+    return item, request
+
+
+@pytest.mark.parametrize("change", [None, "digest", "constraint", "unbound"])
+def test_bound_deadline_matches_installed_constraint_and_digest(change):
+    from aptl.backends.lilrae_participant_execution import LilraeParticipantExecution
+
+    item, request = _bound_deadline_request()
+    if change == "digest":
+        item = replace(
+            item,
+            execution_binding=replace(
+                item.execution_binding,
+                temporal_contract_digests=("sha256:" + "2" * 64,),
+            ),
+        )
+    elif change == "constraint":
+        item = replace(
+            item,
+            execution_binding=replace(
+                item.execution_binding, constraint_refs=("time.constraint.turn",)
+            ),
+        )
+    elif change == "unbound":
+        request = replace(
+            request,
+            temporal_contexts=(
+                request.temporal_contexts[0].model_copy(update={"shared_time": None}),
+            ),
+        )
+    assert LilraeParticipantExecution((item,)).accepts(request) is (change is None)
+
+
+@pytest.mark.parametrize("observed", [False, True])
+@pytest.mark.parametrize("failure", [None, "timeout"])
+def test_end_proof_requires_observed_native_completion(observed, failure):
+    from raes_contracts.runtime_state import RuntimeSnapshot
+    from raes_processor.compiler.time_model import time_model_contract_model
+    from aptl.backends.lilrae_participant_execution import LilraeParticipantExecution
+
+    _, request = _bound_deadline_request()
+    declaration = time_model_contract_model(
+        compile_runtime_model(scenario()).time_model
+    )
+    clock = ReferenceTimeRuntime()
+    snapshot = clock.initialize(declaration, RuntimeSnapshot()).snapshot
+    snapshot = clock.advance("time.clock.trial", 1, 0, snapshot).snapshot
+    result = LilraeParticipantExecution._outcome(
+        request,
+        snapshot,
+        "red-episode",
+        failure,
+        "native ended",
+        end_observed=observed,
+    )
+    proofs = result.action_result.temporal_evidence
+    assert len(proofs) == int(observed)
+    if observed:
+        assert proofs[0].context == request.temporal_contexts[0].shared_time
+        assert (
+            proofs[0].coordinate
+            == snapshot.time_model_state.clocks["time.clock.trial"].coordinate
+        )
+        assert proofs[0].event_point == "end"
+        assert proofs[0].evidence_refs == request.observation_boundary_evidence_refs
+
+
 def target_for(installed):
     runtime = AptlParticipantRuntime(
         deployment_backend=Mock(), autonomous_bindings=installed

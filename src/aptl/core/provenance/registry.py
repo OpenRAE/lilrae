@@ -38,7 +38,7 @@ from aptl.core.provenance.outcomes import ProvenanceOutcomeError, validate_provi
 #: Versioned identity of the registration declaration shape itself. A change to
 #: which fields a declaration carries, or how its digest is computed, bumps
 #: this so a persisted record states which registry shape produced it.
-REGISTRY_SCHEMA_VERSION = "aptl-provenance-registry/v1"
+REGISTRY_SCHEMA_VERSION = "aptl-provenance-registry/v2"
 
 #: Identity domain for a registration declaration.
 _REGISTRATION_DOMAIN = "provider"
@@ -66,15 +66,12 @@ class SealPoint(str, Enum):
 
 @dataclass(frozen=True)
 class ProvenanceLimits:
-    """The hard bounds one provider is admitted under.
+    """The time bound one provider is admitted under.
 
-    The coordinator enforces these while collecting, so a pathological or
-    hostile source cannot turn provenance into unbounded memory use or an
-    unbounded stall.
+    The coordinator enforces it, so a stalled source cannot block the run.
+    Provenance content itself is never cut or capped.
     """
 
-    max_bytes: int
-    max_entries: int
     timeout_s: int
 
 
@@ -106,9 +103,8 @@ class ProvenanceProviderRegistration:
             raise ProvenanceRegistrationError(
                 "a registration must declare an implementation version and provenance kind"
             )
-        limits = self.limits
-        if limits.max_bytes <= 0 or limits.max_entries <= 0 or limits.timeout_s <= 0:
-            raise ProvenanceRegistrationError("provenance limits must all be positive")
+        if self.limits.timeout_s <= 0:
+            raise ProvenanceRegistrationError("provenance timeout must be positive")
 
     def declaration_projection(self) -> dict[str, object]:
         """Return the canonical-JSON-ready projection of this declaration."""
@@ -120,8 +116,6 @@ class ProvenanceProviderRegistration:
             "owner_adapter": self.owner_adapter,
             "seal_point": self.seal_point.value,
             "requiredness_policy_key": self.requiredness_policy_key,
-            "max_bytes": self.limits.max_bytes,
-            "max_entries": self.limits.max_entries,
             "timeout_s": self.limits.timeout_s,
         }
 

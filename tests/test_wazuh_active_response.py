@@ -10,9 +10,9 @@ After #249, the manager:
     `firewall-drop` and consults a kali-IP whitelist.
   - Adds `<active-response>` blocks for representative high-severity
     rules (webapp / AD / database).
-  - Ships every `<active-response>` block with `<disabled>yes</disabled>`,
-    `<timeout>` between 60 and 300, and `<level>` >= 10. Blue removes
-    the disabled tag per iteration.
+  - Ships every `<active-response>` block commented out, with
+    `<timeout>` between 60 and 300, and `<level>` >= 10. Blue
+    uncomments a block per iteration.
   - Bind-mounts a flat-file whitelist at /var/ossec/etc/lists/active-
     response-whitelist with kali's three lab IPs preloaded.
   - Installs the wrapper script at /var/ossec/active-response/bin/aptl-
@@ -174,8 +174,6 @@ class TestWazuhActiveResponseSource:
         )
         violations: list[str] = []
         for i, block in enumerate(blocks):
-            if "<disabled>yes</disabled>" not in block:
-                violations.append(f"block #{i}: not disabled by default")
             if "<timeout>" not in block:
                 violations.append(f"block #{i}: missing <timeout>")
             if not re.search(r"<rules_id>\d+</rules_id>", block):
@@ -187,6 +185,10 @@ class TestWazuhActiveResponseSource:
                     f"block #{i}: `<level>` AND `<rules_id>` together — "
                     f"Wazuh OR's matchers; drop the `<level>`",
                 )
+        # A per-block <disabled>yes</disabled> stops the manager's
+        # wazuh-execd, which reads the first <disabled> as a global switch.
+        if "<active-response>" in re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL):
+            violations.append("an <active-response> block is not commented out by default")
         assert not violations, "Carve-outs not enforced in source:\n  " + "\n  ".join(
             violations,
         )

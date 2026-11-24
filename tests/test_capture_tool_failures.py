@@ -9,7 +9,6 @@ from aptl.core.evidence.participant_capture import ParticipantCaptureArchive
 from aptl.core.evidence.adapters.sources import WindowedQueryCollector
 from aptl.core.evidence.coordinator import acquire_evidence
 from aptl.core.evidence.outcomes import CollectorStatus
-from aptl.core.experiment.capture_registry import CaptureLimits
 from aptl.core.runstore import LocalRunStore
 from aptl.workbench.process import AgentExecutionError
 from tests.test_participant_capture import _grant, _payload
@@ -27,7 +26,7 @@ def test_lost_observation_writes_keep_model_artifact_and_disclose_uncertain_coun
     grant = replace(
         _grant(),
         participant_address=native.participant_address,
-        binding=replace(_grant().binding, limits=CaptureLimits(32768, 100, 60)),
+        binding=_grant().binding,
     )
     store = LocalRunStore(tmp_path / "runs")
     archive = ParticipantCaptureArchive(store, grant)

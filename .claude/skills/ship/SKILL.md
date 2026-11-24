@@ -1,14 +1,18 @@
 ---
 name: ship
-description: Ship current branch — CI, SonarCloud, code review, security review, fix all issues, merge. Assumes code is already committed and pushed.
+description: Prepare a committed and pushed branch for user review through CI, SonarCloud, code review, and security review.
 disable-model-invocation: true
 ---
 
 # Ship Current Branch
 
-Assumes code is already committed and pushed. Handles: PR creation, CI monitoring, SonarCloud, code review, security review, fixing all issues, and merging.
+Start only after the branch is committed and pushed.
+Prepare its PR, check CI and SonarCloud, complete both reviews, and fix findings.
+The user reviews and merges the PR.
 
-**IMPORTANT:** NEVER include Co-Authored-By, "Generated with Claude Code", or any Claude/AI attribution in commit messages, PR descriptions, or any other artifacts.
+**Do not add assistant or vendor attribution to repository metadata.**
+Do not add co-author or generated-by footers.
+Preserve any review identity required by Ground Control in its canonical review records only.
 
 ## Phase 1: Create PR
 
@@ -52,10 +56,8 @@ Assumes code is already committed and pushed. Handles: PR creation, CI monitorin
 4. After the review completes, fix ALL issues it identified.
    - Do NOT defer ANY issues.
    - Do NOT categorize issues as "low priority" to avoid work.
-   - You are an LLM. You have no time constraints. Fix everything.
-   - The ONLY reason to stop and escalate to the user is if a fix requires
-     a significant architectural change touching 5+ files outside the
-     current feature scope.
+   - Escalate when a fix requires a significant architectural change in at least five files outside the current feature scope.
+   - Keep the repository execution, approval, and secret-handling boundaries.
 5. After fixing, re-read all findings and confirm each one was addressed.
 
 ## Phase 5: Security Review

@@ -133,8 +133,6 @@ class AdmittedExperimentProvider:
         trials: Sequence[object] = tuple(getattr(plan, "trials", ()) or ())
         bindings: Sequence[object] = tuple(getattr(plan, "capture_bindings", ()) or ())
         # +1 for the plan leaf itself.
-        if len(trials) + len(bindings) + 1 > context.max_entries:
-            raise _degraded.entry_limit()
 
         collectors: list[dict[str, object]] = []
         try:

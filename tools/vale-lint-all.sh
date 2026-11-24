@@ -2,11 +2,8 @@
 # Run Vale over the full lintable markdown corpus (ADR-038).
 #
 # Single source of truth for which tracked .md files are prose-linted.
-# The exclusions mirror the per-path `BasedOnStyles =` resets in
-# .vale.ini (generated artifacts, agent-facing contracts, dated
-# point-in-time records) plus files Vale cannot parse. The
-# former vale-prose-lint hook carried the same
-# regex in its `exclude:` — keep the two in sync.
+# Preserve generated release records. Maintained root and hidden guidance
+# uses the same rules as other owned Markdown. CI owns this corpus check.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,5 +15,5 @@ fi
 
 cd "${REPO_ROOT}"
 git ls-files '*.md' \
-  | grep -vE '^(\.claude/|\.gc/|\.github/|changelog\.d/|CHANGELOG\.md|AGENTS\.md|CLAUDE\.md)' \
+  | grep -vE '^(changelog\.d/|CHANGELOG\.md)' \
   | xargs "${VALE_BIN}" --config=.vale.ini

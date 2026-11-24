@@ -13,7 +13,7 @@ is not an implementation plan or evidence that the providers are qualified.
 The supplied issue contract includes managed OpenCode alongside supported
 Claude Code and Codex participants. No new ADR or configuration framework is
 needed. ADR-025, ADR-029, ADR-033, ADR-044, ADR-047, ADR-052, ADR-064 and
-ADR-065 retain their existing owners.
+ADR-070 retain their existing owners.
 
 This issue supersedes the [#862 preflight](issue-862-explicit-participant-model-selection-preflight.md)
 where it excludes model factors, makes project-wide model configuration the

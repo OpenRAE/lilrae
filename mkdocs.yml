@@ -102,6 +102,15 @@ nav:
     - Compose participant requests: reference/participant-request-operations.md
     - Compose a participant workbench: components/workbench-composition.md
     - Run the web control plane: reference/web-proxy.md
+    - Contribute: https://github.com/OpenRAE/lilrae/blob/dev/CONTRIBUTING.md
+    - Follow coding standards: CODING_STANDARDS.md
+    - Verify a change: testing/index.md
+    - Maintain the lab fixture: testing/lab-fixture-pack.md
+    - Add parser property tests: testing/property-based-parser-tests.md
+    - Qualify a release candidate: testing/smoke-test-plan.md
+    - Release LilRAE: releasing.md
+    - Update the OpenSSF assessment: security/update-assessment.md
+    - Investigate Sonar findings: https://github.com/OpenRAE/lilrae/blob/dev/tools/sonar/README.md
     - Write documentation: contributing-documentation.md
     - Connect trial readiness: reference/trial-readiness-integration.md
     - Compose participant trials: reference/participant-trial-integration.md
@@ -123,6 +132,24 @@ nav:
       - Review participant handout: workshop/arsenal-2026/handout.md
       - Review and repeat QA: workshop/arsenal-2026/qa.md
   - Reference:
+    - Release contract: reference/release-contract.md
+    - Parser test boundaries: reference/parser-boundaries.md
+    - Documentation toolchain: reference/documentation-toolchain.md
+    - Platform PR gates: testing/platform-pr-gates.md
+    - Boot realization coverage: testing/boot-realization-coverage.md
+    - CI performance investigation: testing/ci-performance.md
+    - Documentation inventory: architecture/documentation-assignments.md
+    - OpenSSF assessment record: security/openssf-best-practices.md
+    - Contributor source checks: reviews/1668-contributor-source-checks.md
+    - Historical qualification:
+      - Participant requests: testing/participant-request-1419-qualification.md
+      - Participant trials: testing/participant-trial-1420-qualification.md
+      - OpenCode candidate: testing/opencode-1504-qualification.md
+      - OpenCode evidence: testing/evidence/1504/README.md
+      - Scoped tools: testing/scoped-tools-1646-qualification.md
+      - Scoped candidate: testing/scoped-tools-1646-candidate.md
+      - Release candidate 254bc40f: testing/issue-956-candidate-254bc40f-manual-qa.md
+      - Release candidate e23fec55: testing/issue-956-candidate-e23fec55-manual-qa.md
     - Root Compose declarations: reference/compose-topology.md
     - Design-check contracts: reference/design-check-tools.md
     - Containment interface: reference/containment-interface.md
@@ -224,8 +251,6 @@ nav:
       - "Issue #1002 Wazuh API TLS Warm-Up Preflight": architecture/issue-1002-wazuh-api-tls-warmup-preflight.md
       - "Issue #949 Orborus Control Authority Preflight": architecture/issue-949-orborus-control-authority-preflight.md
       - "Issue #974 Shuffle Worker Docker And Image Realization Preflight": architecture/issue-974-shuffle-worker-docker-images-preflight.md
-      - "Issue #976 Service Capability Preflight": architecture/issue-976-service-capability-preflight.md
-      - "Issue #976 Samba NT ACL Store Design": architecture/issue-976-samba-acl-store-design.md
       - "Issue #951 Fresh Env-Pack Start Preflight": architecture/issue-951-fresh-env-pack-start-preflight.md
       - "Issue #952 Failed-Start Recovery Preflight": architecture/issue-952-start-failure-recovery-preflight.md
       - "Issue #964 Backend Resource Ownership Preflight": architecture/issue-964-backend-resource-ownership-preflight.md
@@ -245,9 +270,18 @@ nav:
       - Delivery Plan: reviews/962-lilrae-readiness/delivery-plan.md
       - Upstream update: reviews/962-lilrae-readiness/upstream-update.md
       - Evidence: reviews/962-lilrae-readiness/evidence/README.md
-  - Development:
-    - Coding Standards: CODING_STANDARDS.md
+    - Red Team Taxonomy: red-team-taxonomy.md
+    - Guided Purple Participant Profile: reference/participant-profile.md
+    - Host MCP access: reference/host-mcp-access.md
+    - Appliance Seat Launcher: reference/appliance-seat-launcher.md
+    - TechVault Scenario Overview: reference/techvault-scenario-overview.md
+    - TechVault Company Profile: reference/techvault-company-profile.md
+    - TechVault OSINT Readiness: reference/techvault-osint-readiness.md
+    - Experiment Runs: reference/experiment-runs.md
+    - Portable Evidence Bundle Export: reference/evidence-bundle-export.md
   - Explanation:
+    - "Issue #976 Samba NT ACL Store Design": architecture/issue-976-samba-acl-store-design.md
+    - "Issue #976 Service Capability Preflight": architecture/issue-976-service-capability-preflight.md
     - Why seats use a VM boundary: reference/seat-containment.md
     - Why red capture stays outside SIEM: components/red-side-capture-boundary.md
     - Runtime handoff: sdl/runtime-architecture.md
@@ -280,25 +314,6 @@ nav:
     - Required Trial Readiness: architecture/exp-011-resource-readiness-design.md
     - Web GUI Design Specification: specs/web-gui-design.md
     - Web Component Kit: specs/web-component-kit.md
-  - Testing:
-    - Participant Request Qualification: testing/participant-request-1419-qualification.md
-    - Platform Pull-Request Gates: testing/platform-pr-gates.md
-    - Boot Realization Coverage: testing/boot-realization-coverage.md
-    - Lab Fixture Pack: testing/lab-fixture-pack.md
-    - Release Candidate Manual QA: testing/smoke-test-plan.md
-    - Property-Based Parser Tests: testing/property-based-parser-tests.md
-  - Additional reference:
-    - Documentation assignments: architecture/documentation-assignments.md
-    - OpenSSF Best Practices Assessment: security/openssf-best-practices.md
-    - Red Team Taxonomy: red-team-taxonomy.md
-    - Guided Purple Participant Profile: reference/participant-profile.md
-    - Host MCP access: reference/host-mcp-access.md
-    - Appliance Seat Launcher: reference/appliance-seat-launcher.md
-    - TechVault Scenario Overview: reference/techvault-scenario-overview.md
-    - TechVault Company Profile: reference/techvault-company-profile.md
-    - TechVault OSINT Readiness: reference/techvault-osint-readiness.md
-    - Experiment Runs: reference/experiment-runs.md
-    - Portable Evidence Bundle Export: reference/evidence-bundle-export.md
   - Decisions:
     - Index: adrs/README.md
     - ADR-000 Use ADRs: adrs/adr-000-use-adrs.md
@@ -365,10 +380,10 @@ nav:
     - ADR-062 LilRAE Name and Naming Convention: adrs/adr-062-lilrae-name-and-naming-convention.md
     - ADR-063 Remove TheHive and Cortex: adrs/adr-063-remove-thehive-and-cortex.md
     - ADR-064 Layered Architecture and Code Conventions: adrs/adr-064-layered-architecture-and-code-conventions.md
-    - ADR-066 Runtime Readback Reports Realized State: adrs/adr-066-runtime-readback-reports-realized-state.md
     - ADR-067 Admitted Participant Smoke Providers: adrs/adr-067-admitted-participant-smoke-providers.md
     - ADR-068 Merge Queue for the dev Branch: adrs/adr-068-dev-merge-queue.md
     - ADR-069 Shared Containment Wrapper: adrs/adr-069-shared-containment-wrapper.md
+    - ADR-071 Runtime Readback Reports Realized State: adrs/adr-071-runtime-readback-reports-realized-state.md
 
 extra:
   social:

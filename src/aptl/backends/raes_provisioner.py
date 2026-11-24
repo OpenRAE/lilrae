@@ -12,7 +12,7 @@ from raes_contracts.planning import ChangeAction, ProvisioningPlan
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
 
 from aptl.backends._raes_apply_reporting import (
-    bounded_apply_details as _bounded_apply_details,
+    conformant_apply_details as _conformant_apply_details,
 )
 from aptl.backends._raes_apply_reporting import (
     closed_credential_result,
@@ -87,6 +87,7 @@ class AptlProvisioner(
     # (issue #876 cycle-6 review). None for a scenario with no artifact demand.
     artifact_availability: ArtifactAvailabilityContext | None = None
     capture_plan: CapturePlan = field(default_factory=empty_capture_plan)
+    trial_capture_plan: CapturePlan | None = None
     observability_scope: ObservabilityScopeDecision = field(
         default_factory=ObservabilityScopeDecision
     )
@@ -241,7 +242,7 @@ class AptlProvisioner(
             success=False,
             snapshot=working_snapshot,
             diagnostics=diagnostics,
-            details=_bounded_apply_details(
+            details=_conformant_apply_details(
                 {"realization": realization.details()}, realization
             ),
         )
@@ -274,7 +275,7 @@ class AptlProvisioner(
             success=False,
             snapshot=snapshot,
             diagnostics=diagnostics,
-            details=_bounded_apply_details(
+            details=_conformant_apply_details(
                 {
                     "profiles": selected_profiles,
                     "realization": realization.details(),
