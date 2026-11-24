@@ -92,9 +92,10 @@ repos:
     - uv==0.11.8
     pass_filenames: false
     files: ^(src/.*\.py|pyproject\.toml|uv\.lock)$
-  # Checks the whole enrolled scope on every run (ADR-064).
+  # Checks the whole enrolled scope on every run, and with
+  # LILRAE_ARCHITECTURE_BASE also the changed lines of every module (ADR-064).
   - id: architecture
-    name: ADR-064 layers and conventions for enrolled code
+    name: ADR-064 layers and conventions
     entry: uv run --frozen --only-group ci python tools/check_architecture.py
     language: python
     additional_dependencies:

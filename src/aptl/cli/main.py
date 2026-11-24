@@ -1,7 +1,7 @@
 """Main entry point for the LilRAE CLI (``lilrae``, formerly ``aptl``)."""
 
 import logging
-from typing import Optional
+from typing import Annotated
 
 import typer
 
@@ -61,26 +61,30 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def main(
-    version: Optional[bool] = typer.Option(
-        None,
-        "--version",
-        "-V",
-        help="Show version and exit.",
-        callback=_version_callback,
-        is_eager=True,
-    ),
-    verbose: int = typer.Option(
-        0,
-        "--verbose",
-        count=True,
-        # A repeatable flag, not a value: hide the counter's int type and default.
-        metavar="",
-        show_default=False,
-        help=(
-            "Log more on standard error: once for INFO, twice for DEBUG. "
-            "Without it, only warnings and errors are logged."
+    version: Annotated[
+        bool | None,
+        typer.Option(
+            "--version",
+            "-V",
+            help="Show version and exit.",
+            callback=_version_callback,
+            is_eager=True,
         ),
-    ),
+    ] = None,
+    verbose: Annotated[
+        int,
+        typer.Option(
+            "--verbose",
+            count=True,
+            # A repeatable flag, not a value: hide the counter's int type and default.
+            metavar="",
+            show_default=False,
+            help=(
+                "Log more on standard error: once for INFO, twice for DEBUG. "
+                "Without it, only warnings and errors are logged."
+            ),
+        ),
+    ] = 0,
 ) -> None:
     """LilRAE CLI."""
     setup_logging(_cli_log_level(verbose))

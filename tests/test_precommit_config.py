@@ -54,6 +54,25 @@ def test_ci_retains_dependency_and_complexity_checks() -> None:
     )
 
 
+
+def test_ci_checks_changed_lines_against_the_pull_request_or_queue_base() -> None:
+    """Without a base, the architecture check skips every module that is not enrolled."""
+    assert "architecture" in _hooks(".pre-commit-ci.yaml")
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github/workflows/checks.yml").read_text()
+    )
+    steps = workflow["jobs"]["pre-commit"]["steps"]
+    [checkout] = [
+        step for step in steps if step.get("uses", "").startswith("actions/checkout@")
+    ]
+    assert checkout["with"]["fetch-depth"] == 0
+    [ci_step] = [
+        step for step in steps if "--config .pre-commit-ci.yaml" in step.get("run", "")
+    ]
+    base = ci_step["env"]["LILRAE_ARCHITECTURE_BASE"]
+    assert "github.event.pull_request.base.sha" in base
+    assert "github.event.merge_group.base_sha" in base
+
 _REQUIRED_HOOKS = frozenset(
     {
         "trailing-whitespace",

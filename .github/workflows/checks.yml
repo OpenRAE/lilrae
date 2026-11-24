@@ -92,6 +92,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The architecture check diffs against the merge base of the base revision.
+          fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -101,6 +103,10 @@ jobs:
       - name: Secrets and fast hygiene
         run: pre-commit run --all-files --show-diff-on-failure
       - name: Dependency freshness and complexity (CI only)
+        env:
+          # The architecture check holds the lines changed since this revision to
+          # ADR-064 in every module. Other events check enrolled code only.
+          LILRAE_ARCHITECTURE_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: pre-commit run --config .pre-commit-ci.yaml --all-files --show-diff-on-failure
 
   docs:

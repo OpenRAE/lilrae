@@ -26,6 +26,9 @@ idiom rules. Apply it to all new and changed Python code.
 
 `tools/check_architecture.py` checks the code that `[tool.lilrae.architecture]`
 in `pyproject.toml` enrolls. CI runs the check in the **Pre-commit hooks** job.
+For a pull request and for the merge queue, the check also examines the changed
+lines of all other code. To do this check locally, run
+`uv run --frozen --only-group ci python tools/check_architecture.py --base origin/dev`.
 
 When an issue completes the refactor of a package or a module:
 

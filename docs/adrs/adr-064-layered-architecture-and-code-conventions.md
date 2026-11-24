@@ -197,6 +197,15 @@ Change a layer map entry only when the responsibility of the code changes.
 Review enforces the rules that no tool checks. The global Ruff `C901` gate and
 the SonarCloud gate stay.
 
+> **Update (2026-11-24, #1336):** The check also applies these rules to changed
+> lines in code that is not enrolled. With a base revision, it compares the
+> working tree with the merge base of that revision and `HEAD`. A layer finding
+> counts when a changed line is in its import statement. A private import,
+> Typer, or Ruff finding counts when its own line changed. The **Pre-commit
+> hooks** job gives the pull request base or the merge queue base. Findings on
+> unchanged lines stay with their refactor issues. Review enforces the other
+> rules, for example import cycles in code that is not enrolled.
+
 ### Relation to other decisions
 
 - ADR-010: The SonarCloud no-new-issues gate and the global `C901` gate stay.

@@ -143,6 +143,10 @@ lilrae --verbose lab start
 lilrae --verbose --verbose lab start
 ```
 
+`lilrae web serve` keeps this level for the web API. The `aptl-web-api`
+container passes `--verbose`, so it logs INFO lines. With `--reload`, a
+separate worker process loads the web API, and that worker logs DEBUG lines.
+
 Lines an operator needs at the default level are printed, not logged. Once
 `lilrae lab start` proves a declared operator SSH access, it prints
 `[lab start] Operator access <id> (<channel> to <node>) published on

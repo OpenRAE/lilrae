@@ -21,7 +21,7 @@ side. A relay that starts but reaches nothing fails the realization.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from aptl.core.deployment._compose_resource_ownership import (
@@ -38,8 +38,8 @@ from aptl.core.deployment._operator_access_endpoints import (
 from aptl.core.deployment._operator_access_proof import (
     OPERATOR_ACCESS_APPARATUS_ID,
     _LOOPBACK,
-    _log_published_access,
     _prove_endpoints,
+    report_published_access,
 )
 from aptl.core.deployment.errors import BackendTimeoutError
 from aptl.core.ephemeral_containers import remove_container_command
@@ -102,6 +102,7 @@ class ComposeOperatorAccessMixin(object):
         *,
         operator_public_key: str | None = None,
         operator_key_path: Path | None = None,
+        progress: Callable[[str], None] | None = None,
     ) -> list[str]:
         """Make every admitted operator access reachable, or report why not.
 
@@ -109,6 +110,9 @@ class ComposeOperatorAccessMixin(object):
         behind the session-capture broker during realization, and the broker
         only serves once lab start activates it for the run. Proving Kali's
         access any earlier finds nothing listening on port 22.
+
+        Once every access is proven, ``progress`` receives the line that says
+        where each one is published.
         """
 
         accesses = tuple(accesses)
@@ -121,7 +125,7 @@ class ComposeOperatorAccessMixin(object):
                 key_path=operator_key_path,
             )
         if not failures:
-            _log_published_access(accesses)
+            report_published_access(accesses, progress)
         return failures
 
     def _start_declared_relays(

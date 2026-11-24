@@ -128,3 +128,15 @@ class TestCliLogging:
         [handler] = logging.getLogger("aptl").handlers
         assert handler.level == logging.INFO
         assert "[INFO] aptl.lab: stub info line" in result.stderr
+
+    def test_the_web_api_keeps_the_level_the_cli_set(self):
+        """`lilrae web serve` loads the API after the CLI sets the log level."""
+        from aptl.api.main import create_app
+        from aptl.utils.logging import setup_logging
+
+        setup_logging(logging.WARNING)
+        create_app()
+
+        logger = logging.getLogger("aptl")
+        assert logger.level == logging.WARNING
+        assert [handler.level for handler in logger.handlers] == [logging.WARNING]
