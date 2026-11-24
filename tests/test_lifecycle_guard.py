@@ -462,3 +462,50 @@ def test_full_kill_switch_does_not_clear_state_while_start_owner_is_alive(
     assert any("lifecycle-owner-busy" in error for error in result.errors)
     kill_processes.assert_not_called()
     clear_session.assert_not_called()
+
+
+@pytest.mark.parametrize("platform_lock", ["windows", "none"])
+def test_missing_shared_lock_reports_unsupported_not_busy(
+    tmp_path, monkeypatch, platform_lock
+):
+    """Without POSIX flock, observation reports an unsupported lock (issue #1808).
+
+    Windows has no ``fcntl``, so this test runs the real Windows path there and
+    simulates it elsewhere.
+    """
+
+    import aptl.core.lifecycle_guard as guard
+    from aptl.core.lifecycle_policy import LifecycleBusyError
+
+    monkeypatch.setattr(guard, "fcntl", None)
+    if platform_lock == "none":
+        monkeypatch.setattr(guard, "msvcrt", None)
+    closed: list[int] = []
+    real_close = os.close
+    monkeypatch.setattr(
+        guard.os, "close", lambda fd: (closed.append(fd), real_close(fd))[1]
+    )
+
+    with pytest.raises(guard.LifecycleLockUnavailableError) as raised:
+        with guard.lifecycle_observation_lock(tmp_path):
+            pytest.fail("observation must not proceed without a shared lock")
+
+    assert not isinstance(raised.value, LifecycleBusyError)
+    assert "shared lifecycle lock is not supported" in str(raised.value)
+    assert closed, "the lock descriptor must close after the refusal"
+
+
+def test_missing_exclusive_lock_reports_unavailable_not_busy(tmp_path, monkeypatch):
+    """A runtime with no file lock fails closed as unavailable, not busy."""
+
+    import aptl.core.lifecycle_guard as guard
+
+    monkeypatch.setattr(guard, "fcntl", None)
+    monkeypatch.setattr(guard, "msvcrt", None)
+
+    with pytest.raises(
+        guard.LifecycleLockUnavailableError,
+        match="no cross-process file-lock implementation",
+    ):
+        with guard.lifecycle_mutation_lock(tmp_path):
+            pytest.fail("mutation must not proceed without a lock")
