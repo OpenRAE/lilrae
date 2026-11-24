@@ -4,7 +4,7 @@ FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5
 # pinned base predates them; currently they are libcrypto3, libssl3 and zlib,
 # whose 1.3.2-r1 fixes CVE-2026-85091. Then add the pinned packages.
 RUN apk upgrade --no-cache \
-    && apk add --no-cache python3=3.14.10-r1 \
+    && apk add --no-cache python3=3.14.10-r2 \
     && adduser -D -H -u 65532 proxy
 
 COPY containers/appliance-egress-proxy/proxy.py /usr/local/bin/aptl-egress-proxy
