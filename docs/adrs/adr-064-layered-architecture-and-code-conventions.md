@@ -201,10 +201,12 @@ the SonarCloud gate stay.
 > lines in code that is not enrolled. With a base revision, it compares the
 > working tree with the merge base of that revision and `HEAD`. A layer finding
 > counts when a changed line is in its import statement. A private import,
-> Typer, or Ruff finding counts when its own line changed. The **Pre-commit
-> hooks** job gives the pull request base or the merge queue base. Findings on
-> unchanged lines stay with their refactor issues. Review enforces the other
-> rules, for example import cycles in code that is not enrolled.
+> Typer, or Ruff finding counts when its own line changed.
+>
+> The **Pre-commit hooks** job gives the pull request base or the merge queue
+> base. Findings on unchanged lines stay with their refactor issues. Review
+> enforces the other rules, for example import cycles in code that is not
+> enrolled.
 
 ### Relation to other decisions
 
