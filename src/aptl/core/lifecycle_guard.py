@@ -320,17 +320,22 @@ def _try_lock(fd: int, *, shared: bool = False) -> None:
         if fcntl is not None:
             mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
             fcntl.flock(fd, mode | fcntl.LOCK_NB)
+        # Windows has no shared lock. This is not a busy owner (issue #1808).
         elif shared:
-            raise OSError("shared lifecycle observations require POSIX flock")
+            raise LifecycleLockUnavailableError(
+                "the shared lifecycle lock is not supported on this platform"
+            )
         # Windows uses a one-byte Microsoft C runtime lock.
         elif msvcrt is not None:
             os.lseek(fd, 0, os.SEEK_SET)
             msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
         # Fail closed on an unsupported Python runtime.
         else:
-            raise OSError("no cross-process file-lock implementation is available")
+            raise LifecycleLockUnavailableError(
+                "no cross-process file-lock implementation is available"
+            )
     except OSError as exc:
-        if exc.errno not in (None, errno.EACCES, errno.EAGAIN):
+        if exc.errno not in (errno.EACCES, errno.EAGAIN):
             raise
         raise LifecycleBusyError(
             "another lifecycle owner is active for this project"
