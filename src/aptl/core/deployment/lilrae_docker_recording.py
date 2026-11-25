@@ -22,6 +22,7 @@ from aptl.core.deployment._compose_resource_ownership import (
     ResourceReceipt,
     WorkspaceOwnership,
 )
+from aptl.core.docker_ids import is_container_id
 from aptl.utils.pathsafe import (
     PathContainmentError,
     REASON_NOT_FOUND,
@@ -30,7 +31,6 @@ from aptl.utils.pathsafe import (
     read_contained_nofollow,
 )
 
-_NATIVE_ID = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
 _ADDRESS = re.compile(r"provision\.node\.[A-Za-z0-9_.-]{1,240}\Z", re.ASCII)
 _TOKEN = re.compile(r"[0-9a-f]{32}\Z", re.ASCII)
 _INVALID = "Docker creation receipt is absent, invalid, or outside this attempt"
@@ -65,7 +65,7 @@ class CreationIntent:
 
     def _valid_identity(self) -> bool:
         """Return True when the operation, source, and parent IDs are valid."""
-        valid_parent = not self.parent_native_id or _NATIVE_ID.fullmatch(
+        valid_parent = not self.parent_native_id or is_container_id(
             self.parent_native_id
         )
         return bool(
@@ -177,7 +177,7 @@ class RecordingStore:
 
     def commit(self, intent: CreationIntent, native_id: str) -> RecordedCreation:
         """Publish the response ID and lineage before returning it to a holder."""
-        if not _NATIVE_ID.fullmatch(native_id):
+        if not is_container_id(native_id):
             raise OwnershipConflictError(_INVALID)
         if self._read(Path("intents") / f"{intent.operation_id}.json") != asdict(
             intent
@@ -227,7 +227,7 @@ class RecordingStore:
 
     def _creation(self, native_id: str) -> RecordedCreation:
         """Read a creation record and check it against its intent and response."""
-        if not _NATIVE_ID.fullmatch(native_id):
+        if not is_container_id(native_id):
             raise OwnershipConflictError(_INVALID)
         try:
             creation = RecordedCreation(

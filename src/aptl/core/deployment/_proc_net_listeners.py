@@ -14,11 +14,12 @@ readback is not permission to launch an observer container.
 
 from __future__ import annotations
 
-import re
 import socket
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from aptl.core.docker_ids import is_container_id
 
 # Label each table before parsing the complete bounded snapshot.
 SECTION_MARKER = "@@"
@@ -101,8 +102,7 @@ def _container_process(
     state = inspected.get("State")
     pid = state.get("Pid") if isinstance(state, dict) else None
     valid = (
-        isinstance(container_id, str)
-        and re.fullmatch(r"[0-9a-f]{64}", container_id) is not None
+        is_container_id(container_id)
         and isinstance(state, dict)
         and state.get("Running") is True
         and type(pid) is int
