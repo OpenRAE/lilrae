@@ -113,6 +113,8 @@ The exporter creates a missing directory with mode `0700` and never overwrites a
 The ordinary tar.gz exporter also creates missing output directories with mode `0700`.
 Its archives use mode `0600`. A repeated export replaces them atomically.
 Readers of an already open archive keep its original bytes.
+It creates a missing output directory only after the run passes the checks that can refuse the export, such as seal verification.
+A refused export leaves no new directory.
 
 The configured source store is `run_storage.local_path`, default `./runs` relative to the project.
 The local store creates directories with mode `0700` and files with mode `0600`, independent of umask.
