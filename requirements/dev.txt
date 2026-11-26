@@ -701,9 +701,9 @@ pyyaml==6.0.3 \
     #   raes
     #   raes-env-packs
     #   uvicorn
-raes==11.0.2 \
-    --hash=sha256:644fc65fd13aa25ea2829e088a37dda6c7a5d685d2d73d7fb0f1ac769de31d17 \
-    --hash=sha256:f021fe5067b8642b3b774c0e0ed0e29103f954386d566c7ab84dc5b52cf75683
+raes==12.0.0 \
+    --hash=sha256:2248377413a2f56fa8015d4317e05003b1b3265198220dec59481a9ce064f3eb \
+    --hash=sha256:7f1a3fda434a24953e908668a9db8344b14e6bcf355ce8df58729e5dfb3509bf
     # via
     #   lilrae
     #   raes-env-packs
