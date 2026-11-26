@@ -7,11 +7,11 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from uuid import uuid4
-import re
 import time
 from typing import Protocol
 
 from aptl.core.deployment._compose_resource_ownership import OwnershipConflictError
+from aptl.core.docker_ids import is_image_id
 from aptl.core.deployment.lilrae_docker_recording import (
     RecordedCreation,
     RecordingStore,
@@ -133,9 +133,7 @@ class RecordedInventory:
             info.get("Platform") if info.get("Platform") in {"linux", "windows"} else ""
         )
         image_id = info.get("Image", "")
-        if not isinstance(image_id, str) or not re.fullmatch(
-            r"sha256:[0-9a-f]{64}", image_id, re.ASCII
-        ):
+        if not is_image_id(image_id):
             image_id = ""
         return RecordedChild(creation, state, platform, image_id)
 

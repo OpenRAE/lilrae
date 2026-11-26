@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from aptl.core.deployment.errors import BackendTimeoutError
+from aptl.core.docker_ids import is_container_id, is_image_id
 from aptl.core.snapshot_models import (
     ContainerSnapshot,
     NetworkSnapshot,
@@ -46,7 +47,6 @@ __all__ = [
     "WazuhRulesSnapshot",
     "capture_snapshot",
     "container_networks",
-    "container_restart_policy",
     "detection_content_digest",
     "list_container_snapshots",
 ]
@@ -151,15 +151,9 @@ def _parse_health(status: str) -> str:
     return ""
 
 
-def container_networks(backend: "DeploymentBackend", name: str) -> dict[str, str]:
-    """Return a container's ``{network_name: IPv4 address}`` map.
-
-    Public because the lab-start SSH readiness step (``lab.py``) needs
-    the same per-network IPs the snapshot builder records, to address
-    internal-only targets by container IP (issue #293).
-    """
+def _inspected_networks(info: Mapping[str, Any]) -> dict[str, str]:
+    """Return the ``{network_name: IPv4 address}`` map of one inspect result."""
     networks: dict[str, str] = {}
-    info = backend.container_inspect(name)
     net_data = info.get("NetworkSettings", {}).get("Networks", {})
     if not isinstance(net_data, dict):
         return networks
@@ -171,43 +165,71 @@ def container_networks(backend: "DeploymentBackend", name: str) -> dict[str, str
     return networks
 
 
-def _row_to_snapshot(
-    backend: "DeploymentBackend", row: Mapping[str, Any]
-) -> ContainerSnapshot:
-    """Build a ContainerSnapshot from a backend container row."""
-    name = row.get("name", "")
-    status = row.get("status", "")
-    return ContainerSnapshot(
-        name=name,
-        image=row.get("image", ""),
-        image_id=row.get("id", ""),
-        status=status,
-        health=_parse_health(status),
-        labels=row.get("labels", {}),
-        networks=container_networks(backend, name),
-        ports=row.get("ports", []),
-        restart_policy=container_restart_policy(backend, name),
-    )
+def container_networks(backend: "DeploymentBackend", name: str) -> dict[str, str]:
+    """Return a container's ``{network_name: IPv4 address}`` map.
+
+    Public because the lab-start SSH readiness step (``lab.py``) needs
+    the same per-network IPs the snapshot builder records, to address
+    internal-only targets by container IP (issue #293).
+    """
+    return _inspected_networks(backend.container_inspect(name))
 
 
-def container_restart_policy(backend: "DeploymentBackend", name: str) -> str:
-    """Return a container's Docker restart-policy name, or empty on failure.
+def _inspected_identity(
+    row: Mapping[str, Any], info: Mapping[str, Any]
+) -> tuple[str, str]:
+    """Return the inspected ``(container_id, image_id)`` of the row's container.
+
+    ``docker ps`` may truncate the row ID, so the full ID comes from inspection
+    and counts only when it extends the row's ID; the image ID counts only for
+    that container. A value not in Docker's ID form stays empty, never guessed.
+    """
+    container_id = info.get("Id")
+    listed = str(row.get("id", ""))
+    if not (
+        is_container_id(container_id) and listed and container_id.startswith(listed)
+    ):
+        return "", ""
+    image_id = info.get("Image")
+    return container_id, image_id if is_image_id(image_id) else ""
+
+
+def _inspected_restart_policy(info: Mapping[str, Any]) -> str:
+    """Return a container's Docker restart-policy name, or empty when absent.
 
     Read from ``HostConfig.RestartPolicy.Name``. A run-to-completion helper is
     created with ``restart: "no"`` and legitimately exits; a service is created
     with ``always``/``unless-stopped`` and must stay up. Readiness needs to tell
     those apart without an allowance list naming particular containers.
     """
-    try:
-        info = backend.container_inspect(name)
-    # inspect shells out; absence is not fatal.
-    except Exception:
-        return ""
-    host_config = info.get("HostConfig") if isinstance(info, dict) else None
+    host_config = info.get("HostConfig") if isinstance(info, Mapping) else None
     policy = host_config.get("RestartPolicy") if isinstance(host_config, dict) else None
     if not isinstance(policy, dict):
         return ""
     return str(policy.get("Name", ""))
+
+
+def _row_to_snapshot(
+    backend: "DeploymentBackend", row: Mapping[str, Any]
+) -> ContainerSnapshot:
+    """Build a ContainerSnapshot from a backend container row."""
+    name = row.get("name", "")
+    status = row.get("status", "")
+    # One inspection, so every inspected field describes the same container.
+    info = backend.container_inspect(name)
+    container_id, image_id = _inspected_identity(row, info)
+    return ContainerSnapshot(
+        name=name,
+        container_id=container_id,
+        image=row.get("image", ""),
+        image_id=image_id,
+        status=status,
+        health=_parse_health(status),
+        labels=row.get("labels", {}),
+        networks=_inspected_networks(info),
+        ports=row.get("ports", []),
+        restart_policy=_inspected_restart_policy(info),
+    )
 
 
 def _get_container_snapshots(
