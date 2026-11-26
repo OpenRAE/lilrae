@@ -322,10 +322,14 @@ def _load_envelope(
 
 
 def _verify_archive(tar: tarfile.TarFile) -> VerificationReport:
-    """Verify an opened archive, accumulating issues into one final report."""
+    """Verify an opened archive, accumulating issues into one final report.
+
+    An archive that ends early or has corrupt headers makes ``tarfile`` raise
+    from ``getmembers`` or a member read; that is reported as a failure too.
+    """
     issues: list[str] = []
-    members = tar.getmembers()
     try:
+        members = tar.getmembers()
         names, digests, sizes = _scan_members(tar, members, issues)
         envelope = _load_envelope(tar, names, len(members), issues)
         root_identity = _root_identity(envelope)
@@ -345,6 +349,10 @@ def _verify_archive(tar: tarfile.TarFile) -> VerificationReport:
         )
     except _Fatal as fatal:
         return VerificationReport(False, None, fatal.member_count, None, fatal.issues)
+    except tarfile.TarError as exc:
+        return VerificationReport(
+            False, None, 0, None, [f"archive is truncated or corrupt: {exc}"]
+        )
 
 
 def verify_stream(fileobj: BinaryIO) -> VerificationReport:
@@ -360,9 +368,16 @@ def verify_stream(fileobj: BinaryIO) -> VerificationReport:
 
 
 def verify_bundle(path: str | Path) -> VerificationReport:
-    """Verify a bundle archive at ``path``."""
-    with open(path, "rb") as fileobj:
-        return verify_stream(fileobj)
+    """Verify a bundle archive at ``path``.
+
+    A path that cannot be opened or read, such as a missing file or a directory,
+    gives a failed report that names the OS error rather than raising it.
+    """
+    try:
+        with open(path, "rb") as fileobj:
+            return verify_stream(fileobj)
+    except OSError as exc:
+        return VerificationReport(False, None, 0, None, [f"cannot read bundle: {exc}"])
 
 
 __all__ = ["VerificationReport", "verify_bundle", "verify_stream"]
