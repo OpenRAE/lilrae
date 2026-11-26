@@ -22,7 +22,7 @@ RUN set -eu; \
         > /opt/aptl/npm-cache-input-identity.json
 
 FROM node:22.23.5-trixie-slim@sha256:68c76cfad89921b927eae28ba21407475e29d0ce450afcdbe70c1532db042b64
-RUN test "$(node --version)" = "v22.23.4" \
+RUN test "$(node --version)" = "v22.23.5" \
     && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         systemd systemd-sysv dbus gnupg openssh-server ca-certificates \
