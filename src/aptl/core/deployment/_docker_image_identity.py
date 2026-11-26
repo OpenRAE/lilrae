@@ -8,6 +8,8 @@ import json
 import re
 from typing import Any
 
+from aptl.core.docker_ids import is_image_id
+
 EXACT_IMAGE_INSPECT_FORMAT = (
     "{{json .RepoDigests}}\t{{.Id}}\t{{.Os}}/{{.Architecture}}"
     '{{with index . "Variant"}}/{{.}}{{end}}'
@@ -17,7 +19,7 @@ LOCAL_IMAGE_PRESENT = "present"
 LOCAL_IMAGE_MISSING = "missing"
 LOCAL_IMAGE_MISMATCHED = "digest-mismatched"
 LOCAL_IMAGE_PLATFORM_MISMATCHED = "platform-mismatched"
-_IMAGE_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
+_REPO_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 # Docker Hub names Docker drops when it reports a repo digest.
 _DOCKER_HUB_REGISTRIES = frozenset({"docker.io", "index.docker.io"})
 _DOCKER_HUB_OFFICIAL_NAMESPACE = "library"
@@ -97,7 +99,7 @@ def exact_inspected_image_identity(
     if (
         isinstance(repo_digests, list)
         and canonical_digest in _canonical_repo_digests(repo_digests)
-        and bool(_IMAGE_ID.fullmatch(image_id))
+        and is_image_id(image_id)
         and platform is not None
     ):
         identity = ExactDockerImageIdentity(image_id=image_id, platform=platform)
@@ -194,7 +196,7 @@ def _canonical_repo_digest(image_ref: str) -> str | None:
 
     reference, separator, digest = image_ref.rpartition("@")
     namespace, slash, image_name = reference.rpartition("/")
-    if not separator or not _IMAGE_ID.fullmatch(digest) or not image_name:
+    if not separator or not _REPO_DIGEST.fullmatch(digest) or not image_name:
         return None
     # Docker records RepoDigests as repository@digest even when the requested
     # immutable reference also carries a human-readable tag before the @.
