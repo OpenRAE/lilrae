@@ -39,7 +39,7 @@ class _StubContainer:
     def __init__(self, name):
         self.name = name
         self.image = "img:tag"
-        self.image_id = "volatile"
+        self.container_id = "volatile"
         self.image_digest = "sha256:" + "f" * 64
         self.status = "running"
         self.health = "healthy"
