@@ -18,7 +18,7 @@ runtime already recorded. ``dispatch_step()`` runs one step:
   cannot report an outcome that it has not observed.
 - APTL does not run governed (non-scripted) steps, so it refuses them.
 
-``stop()`` clears orchestration state. Nothing here hardcodes TechVault, a
+``stop()`` clears orchestration state. Nothing here hardcodes a scenario, a
 profile, a compose profile, or a workflow address.
 """
 

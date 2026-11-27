@@ -2159,21 +2159,40 @@ def test_start_raes_scenario_fails_when_provisioning_backend_fails(mocker, tmp_p
 def test_start_raes_scenario_fails_when_orchestration_fails(mocker, tmp_path):
     """An orchestration-phase failure (provisioning already applied) surfaces as
     a failed lab start, not a silent success."""
+    from raes_contracts.diagnostics import Diagnostic
     from raes_contracts.planning import ChangeAction, OrchestrationOp, OrchestrationPlan
 
     from aptl.backends import raes
+    from aptl.backends.raes_orchestrator import AptlOrchestrator
 
     _write_compose(tmp_path, {"victim": ["victim"]})
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
-    # A workflow op with no compiled result_contract makes AptlOrchestrator.start
-    # fail closed, which the runtime-manager apply reports as a failed phase.
+    # AptlOrchestrator.start fails, and the runtime-manager apply reports the
+    # failed phase.
+    mocker.patch.object(
+        AptlOrchestrator,
+        "start",
+        autospec=True,
+        side_effect=lambda _self, _plan, snapshot: ApplyResult(
+            success=False,
+            snapshot=snapshot,
+            diagnostics=[
+                Diagnostic(
+                    code="test.orchestration-failed",
+                    domain="orchestration",
+                    address="runtime.apply.orchestration",
+                    message="orchestration failed",
+                )
+            ],
+        ),
+    )
     bad_orchestration = OrchestrationPlan(
         resources={},
         operations=[
             OrchestrationOp(
                 action=ChangeAction.CREATE,
-                address="orchestration.workflow.bad",
-                resource_type="workflow",
+                address="orchestration.event.bad",
+                resource_type="event",
                 payload={"name": "bad"},
             )
         ],

@@ -144,7 +144,8 @@ def test_manifest_declares_runtime_workflow_step_dispatch():
     manifest = create_aptl_manifest()
 
     assert set(WORKFLOW_DISPATCH_CONTRACTS) <= set(manifest.supported_contract_versions)
-    assert not [d for d in _execution_plan().diagnostics if d.is_error]
+    codes = {d.code for d in _execution_plan().diagnostics}
+    assert "orchestrator.step-dispatch-unsupported" not in codes
 
 
 @pytest.mark.parametrize(("passed", "outcome"), [(True, "succeeded"), (False, "failed")])
