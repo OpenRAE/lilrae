@@ -186,8 +186,11 @@ def test_control_step_reports_no_outcome_and_echoes_observations():
     ids=["missing", "running", "evaluation-failed"],
 )
 def test_objective_step_without_a_ready_result_is_an_error(results):
+    orchestrator = _orchestrator(results)
+    request = _dispatch()
+
     with pytest.raises(ValueError, match="evaluation result|ready pass or fail"):
-        _orchestrator(results).dispatch_step(_dispatch())
+        orchestrator.dispatch_step(request)
 
 
 def test_governed_step_is_refused():
@@ -195,8 +198,10 @@ def test_governed_step_is_refused():
         {_OBJECTIVE: _evaluation(EvaluationResultStatus.READY, True)}
     )
 
+    request = _dispatch(execution_mode="objective")
+
     with pytest.raises(ValueError, match="does not run objective workflow step"):
-        orchestrator.dispatch_step(_dispatch(execution_mode="objective"))
+        orchestrator.dispatch_step(request)
 
 
 def test_start_refuses_workflow_resources():

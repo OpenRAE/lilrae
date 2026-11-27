@@ -146,19 +146,23 @@ class AptlOrchestrator(object):
             observations=dict(request.observation_digests),
         )
 
-    def status(self) -> dict[str, object]:
+    @staticmethod
+    def status() -> dict[str, object]:
         """Return current orchestration status."""
         return {"backend": "aptl"}
 
-    def results(self) -> dict[str, dict[str, object]]:
+    @staticmethod
+    def results() -> dict[str, dict[str, object]]:
         """Return no workflow results; the RAES runtime records them."""
         return {}
 
-    def history(self) -> dict[str, list[dict[str, object]]]:
+    @staticmethod
+    def history() -> dict[str, list[dict[str, object]]]:
         """Return no workflow history; the RAES runtime records it."""
         return {}
 
-    def stop(self, snapshot: object) -> ApplyResult:
+    @staticmethod
+    def stop(snapshot: object) -> ApplyResult:
         """Stop orchestration and clear orchestration state."""
         working_snapshot = (
             snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
