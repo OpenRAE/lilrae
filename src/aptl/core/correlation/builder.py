@@ -20,12 +20,8 @@ archival contracts EXP-002/REP-001 do not yet wire in):
   ``ParticipantBehaviorHistoryEventModel`` (a single ``timestamp``, no
   ``occurred_at``/``recorded_at``/``ingested_at``/``clock_authority`` to
   read) — see :mod:`aptl.backends.raes_participant_actions`.
-- ``run_id`` is threaded only into the RAES orchestrator adapter
-  (:mod:`aptl.backends.raes_orchestrator`); its persisted
-  ``WorkflowExecutionState.run_id`` is the *workflow's own* internal
-  execution id (an opaque ``uuid4().hex`` minted by
-  :class:`aptl.core.runtime.workflow_engine.WorkflowEngine`), never the
-  APTL run id, and ``WorkflowHistoryEvent`` payloads do not carry the
+- The persisted ``WorkflowExecutionState.run_id`` is the *workflow's own*
+  internal execution id (minted by the RAES runtime), never the APTL run id, and ``WorkflowHistoryEvent`` payloads do not carry the
   workflow address as a field at all. That is why an orchestration node
   binds to the run via a ``DECLARED_RULE`` edge (``RUN_PATH_BINDING``)
   rather than an ``EXPLICIT_IDENTIFIER`` one, while participant

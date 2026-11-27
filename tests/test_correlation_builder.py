@@ -4,7 +4,7 @@ Fixtures mirror the REAL APTL run-archive shapes read from
 ``aptl.backends.raes_repro`` (the ``aptl.run-record/v1`` manifest and its
 embedded ``RuntimeSnapshot``), ``aptl.backends.raes_participant_actions``
 (``ParticipantBehaviorHistoryEventModel``-shaped behavior events), and
-``aptl.backends.raes_orchestrator``/``aptl.core.runtime.workflow_engine``
+the RAES runtime's workflow execution
 (``WorkflowExecutionState``/``WorkflowHistoryEvent``-shaped orchestration
 records) — not an invented local schema.
 
@@ -200,7 +200,7 @@ def _orchestration_record(
     """Build a dict shaped like ``{"result": ..., "history": [...]}`` read
     from ``orchestration/<address>/{result.json,history.jsonl}``. The
     result's own ``run_id`` is a *workflow-internal* id
-    (``WorkflowEngine.register_pending`` mints ``uuid4().hex``) —
+    (the RAES runtime mints it) —
     deliberately NOT the APTL run id, to catch a builder that naively
     trusts it."""
     return {

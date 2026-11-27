@@ -9,18 +9,6 @@ from aptl.backends.raes_provisioner import AptlProvisioner
 from aptl.backends.scenario_startup import scenario_runtime_selection_details
 
 
-def evaluation_results(
-    target: RuntimeTarget,
-    execution_plan: ExecutionPlan,
-) -> dict[str, dict[str, object]]:
-    """Return evaluator results only when evaluation actions ran."""
-
-    results: dict[str, dict[str, object]] = {}
-    if execution_plan.evaluation.actionable_operations and target.evaluator is not None:
-        results = target.evaluator.results()
-    return results
-
-
 def interpret_realization(
     target: RuntimeTarget,
     execution_plan: ExecutionPlan,

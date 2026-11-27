@@ -3,8 +3,8 @@
 Split out of :mod:`aptl.backends.raes` to keep that module within its size
 budget. They run around ``RuntimeManager.apply``: one refuses a plan with
 blocking diagnostics, one re-attaches the provisioner's own failure report to
-an apply whose diagnostics the runtime boundary masked, and one drives any
-registered orchestrator workflows. Each is a leaf — it calls no other function in ``raes.py`` — so
+an apply whose diagnostics the runtime boundary masked, and one writes the
+runtime's workflow records into the run archive. Each is a leaf — it calls no other function in ``raes.py`` — so
 ``raes.py`` imports them one-directionally, with no cycle.
 """
 
@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 from raes_contracts.runtime_state import RuntimeSnapshot
 
 from aptl.backends.raes_diagnostics import render_raes_diagnostics
-from aptl.backends.raes_orchestrator import AptlOrchestrator
 from aptl.backends.raes_start_model import AcesStartOutcome
 from aptl.core.lab_types import LabResult
 
@@ -75,26 +74,26 @@ def _with_backend_failure_diagnostics(
     return [*fresh, *diagnostics]
 
 
-def _drive_orchestrator_workflows(
-    orchestrator: object,
-    evaluation_results: dict[str, dict[str, object]],
-    *,
-    run_store: RunStorageBackend | None = None,
-    run_id: str | None = None,
-) -> LabResult | None:
-    """Drive registered workflows and convert diagnostics to a lab failure."""
+def _archive_workflow_runs(
+    snapshot: RuntimeSnapshot,
+    run_store: RunStorageBackend | None,
+    run_id: str | None,
+) -> None:
+    """Write the runtime's workflow results and history into the run archive."""
 
-    drive_diagnostics = []
-    if isinstance(orchestrator, AptlOrchestrator) and orchestrator.results():
-        drive_diagnostics = orchestrator.drive_workflows(
-            evaluation_results=evaluation_results,
-            run_store=run_store,
-            run_id=run_id,
+    if run_store is None or run_id is None:
+        return
+    for address, result in snapshot.orchestration_results.items():
+        safe_address = address.replace("/", "_")
+        run_store.write_json(
+            run_id, f"orchestration/{safe_address}/result.json", dict(result)
         )
-    failure = None
-    if drive_diagnostics:
-        failure = LabResult(
-            success=False,
-            error=render_raes_diagnostics(drive_diagnostics),
-        )
-    return failure
+        history = snapshot.orchestration_history.get(address, ())
+        if history:
+            # ``append_jsonl`` takes the whole batch of records and redacts
+            # each one (issue #993).
+            run_store.append_jsonl(
+                run_id,
+                f"orchestration/{safe_address}/history.jsonl",
+                [dict(event) for event in history],
+            )

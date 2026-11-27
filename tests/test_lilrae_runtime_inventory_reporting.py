@@ -84,12 +84,15 @@ def reporting_runtime(
     from aptl.backends.raes_evaluator import AptlEvaluator
     from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
 
+    evaluator = AptlEvaluator(reporting_manifest=manifest)
     target = RuntimeTarget(
         name=manifest.name,
         manifest=manifest,
         provisioner=provisioner,
-        orchestrator=AptlOrchestrator(reporting_manifest=manifest),
-        evaluator=AptlEvaluator(reporting_manifest=manifest),
+        orchestrator=AptlOrchestrator(
+            objective_results=evaluator.results, reporting_manifest=manifest
+        ),
+        evaluator=evaluator,
         participant_runtime=AptlParticipantRuntime(deployment_backend=native),
     )
     archive = RunMaterializationArchive(tmp_path / "archive")

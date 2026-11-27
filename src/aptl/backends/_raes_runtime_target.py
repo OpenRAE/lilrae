@@ -72,7 +72,6 @@ def create_aptl_runtime_target(
         operator_access=selected.operator_access or OperatorAccessDecision(),
         startup_selection=startup,
     )
-    orchestrator = AptlOrchestrator()
     action_specs = _participant_actions(selected)
     participant_runtime = AptlParticipantRuntime(
         deployment_backend=backend,
@@ -93,20 +92,23 @@ def create_aptl_runtime_target(
         runtime_concern_sources=adapter_runtime_concern_sources(startup.provider),
     )
     provisioner.reporting_manifest = manifest
-    orchestrator.reporting_manifest = manifest
+    evaluator = AptlEvaluator(
+        reporting_manifest=manifest,
+        proposition_interpreter=(
+            selected.capture_selection.contribution.proposition_interpreter
+            if selected.capture_selection is not None
+            else None
+        ),
+    )
     return RuntimeTarget(
         name=APTL_RAES_TARGET_NAME,
         manifest=manifest,
         provisioner=provisioner,  # type: ignore[arg-type]
-        orchestrator=orchestrator,  # type: ignore[arg-type]
-        evaluator=AptlEvaluator(
+        orchestrator=AptlOrchestrator(
+            objective_results=evaluator.results,
             reporting_manifest=manifest,
-            proposition_interpreter=(
-                selected.capture_selection.contribution.proposition_interpreter
-                if selected.capture_selection is not None
-                else None
-            ),
         ),  # type: ignore[arg-type]
+        evaluator=evaluator,  # type: ignore[arg-type]
         participant_runtime=participant_runtime,  # type: ignore[arg-type]
         time_runtime=(
             ReferenceTimeRuntime()
