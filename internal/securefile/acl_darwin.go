@@ -19,21 +19,27 @@ const (
 	darwinMaxACEs   = 128
 )
 
+type darwinSecurity struct {
+	Size     uint32
+	Offset   int32
+	Length   uint32
+	Security [darwinACLHeader + darwinMaxACEs*darwinACEBytes]byte
+}
+
 // checkExtendedACL asks Darwin for the extended security of the retained file.
 // A public file or directory can have read grants. A private file cannot.
 func checkExtendedACL(fd int, forbidden uint32) error {
 	attrs := unix.Attrlist{Bitmapcount: unix.ATTR_BIT_MAP_COUNT, Commonattr: unix.ATTR_CMN_EXTENDED_SECURITY}
-	var result struct {
-		Size     uint32
-		Offset   int32
-		Length   uint32
-		Security [darwinACLHeader + darwinMaxACEs*darwinACEBytes]byte
-	}
+	var result darwinSecurity
 	_, _, errno := syscall.Syscall6(syscall.SYS_FGETATTRLIST, uintptr(fd),
 		uintptr(unsafe.Pointer(&attrs)), uintptr(unsafe.Pointer(&result)), unsafe.Sizeof(result), 0, 0) //nolint:gosec // G103: native attrlist and bounded response buffer.
 	if errno != 0 {
 		return fmt.Errorf("read Darwin extended security: %w", errno)
 	}
+	return result.check(forbidden == groupOrOtherAccess)
+}
+
+func (result *darwinSecurity) check(private bool) error {
 	// The 4-byte size precedes an 8-byte attrreference. The offset is
 	// relative to that reference, so its payload starts 8 bytes later.
 	const dataStart = 12
@@ -47,7 +53,7 @@ func checkExtendedACL(fd int, forbidden uint32) error {
 		result.Size < dataStart+result.Length {
 		return errors.New("invalid Darwin extended security")
 	}
-	return checkDarwinACL(result.Security[:result.Length], forbidden == groupOrOtherAccess)
+	return checkDarwinACL(result.Security[:result.Length], private)
 }
 
 func checkDarwinACL(security []byte, private bool) error {

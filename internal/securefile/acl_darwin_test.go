@@ -2,6 +2,7 @@ package securefile
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"io/fs"
 	"os"
@@ -10,6 +11,23 @@ import (
 	"testing"
 	"time"
 )
+
+func TestDarwinACLResponseAtSupportedSizes(t *testing.T) {
+	for _, count := range []uint32{0, 128} {
+		length := uint32(darwinACLHeader) + count*darwinACEBytes
+		result := darwinSecurity{Size: 12 + length, Offset: 8, Length: length}
+		binary.NativeEndian.PutUint32(result.Security[:4], 0x012cc16d)
+		binary.NativeEndian.PutUint32(result.Security[36:40], count)
+		for i := range count {
+			// A full access list of deny entries grants no access.
+			flags := darwinACLHeader + i*darwinACEBytes + 16
+			binary.NativeEndian.PutUint32(result.Security[flags:flags+4], 2)
+		}
+		if err := result.check(false); err != nil {
+			t.Errorf("valid extended ACL with %d entries: %v", count, err)
+		}
+	}
+}
 
 func TestInheritedACLRefusesPrivateKeyPublication(t *testing.T) {
 	root, dir := newTree(t)
