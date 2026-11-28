@@ -9,7 +9,7 @@
 # RAES require Python >=3.14,<3.15. Debian 13 does not package it, so this build
 # stage uses the official Python 3.14 image on the same Debian release and
 # hands over only the verified lockfiles and their identity (issue #1407).
-FROM python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966 AS npm-cache-input
+FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS npm-cache-input
 COPY requirements/runtime.txt /tmp/aptl-runtime-requirements.txt
 COPY src/aptl /tmp/aptl-cache-src/aptl
 COPY src/aptl_techvault /tmp/aptl-cache-src/aptl_techvault
