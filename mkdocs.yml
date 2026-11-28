@@ -248,6 +248,7 @@ nav:
       - "Issue #1747 Configuration Design": architecture/issue-1747-go-config-design.md
       - "Issue #1748 Project State and Lifecycle Locks Design": architecture/issue-1748-go-project-state-design.md
       - "Issue #1748 Project State and Lifecycle Lock Preflight": architecture/issue-1748-project-state-preflight.md
+      - "Issue #1751 SSH Design": architecture/issue-1751-go-ssh-design.md
       - "Issue #1510 Code Quality Architecture Preflight": architecture/issue-1510-code-quality-preflight.md
       - "Issue #1372 Capture Spec Version Preflight": architecture/issue-1372-capture-spec-version-preflight.md
       - "Issue #1121 Pack Boundary Preflight": architecture/issue-1121-pack-boundary-preflight.md

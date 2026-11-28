@@ -16,9 +16,16 @@ the diagram differs from the model. Do not edit the diagram by hand.
 <!-- Generated from architecture/model.yaml by archcheck diagram. Do not edit. -->
 ```mermaid
 flowchart TB
+    subgraph layer_application[application]
+        component_ssh_startup[ssh-startup]
+    end
+    subgraph layer_adapters[adapters]
+        component_ssh_client[ssh-client]
+    end
     subgraph layer_core[core]
         component_configuration[configuration]
         component_project_state[project-state]
+        component_ssh_material[ssh-material]
     end
     subgraph layer_foundation[foundation]
         component_canonical_forms[canonical-forms]
@@ -72,5 +79,10 @@ flowchart TB
     component_project_state --> component_configuration
     component_project_state --> component_secure_file
     component_project_state --> component_file_lock
+    component_ssh_material --> component_project_state
+    component_ssh_material --> component_secure_file
+    component_ssh_material --> component_file_lock
+    component_ssh_client --> component_ssh_material
+    component_ssh_startup --> component_ssh_material
 ```
 <!-- End of the generated diagram. -->

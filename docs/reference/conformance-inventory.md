@@ -1,8 +1,8 @@
 # Conformance Inventory
 
-This inventory lists the external contracts of the `lilrae` command: each
-command, option, exit status, output stream, JSON result, and persisted file
-that users or other systems use. The
+This inventory lists the external contracts of the `lilrae` command.
+It includes commands, options, exit statuses, output streams, JSON results,
+and persisted files that users or other systems use. The
 [conformance design](../architecture/issue-1554-conformance-design.md) gives
 the harness. Each row has one of these classes:
 
@@ -130,6 +130,8 @@ on the documentation site at `reference/schemas/`.
 | file.resource-receipts | `.aptl/lifecycle/resource-receipts-v1/<kind>/<SHA-256 of the native ID>.json`: one receipt, written once, for each container, network, and volume that a start creates. Cleanup, network operations, and native evidence read them. | Compose resource ownership | contract | Go port 09 |
 | file.cleanup-actions | `.aptl/lifecycle/cleanup-actions-v1/` (`aptl-lifecycle-cleanup-action/v1` and `/v2`) and `cleanup-actions-completed-v1/` (`aptl-lifecycle-cleanup-completion/v1`), and the `startup-reset-v1/` and `startup-reset-completed-v1/` receipts of earlier releases, which stay readable. The next `lab stop -v` finishes each pending cleanup and writes its completion marker. | Startup reset state | contract | Go port 23 |
 | file.project-state | `.aptl/`: the session, the lifecycle policy, the operator groups, and the capture state. Each has its own owner and reader. Locks, caches, staged packs, rendered Compose files, and generated secrets are details. | Preflight | detail | No portable format. The Go tests of `internal/projectstate` cover the layout, the modes, and the lifecycle locks. |
+| file.ssh-client-keys | The three OpenSSH Ed25519 client key pairs and their public authorization files. Existing pairs keep their identity. | `core/ssh.py` | contract | Go port 08e. `tests/test_ssh_conformance.py`, `internal/sshkeys/keys_test.go`, and `internal/securefile/windows_test.go`. |
+| file.ssh-host-pins | `.aptl/known_hosts` contains the server keys that startup captured. The port and host must match the endpoint. | ADR-040, `core/host_keys.py` | contract | Go port 08e. `tests/test_ssh_conformance.py`, `internal/sshstartup/capture_test.go`, and `internal/sshclient/client_test.go`. |
 
 ## Text facts
 

@@ -455,6 +455,15 @@ func TestCreateOnce(t *testing.T) {
 	wantReason(t, d.CreateOnce("a/./x", nil), ReasonDotComponent)
 }
 
+func TestProtectRefusesPrivateKeyWithAnotherHardLink(t *testing.T) {
+	root, d := newTree(t)
+	writeFile(t, root, "key", "secret")
+	if err := os.Link(filepath.Join(root, "key"), filepath.Join(root, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	wantReason(t, d.RestrictToOwner("key"), ReasonNotPrivate)
+}
+
 func TestReplace(t *testing.T) {
 	root, d := newTree(t)
 	for _, content := range []string{"first", "second"} {

@@ -71,6 +71,27 @@ func TestRestrictToOwnerSetsAProtectedReadOnlyList(t *testing.T) {
 	if err := d.RestrictToOwner("key"); err != nil {
 		t.Fatal(err)
 	}
+	checkOwnerReadList(t, root, d)
+}
+
+func TestCreateOwnerReadPublishesProtectedFile(t *testing.T) {
+	root, d := newTree(t)
+	if err := d.CreateOwnerRead("key", []byte("secret")); err != nil {
+		t.Fatal(err)
+	}
+	checkOwnerReadList(t, root, d)
+
+	if err := d.CreateOwnerRead("key", []byte("replacement")); !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("existing key: %v, want fs.ErrExist", err)
+	}
+	checkOwnerReadList(t, root, d)
+	if got := names(t, root, "."); len(got) != 1 || got[0] != "key" {
+		t.Fatalf("unexpected directory contents after refusal: %v", got)
+	}
+}
+
+func checkOwnerReadList(t *testing.T, root string, d *Dir) {
+	t.Helper()
 	sd, err := windows.GetNamedSecurityInfo(filepath.Join(root, "key"), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		t.Fatal(err)
@@ -212,5 +233,37 @@ func TestRefusesAJunction(t *testing.T) {
 	wantReason(t, d.RemoveAll("junction"), ReasonSymlink)
 	if got := readFile(t, root, "real/f"); got != "data" {
 		t.Errorf("the junction target holds %q, want data", got)
+	}
+}
+
+func TestOwnerAccessRefusesPublicFileOrDirectoryWithOtherWriters(t *testing.T) {
+	root, dir := newTree(t)
+	writeFile(t, root, "known_hosts", "test pins")
+	pin := filepath.Join(root, "known_hosts")
+	setWindowsWriteGrant(t, pin)
+	file, err := dir.OpenOwned("known_hosts", false)
+	if file != nil {
+		closeOnCleanup(t, file)
+		t.Fatal("accepted a pin file writable by another account")
+	}
+	wantReason(t, err, ReasonNotPrivate)
+	setWindowsWriteGrant(t, root)
+	wantReason(t, dir.CheckWriteOwner(), ReasonNotPrivate)
+}
+
+func setWindowsWriteGrant(t *testing.T, path string) {
+	t.Helper()
+	sd, err := windows.SecurityDescriptorFromString("D:(A;;FA;;;OW)(A;;FA;;;BA)(A;;FA;;;SY)(A;;FW;;;WD)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 }

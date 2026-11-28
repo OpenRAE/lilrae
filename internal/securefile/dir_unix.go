@@ -234,12 +234,16 @@ func (h dirHandle) subdir(op, path string, parts []string, rule dirRule) (dirHan
 }
 
 func (h dirHandle) createOnce(op, path string, parts []string, data []byte) (err error) {
+	return h.createOnceWithAccess(op, path, parts, data, false)
+}
+
+func (h dirHandle) createOnceWithAccess(op, path string, parts []string, data []byte, private bool) (err error) {
 	parent, leaf, err := h.walkParent(op, path, parts, ruleCreate)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, closeFd(op, path, parent)) }()
-	name, err := writeTemp(op, path, parent, leaf, data, privateFileMode)
+	name, err := writeTemp(op, path, parent, leaf, data, privateFileMode, private)
 	if err != nil {
 		return err
 	}
@@ -247,6 +251,10 @@ func (h dirHandle) createOnce(op, path string, parts []string, data []byte) (err
 	published := linkat(parent, name, parent, leaf)
 	removed := unlinkat(parent, name, 0)
 	return failure(op, path, errors.Join(published, removed, fsync(parent)))
+}
+
+func (h dirHandle) createOwnerRead(op, path string, parts []string, data []byte) error {
+	return h.createOnceWithAccess(op, path, parts, data, true)
 }
 
 // replace walks with rule. Under ruleRestrict it also applies the private
@@ -272,21 +280,24 @@ func replaceIn(op, path string, parent int, leaf string, data []byte, perm fs.Fi
 	if err := checkLeaf(op, path, parent, leaf); err != nil {
 		return err
 	}
-	return publish(op, path, parent, leaf, data, perm)
+	return publish(op, path, parent, leaf, data, perm, fsync)
 }
 
 // publish writes a temporary file beside leaf and renames it onto leaf.
 // renameat replaces the entry and never follows it, so a link that appears at
 // leaf after the check is replaced.
-func publish(op, path string, parent int, leaf string, data []byte, perm fs.FileMode) error {
-	name, err := writeTemp(op, path, parent, leaf, data, perm)
+func publish(op, path string, parent int, leaf string, data []byte, perm fs.FileMode, syncDirectory func(int) error) error {
+	name, err := writeTemp(op, path, parent, leaf, data, perm, false)
 	if err != nil {
 		return err
 	}
 	if err := renameat(parent, name, parent, leaf); err != nil {
 		return failure(op, path, errors.Join(err, unlinkat(parent, name, 0)))
 	}
-	return failure(op, path, fsync(parent))
+	if err := syncDirectory(parent); err != nil {
+		return &Error{Op: op, Path: path, Reason: ReasonDurability, Err: err}
+	}
+	return nil
 }
 
 // checkLeaf refuses an existing leaf that is a link or not a regular file.
@@ -331,15 +342,21 @@ func statPerm(st *unix.Stat_t) fs.FileMode {
 // writeTemp writes data to a new temporary file beside leaf, gives it the
 // mode perm, syncs it, and returns its name. It removes the file after a
 // failure.
-func writeTemp(op, path string, parent int, leaf string, data []byte, perm fs.FileMode) (string, error) {
+func writeTemp(op, path string, parent int, leaf string, data []byte, perm fs.FileMode, private bool) (string, error) {
 	name := tempName(leaf)
 	fd, err := openat(parent, name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, uint32(privateFileMode))
 	if err != nil {
 		return "", &Error{Op: op, Path: path, Reason: ReasonOpenFailed, Err: err}
 	}
 	file := os.NewFile(uintptr(fd), name)
-	if err := errors.Join(fill(op, path, file, data, perm), failure(op, path, file.Close())); err != nil {
-		return "", errors.Join(err, failure(op, path, unlinkat(parent, name, 0)))
+	if private {
+		err = checkOwnedAccess(file, true)
+	}
+	if err == nil {
+		err = fill(op, path, file, data, perm)
+	}
+	if writeErr := errors.Join(err, failure(op, path, file.Close())); writeErr != nil {
+		return "", errors.Join(writeErr, failure(op, path, unlinkat(parent, name, 0)))
 	}
 	return name, nil
 }
@@ -357,16 +374,27 @@ func setMode(op, path string, file *os.File, perm fs.FileMode) error {
 }
 
 func (h dirHandle) chmod(op, path string, parts []string, perm fs.FileMode) error {
+	return h.chmodOwned(op, path, parts, perm, false)
+}
+
+func (h dirHandle) chmodOwned(op, path string, parts []string, perm fs.FileMode, requireOwner bool) error {
 	parent, leaf, err := h.walkParent(op, path, parts, ruleSearch)
 	if err != nil {
 		return err
 	}
-	err = chmodLeaf(op, path, parent, leaf, uint32(perm))
+	err = chmodLeaf(op, path, parent, leaf, uint32(perm), requireOwner)
 	return errors.Join(err, closeFd(op, path, parent))
 }
 
 func (h dirHandle) restrictToOwner(op, path string, parts []string) error {
-	return h.chmod(op, path, parts, privateFileMode)
+	return h.chmodOwned(op, path, parts, privateFileMode, true)
+}
+
+func checkOwnedLeaf(op, path string, st *unix.Stat_t) error {
+	if st.Nlink != 1 || int64(st.Uid) != int64(os.Geteuid()) {
+		return &Error{Op: op, Path: path, Reason: ReasonNotPrivate}
+	}
+	return nil
 }
 
 func (h dirHandle) remove(op, path string, parts []string) (err error) {

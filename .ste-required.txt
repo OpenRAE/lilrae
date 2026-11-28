@@ -116,6 +116,7 @@ docs/architecture/issue-1705-techvault-capture-context-preflight.md
 docs/architecture/issue-1707-participant-smoke-provider-preflight.md
 docs/architecture/issue-1748-go-project-state-design.md
 docs/architecture/issue-1748-project-state-preflight.md
+docs/architecture/issue-1751-go-ssh-design.md
 docs/architecture/issue-435-declared-cleanup-design.md
 docs/architecture/issue-965-secret-bindings.md
 docs/architecture/issue-968-native-network-policy.md

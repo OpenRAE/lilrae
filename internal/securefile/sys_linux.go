@@ -21,7 +21,7 @@ func statMode(st *unix.Stat_t) uint32 {
 // access to the content of the file and follows no link: it opens the file
 // itself with O_PATH, checks it, and changes the mode of that open file
 // through /proc/self/fd, as GNU libc does for fchmodat without fchmodat2.
-func chmodLeaf(op, path string, parent int, leaf string, perm uint32) (err error) {
+func chmodLeaf(op, path string, parent int, leaf string, perm uint32, requireOwner bool) (err error) {
 	fd, err := openat(parent, leaf, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return componentError(op, path, parent, leaf, err)
@@ -33,6 +33,11 @@ func chmodLeaf(op, path string, parent int, leaf string, perm uint32) (err error
 	}
 	if err := regularEntry(op, path, statMode(&st)); err != nil {
 		return err
+	}
+	if requireOwner {
+		if err := checkOwnedLeaf(op, path, &st); err != nil {
+			return err
+		}
 	}
 	chmodErr := fchmodat(unix.AT_FDCWD, "/proc/self/fd/"+strconv.Itoa(fd), perm, 0)
 	var after unix.Stat_t
