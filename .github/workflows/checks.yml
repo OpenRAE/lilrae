@@ -1432,7 +1432,7 @@ jobs:
       # A merge group runs as a branch analysis of its gh-readonly-queue ref.
       # That tree is the dev tree after the merge, so the gate judges it as it
       # judges a push to dev (ADR-068).
-      - uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
+      - uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4 # v8.5.0
         if: (needs.changes.outputs.python == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.web == 'true')
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
