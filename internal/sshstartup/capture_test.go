@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -46,4 +47,74 @@ func TestSkippedCaptureKeepsThePriorPins(t *testing.T) {
 	if err != nil || pins.Key(active) != nil {
 		t.Fatalf("completed capture retained an unavailable pin: %v", err)
 	}
+}
+
+func TestCaptureRequiresProbeOnlyForEndpoints(t *testing.T) {
+	signer := startupSigner(t)
+	ep := sshkeys.Endpoint{Name: "active", Host: "localhost", Port: 22, User: "test"}
+	project := t.TempDir()
+	if _, err := Capture(t.Context(), project, []sshkeys.Endpoint{ep}, signer, nil); err == nil {
+		t.Fatal("accepted endpoints without a probe")
+	}
+	if _, err := Capture(t.Context(), project, nil, signer, nil); err != nil {
+		t.Fatalf("empty capture without probe: %v", err)
+	}
+}
+
+func TestProbeEnforcesWindowAndRejectsBadResults(t *testing.T) {
+	signer := startupSigner(t)
+	ep := sshkeys.Endpoint{Name: "active", Host: "localhost", Port: 22, User: "test"}
+	key := signer.PublicKey().Marshal()
+	probe := func(ctx context.Context, _ sshkeys.Endpoint, _ ssh.Signer) ([]byte, error) {
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) <= 9*time.Second || time.Until(deadline) > 10*time.Second {
+			t.Fatal("missing startup probe time limit")
+		}
+		return key, nil
+	}
+	if got := probeEndpoint(t.Context(), ep, signer, probe); !bytes.Equal(got, key) {
+		t.Fatal("discarded a valid result")
+	}
+	checkProbeRefusals(t, ep, key, signer)
+}
+
+func checkProbeRefusals(t *testing.T, ep sshkeys.Endpoint, key []byte, signer ssh.Signer) {
+	t.Helper()
+	bad := ep
+	bad.Host = "*.example"
+	unused := func(context.Context, sshkeys.Endpoint, ssh.Signer) ([]byte, error) {
+		t.Fatal("an invalid endpoint reached the probe")
+		return nil, errors.New("invalid test endpoint")
+	}
+	if probeEndpoint(t.Context(), bad, signer, unused) != nil {
+		t.Fatal("accepted an invalid endpoint")
+	}
+	if probeEndpoint(t.Context(), ep, signer, func(context.Context, sshkeys.Endpoint, ssh.Signer) ([]byte, error) {
+		return []byte("invalid"), nil
+	}) != nil {
+		t.Fatal("accepted an invalid public key")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if probeEndpoint(ctx, ep, signer, func(context.Context, sshkeys.Endpoint, ssh.Signer) ([]byte, error) {
+		cancel()
+		return key, nil
+	}) != nil {
+		t.Fatal("accepted the result of a canceled probe")
+	}
+}
+
+type testSigner struct{ ssh.Signer }
+
+func startupSigner(t *testing.T) testSigner {
+	t.Helper()
+	_, private, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return testSigner{Signer: signer}
 }

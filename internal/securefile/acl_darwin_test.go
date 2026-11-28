@@ -1,12 +1,14 @@
 package securefile
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestInheritedACLRefusesPrivateKeyPublication(t *testing.T) {
@@ -39,6 +41,14 @@ func TestExistingACLRefusesPrivateKeyRead(t *testing.T) {
 
 func TestPublicDirectoryACLChecksWriteGrants(t *testing.T) {
 	root, dir := newTree(t)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "/bin/chmod", "-N", root) //nolint:gosec // G204: chmod is fixed and root is the test directory.
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Errorf("remove fixture ACL: %v: %s", err, out)
+		}
+	})
 	addDarwinACL(t, root, "group:everyone deny delete")
 	addDarwinACL(t, root, "group:everyone allow list,search")
 	if err := dir.CheckWriteOwner(); err != nil {

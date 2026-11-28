@@ -145,3 +145,24 @@ func TestFailedPublicationKeepsPriorPins(t *testing.T) {
 		t.Fatalf("canceled capture replaced the trusted pins: %v", err)
 	}
 }
+
+func TestPinSnapshotSizeLimit(t *testing.T) {
+	project := t.TempDir()
+	key := sampleHostKey(t)
+	pin := HostPin{Endpoint: Endpoint{Host: "h", Port: 22}, Wire: key.wire}
+	lineSize := len(pin.Endpoint.Host) + 1 + len(key.line)
+	repeats := maxPinFile/lineSize - 1
+	pins := make([]HostPin, repeats+1)
+	for i := range repeats {
+		pins[i] = pin
+	}
+	remaining := maxPinFile - repeats*lineSize
+	pins[repeats] = HostPin{Endpoint: Endpoint{Host: strings.Repeat("a", remaining-1-len(key.line)), Port: 22}, Wire: key.wire}
+	if err := PublishPins(t.Context(), project, pins); err != nil {
+		t.Fatalf("snapshot exactly at limit: %v", err)
+	}
+	pins[repeats].Endpoint.Host += "a"
+	if err := PublishPins(t.Context(), project, pins); err == nil {
+		t.Fatal("published a snapshot beyond the limit")
+	}
+}

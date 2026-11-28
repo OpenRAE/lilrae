@@ -48,5 +48,5 @@ func checkUnixAccess(fd int, forbidden uint32, singleLink bool) error {
 	if singleLink && st.Nlink != 1 {
 		return errors.New("file has more than one link")
 	}
-	return checkExtendedACL(fd, forbidden == groupOrOtherAccess)
+	return checkExtendedACL(fd, forbidden)
 }

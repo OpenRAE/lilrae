@@ -21,7 +21,7 @@ const (
 
 // checkExtendedACL asks Darwin for the extended security of the retained file.
 // A public file or directory can have read grants. A private file cannot.
-func checkExtendedACL(fd int, private bool) error {
+func checkExtendedACL(fd int, forbidden uint32) error {
 	attrs := unix.Attrlist{Bitmapcount: unix.ATTR_BIT_MAP_COUNT, Commonattr: unix.ATTR_CMN_EXTENDED_SECURITY}
 	var result struct {
 		Size     uint32
@@ -47,7 +47,7 @@ func checkExtendedACL(fd int, private bool) error {
 		result.Size < dataStart+result.Length {
 		return errors.New("invalid Darwin extended security")
 	}
-	return checkDarwinACL(result.Security[:result.Length], private)
+	return checkDarwinACL(result.Security[:result.Length], forbidden == groupOrOtherAccess)
 }
 
 func checkDarwinACL(security []byte, private bool) error {

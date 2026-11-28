@@ -163,18 +163,17 @@ func EnsurePair(ctx context.Context, dir *securefile.Dir, name, comment string) 
 
 func preparePair(dir *securefile.Dir, name, comment string) (Pair, error) {
 	err := dir.RestrictToOwner(name)
-	switch {
-	case err == nil:
+	if err == nil {
 		pair, readErr := readPair(dir, name)
 		if readErr != nil {
 			return Pair{}, readErr
 		}
 		return pair, writePublic(dir, name+".pub", pair.Public)
-	case errors.Is(err, fs.ErrNotExist):
-		return createMissingPair(dir, name, comment)
-	default:
-		return Pair{}, errors.New("protect SSH private key")
 	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return createMissingPair(dir, name, comment)
+	}
+	return Pair{}, errors.New("protect SSH private key")
 }
 
 func createMissingPair(dir *securefile.Dir, name, comment string) (Pair, error) {

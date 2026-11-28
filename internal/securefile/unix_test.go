@@ -523,7 +523,9 @@ func TestOwnerCheckRetainsTheDirectoryWhileClosing(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := int(sub.h.f.Fd())
+	called := false
 	err = sub.h.checkDirectoryAccess(func(fd int) error {
+		called = true
 		if closeErr := sub.Close(); closeErr != nil {
 			t.Fatal(closeErr)
 		}
@@ -534,6 +536,9 @@ func TestOwnerCheckRetainsTheDirectoryWhileClosing(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("closed original interrupted the owner check: %v", err)
+	}
+	if !called {
+		t.Fatal("owner verification did not run")
 	}
 }
 

@@ -63,17 +63,10 @@ func validHost(host string) bool {
 }
 
 func literalName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for _, c := range name {
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '-', c == '_':
-		default:
-			return false
-		}
-	}
-	return true
+	const allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_"
+	return name != "" && strings.IndexFunc(name, func(c rune) bool {
+		return !strings.ContainsRune(allowed, c)
+	}) == -1
 }
 
 // Pins is one read-only snapshot of the startup pins.

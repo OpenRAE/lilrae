@@ -2,8 +2,10 @@ package sshkeys
 
 import (
 	"bytes"
+	"context"
 	"encoding/json/v2"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -260,5 +262,77 @@ func TestReadPairRefusesAnUnprotectedPrivateFile(t *testing.T) {
 	}
 	if _, err := ReadPair(t.Context(), dir, "key"); err == nil {
 		t.Fatal("accepted a private key readable by another user")
+	}
+}
+
+func TestReadPairRefusesCanceledContext(t *testing.T) {
+	dir, err := securefile.OpenDir(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { closeTestDir(t, dir) })
+	if _, keyErr := EnsurePair(t.Context(), dir, "key", "operator"); keyErr != nil {
+		t.Fatal(keyErr)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, loadErr := ReadPair(ctx, dir, "key"); !errors.Is(loadErr, context.Canceled) {
+		t.Fatalf("read after cancellation: %v", loadErr)
+	}
+}
+
+func TestReadPairRefusesAnUntrustedDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows directory access lists are covered by the securefile tests")
+	}
+	root := t.TempDir()
+	dir, err := securefile.OpenDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { closeTestDir(t, dir) })
+	if _, keyErr := EnsurePair(t.Context(), dir, "key", "operator"); keyErr != nil {
+		t.Fatal(keyErr)
+	}
+	if chmodErr := os.Chmod(root, 0o770); chmodErr != nil { //nolint:gosec // G302: a temporary fixture needs an additional writer.
+		t.Fatal(chmodErr)
+	}
+	if _, loadErr := ReadPair(t.Context(), dir, "key"); loadErr == nil {
+		t.Fatal("loaded a pair from a directory with another writer")
+	}
+}
+
+func TestReadBoundedFileSize(t *testing.T) {
+	dir, err := securefile.OpenDir(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { closeTestDir(t, dir) })
+	for _, contents := range []string{"abcd", "abcde"} {
+		if writeErr := dir.Replace("fixture", []byte(contents), 0o600); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		file, openErr := dir.Open("fixture")
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		got, readErr := readBounded(file, 4)
+		if (readErr != nil) != (len(contents) > 4) || (readErr == nil && string(got) != contents) {
+			t.Fatalf("size %d: %v", len(contents), readErr)
+		}
+	}
+}
+
+func TestPublicKeyAndCommentSizeLimits(t *testing.T) {
+	line := strings.TrimSpace(sampleHostKey(t).line)
+	exact := line + " " + strings.Repeat("c", maxPublicKey-1-len(line))
+	if _, err := Fingerprint(exact); err != nil {
+		t.Fatalf("public record exactly at limit: %v", err)
+	}
+	if _, err := Fingerprint(exact + "c"); err == nil {
+		t.Fatal("accepted a public record beyond the limit")
+	}
+	if !validComment(strings.Repeat("c", 1024)) || validComment(strings.Repeat("c", 1025)) {
+		t.Fatal("wrong SSH comment length limit")
 	}
 }

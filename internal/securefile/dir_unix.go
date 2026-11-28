@@ -190,7 +190,11 @@ func (h dirHandle) openLockFile(op, path string, parts []string) (file *os.File,
 	defer func() { err = errors.Join(err, closeFd(op, path, parent)) }()
 	// O_NOFOLLOW also keeps O_CREAT from creating the target of a link, and
 	// O_NONBLOCK keeps a FIFO from blocking the open.
-	fd, err := openat(parent, leaf, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, uint32(privateFileMode))
+	const flags = unix.O_RDWR | unix.O_NOFOLLOW | unix.O_NONBLOCK | unix.O_CLOEXEC
+	fd, err := openat(parent, leaf, flags|unix.O_CREAT|unix.O_EXCL, uint32(privateFileMode))
+	if errors.Is(err, unix.EEXIST) {
+		fd, err = openat(parent, leaf, flags, 0)
+	}
 	if err != nil {
 		return nil, componentError(op, path, parent, leaf, err)
 	}
