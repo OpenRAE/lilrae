@@ -147,7 +147,7 @@ func EnsurePair(ctx context.Context, dir *securefile.Dir, name, comment string) 
 		return Pair{}, errors.New("invalid SSH key comment")
 	}
 
-	if accessErr := dir.CheckWriteOwner(); accessErr != nil {
+	if dir.CheckWriteOwner() != nil {
 		return Pair{}, errors.New("SSH key directory allows untrusted changes")
 	}
 	lock, err := dir.OpenLockFile("." + name + ".lock")
@@ -252,7 +252,7 @@ func ReadPair(ctx context.Context, dir *securefile.Dir, name string) (Pair, erro
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return Pair{}, fmt.Errorf("load SSH key pair: %w", ctxErr)
 	}
-	if accessErr := dir.CheckWriteOwner(); accessErr != nil {
+	if dir.CheckWriteOwner() != nil {
 		return Pair{}, errors.New("SSH key directory allows untrusted changes")
 	}
 	return readPair(dir, name)

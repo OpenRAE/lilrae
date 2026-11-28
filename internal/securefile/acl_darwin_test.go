@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -26,6 +27,40 @@ func TestDarwinACLResponseAtSupportedSizes(t *testing.T) {
 		if err := result.check(false); err != nil {
 			t.Errorf("valid extended ACL with %d entries: %v", count, err)
 		}
+	}
+}
+
+func TestDarwinACLRejectsMalformedNativeResponses(t *testing.T) {
+	const validSize = 12 + darwinACLHeader
+	for _, tc := range []struct {
+		name                string
+		size, length, count uint32
+		offset              int32
+		magic               uint32
+	}{
+		{"short attribute header", 11, 0, 0, 8, 0},
+		{"wrong payload offset", validSize, darwinACLHeader, 0, 7, 0x012cc16d},
+		{"payload exceeds buffer", darwinMaxACLBytes + 13, darwinMaxACLBytes + 1, 0, 8, 0x012cc16d},
+		{"payload exceeds response", validSize - 1, darwinACLHeader, 0, 8, 0x012cc16d},
+		{"short access list", validSize - 1, darwinACLHeader - 1, 0, 8, 0x012cc16d},
+		{"invalid access list magic", validSize, darwinACLHeader, 0, 8, 0},
+		{"missing entries", validSize, darwinACLHeader, 1, 8, 0x012cc16d},
+		{"too many entries", validSize, darwinACLHeader, darwinMaxACEs + 1, 8, 0x012cc16d},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := darwinSecurity{Size: tc.size, Length: tc.length, Offset: tc.offset}
+			binary.NativeEndian.PutUint32(result.Security[:4], tc.magic)
+			binary.NativeEndian.PutUint32(result.Security[36:40], tc.count)
+			if result.check(false) == nil {
+				t.Fatal("accepted malformed native access list")
+			}
+		})
+	}
+}
+
+func TestDarwinACLPreservesNativeHandleError(t *testing.T) {
+	if err := checkExtendedACL(-1, groupOrOtherAccess); !errors.Is(err, syscall.EBADF) {
+		t.Fatalf("invalid ACL handle: %v", err)
 	}
 }
 

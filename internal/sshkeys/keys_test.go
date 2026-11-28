@@ -336,3 +336,163 @@ func TestPublicKeyAndCommentSizeLimits(t *testing.T) {
 		t.Fatal("wrong SSH comment length limit")
 	}
 }
+
+func TestControlPlaneRejectsUnavailablePaths(t *testing.T) {
+	for _, tc := range []struct{ blocked, want string }{
+		{"project", "open SSH project root"},
+		{"home", "open host SSH parent"},
+		{"home/.ssh", "open host SSH directory"},
+		{"home/.ssh/aptl_lab_key.pub", "check SSH public key path"},
+		{"project/keys", "open SSH directory"},
+		{"project/keys/aptl_lab_key.pub", "write SSH public key file"},
+		{"project/keys/authorized_keys", "write SSH public key file"},
+	} {
+		t.Run(tc.blocked, func(t *testing.T) {
+			root := t.TempDir()
+			project, home := provisioningRoots(t, root, tc.blocked)
+			_, err := EnsureControlPlane(t.Context(), project, home)
+			checkProvisionError(t, err, tc.want)
+		})
+	}
+}
+
+func TestPivotsRejectBlockedAuthorizationPaths(t *testing.T) {
+	for _, tc := range []struct{ blocked, want string }{
+		{"project", "open SSH project root"},
+		{"project/config", "open SSH directory"},
+		{"project/config/lab-ssh", "open SSH directory"},
+		{"project/keys", "open SSH directory"},
+		{"project/config/lab-ssh/kali_pivot_key.pub", "check SSH public key path"},
+		{"project/config/lab-ssh/workstation_pivot_key.pub", "check SSH public key path"},
+		{"project/keys/target_authorized_keys", "write SSH public key file"},
+		{"project/keys/victim_authorized_keys", "write SSH public key file"},
+	} {
+		t.Run(tc.blocked, func(t *testing.T) {
+			root := t.TempDir()
+			project, home := provisioningRoots(t, root, tc.blocked)
+			control, err := EnsureControlPlane(t.Context(), t.TempDir(), home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkProvisionError(t, EnsurePivots(t.Context(), project, control), tc.want)
+		})
+	}
+}
+
+func provisioningRoots(t *testing.T, root, blocked string) (project, home string) {
+	t.Helper()
+	for _, dir := range []string{"project", "home"} {
+		if dir != blocked {
+			if err := os.Mkdir(filepath.Join(root, dir), 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	path := filepath.Join(root, filepath.FromSlash(blocked))
+	blockProvisionPath(t, path, strings.HasSuffix(blocked, ".pub") || strings.HasSuffix(blocked, "authorized_keys"))
+	return filepath.Join(root, "project"), filepath.Join(root, "home", ".ssh")
+}
+
+func blockProvisionPath(t *testing.T, path string, directory bool) {
+	t.Helper()
+	if directory {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("occupied"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProvisioningRejectsCanceledContextOrInvalidIdentity(t *testing.T) {
+	project, home := t.TempDir(), filepath.Join(t.TempDir(), ".ssh")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := EnsureControlPlane(ctx, project, home); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled control-plane provisioning: %v", err)
+	}
+	if err := EnsurePivots(ctx, project, Pair{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled pivot provisioning: %v", err)
+	}
+	checkProvisionError(t, EnsurePivots(t.Context(), project, Pair{}), "invalid operator SSH public key")
+	if _, err := os.Stat(filepath.Join(project, "config")); !os.IsNotExist(err) {
+		t.Fatalf("invalid operator identity reached pivot provisioning: %v", err)
+	}
+}
+
+func TestEnsurePairRejectsInvalidInputs(t *testing.T) {
+	root := t.TempDir()
+	dir, err := securefile.OpenDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { closeTestDir(t, dir) })
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := EnsurePair(ctx, dir, "key", "operator"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled key generation: %v", err)
+	}
+	_, pathErr := EnsurePair(t.Context(), dir, "nested/key", "operator")
+	checkProvisionError(t, pathErr, "invalid SSH private key location")
+	_, commentErr := EnsurePair(t.Context(), dir, "key", "line\nbreak")
+	checkProvisionError(t, commentErr, "invalid SSH key comment")
+	if mkdirErr := os.Mkdir(filepath.Join(root, ".key.lock"), 0o700); mkdirErr != nil {
+		t.Fatal(mkdirErr)
+	}
+	_, lockErr := EnsurePair(t.Context(), dir, "key", "operator")
+	checkProvisionError(t, lockErr, "open SSH key lock")
+}
+
+func TestEnsurePairKeepsInvalidPrivateKey(t *testing.T) {
+	for _, tc := range []struct{ content, want string }{
+		{"malformed", "parse SSH private key"},
+		{strings.Repeat("x", (32<<10)+1), "read SSH private key"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			root := t.TempDir()
+			dir, err := securefile.OpenDir(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { closeTestDir(t, dir) })
+			if err := dir.CreateOwnerRead("key", []byte(tc.content)); err != nil {
+				t.Fatal(err)
+			}
+			_, prepareErr := EnsurePair(t.Context(), dir, "key", "operator")
+			checkProvisionError(t, prepareErr, tc.want)
+			if string(readFixture(t, filepath.Join(root, "key"))) != tc.content {
+				t.Fatal("provisioning replaced an invalid private key")
+			}
+		})
+	}
+}
+
+func TestReadPairRejectsOversizedPublicRecord(t *testing.T) {
+	dir, err := securefile.OpenDir(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { closeTestDir(t, dir) })
+	pair, createErr := EnsurePair(t.Context(), dir, "key", "")
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	data := append(bytes.TrimSpace(pair.Public), bytes.Repeat([]byte{' '}, maxPublicKey)...)
+	if err := dir.Replace("key.pub", data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, loadErr := ReadPair(t.Context(), dir, "key")
+	checkProvisionError(t, loadErr, "read SSH public key")
+}
+
+func checkProvisionError(t *testing.T, err error, want string) {
+	t.Helper()
+	if err == nil || err.Error() != want {
+		t.Fatalf("expected %q, got %v", want, err)
+	}
+}

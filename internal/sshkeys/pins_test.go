@@ -140,10 +140,56 @@ func TestFailedPublicationKeepsPriorPins(t *testing.T) {
 	if err := PublishPins(ctx, project, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled capture: %v", err)
 	}
+	_, loadErr := ReadPins(ctx, project)
+	if !errors.Is(loadErr, context.Canceled) {
+		t.Fatalf("canceled pin load: %v", loadErr)
+	}
+	badHost := endpoint
+	badHost.Host = "*.example.org"
+	for _, candidates := range [][]HostPin{
+		{{endpoint, []byte("invalid wire key")}},
+		{{badHost, key.wire}},
+		{{endpoint, key.wire}, {endpoint, sampleHostKey(t).wire}},
+	} {
+		if PublishPins(t.Context(), project, candidates) == nil {
+			t.Fatal("published invalid captured pins")
+		}
+	}
 	pins, err := ReadPins(t.Context(), project)
 	if err != nil || !bytes.Equal(pins.Key(endpoint), key.wire) {
-		t.Fatalf("canceled capture replaced the trusted pins: %v", err)
+		t.Fatalf("failed capture replaced the trusted pins: %v", err)
 	}
+}
+
+func TestPinStorageRefusesUnavailablePaths(t *testing.T) {
+	for _, tc := range []struct{ name, readError, writeError string }{
+		{"project", "open SSH pin root", "open SSH pin root"},
+		{"project/.aptl", "open SSH directory", "open SSH directory"},
+		{"project/.aptl/known_hosts", "open trusted SSH pin file", "publish SSH pin file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			project := filepath.Join(root, "project")
+			blocked := filepath.Join(root, filepath.FromSlash(tc.name))
+			blockProvisionPath(t, blocked, filepath.Base(blocked) == pinFile)
+			_, loadErr := ReadPins(t.Context(), project)
+			checkProvisionError(t, loadErr, tc.readError)
+			checkProvisionError(t, PublishPins(t.Context(), project, nil), tc.writeError)
+		})
+	}
+}
+
+func TestReadPinsRejectsOversizedSnapshot(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, ".aptl")
+	if err := os.Mkdir(state, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, pinFile), bytes.Repeat([]byte{'\n'}, maxPinFile+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ReadPins(t.Context(), root)
+	checkProvisionError(t, err, "read SSH pin file")
 }
 
 func TestPinSnapshotSizeLimit(t *testing.T) {

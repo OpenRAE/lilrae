@@ -62,7 +62,8 @@ def test_key_files_and_authorization(tmp_path, request):
         control + kali + workstation
     )
     reused = ensure_ssh_keys(keys, host_ssh)
-    assert reused.success and not reused.generated
+    assert reused.success
+    assert not reused.generated
     assert (host_ssh / "aptl_lab_key.pub").read_text(encoding="utf-8") == control
 
 

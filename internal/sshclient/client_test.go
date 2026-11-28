@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -236,5 +238,55 @@ func TestDialSelectsThePinnedHostKeyOnAMultiKeyServer(t *testing.T) {
 			}
 			closeTestTransport(t, client)
 		})
+	}
+}
+
+func TestDialAndProbeRefuseInvalidEndpoint(t *testing.T) {
+	project := t.TempDir()
+	endpoint := sshkeys.Endpoint{Host: "*.example.org", Port: 22, User: "labadmin"}
+	if client, err := Dial(t.Context(), project, endpoint, nil); err == nil || client != nil {
+		t.Fatalf("invalid endpoint reached dial: %v", err)
+	}
+	if key, err := Probe(t.Context(), endpoint, nil); err == nil || key != nil {
+		t.Fatalf("invalid endpoint reached probe: %v", err)
+	}
+}
+
+func TestDialAndProbePreserveCancellation(t *testing.T) {
+	project := t.TempDir()
+	endpoint := localEndpoint(t, listen(t))
+	clientKey := signer(t)
+	writePin(t, project, endpoint, endpoint.Port, signer(t).PublicKey())
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if client, err := Dial(ctx, project, endpoint, clientKey); !errors.Is(err, context.Canceled) || client != nil {
+		t.Fatalf("canceled dial: %v", err)
+	}
+	if key, err := Probe(ctx, endpoint, clientKey); !errors.Is(err, context.Canceled) || key != nil {
+		t.Fatalf("canceled probe: %v", err)
+	}
+}
+
+func TestDialWithPinRequiresClientIdentity(t *testing.T) {
+	project := t.TempDir()
+	endpoint := localEndpoint(t, listen(t))
+	writePin(t, project, endpoint, endpoint.Port, signer(t).PublicKey())
+	client, err := Dial(t.Context(), project, endpoint, nil)
+	if err == nil || !strings.HasSuffix(err.Error(), ": load client authentication key") || client != nil {
+		t.Fatalf("dial without client identity: %v", err)
+	}
+}
+
+func TestPinnedAlgorithmSelection(t *testing.T) {
+	for _, tc := range []struct {
+		keyType string
+		want    []string
+	}{
+		{ssh.CertAlgoRSAv01, []string{ssh.CertAlgoRSASHA512v01, ssh.CertAlgoRSASHA256v01}},
+		{"unknown-algorithm", nil},
+	} {
+		if got := hostAlgorithms(tc.keyType); !slices.Equal(got, tc.want) {
+			t.Errorf("algorithms for %s = %v, want %v", tc.keyType, got, tc.want)
+		}
 	}
 }
