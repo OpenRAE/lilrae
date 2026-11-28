@@ -51,6 +51,7 @@ const (
 	ReasonOpenFailed         Reason = "open_failed"
 	ReasonNotPrivate         Reason = "not_private"
 	ReasonModeNotKept        Reason = "mode_not_kept"
+	ReasonDurability         Reason = "replacement_durability_uncertain"
 )
 
 // Error reports an operation on a path that a rule refused. It holds no file
@@ -144,6 +145,25 @@ func (d *Dir) Open(name string) (*os.File, error) {
 	return d.open("open", name)
 }
 
+// CheckWriteOwner refuses a directory that another unprivileged account can
+// change, including by means of inherited permissions on its children.
+func (d *Dir) CheckWriteOwner() error {
+	return d.h.checkWriteOwner()
+}
+
+// OpenOwned opens a single-link file and checks ownership and access on that
+// same handle. Private files require owner-only access.
+func (d *Dir) OpenOwned(name string, private bool) (*os.File, error) {
+	file, err := d.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if checkErr := checkOwnedAccess(file, private); checkErr != nil {
+		return nil, errors.Join(&Error{Op: "check owner access", Path: name, Reason: ReasonNotPrivate, Err: checkErr}, file.Close())
+	}
+	return file, nil
+}
+
 // ReadFile returns the content of the regular file name.
 func (d *Dir) ReadFile(name string) (data []byte, err error) {
 	file, err := d.open("read", name)
@@ -229,6 +249,18 @@ func (d *Dir) CreateOnce(name string, data []byte) error {
 		return err
 	}
 	return d.h.createOnce("create once", name, parts, data)
+}
+
+// CreateOwnerRead creates name without replacing an existing file. It protects
+// data from the first write and publishes the completed file with the same
+// owner access as RestrictToOwner.
+func (d *Dir) CreateOwnerRead(name string, data []byte) error {
+	const op = "create owner read"
+	parts, err := components(op, name)
+	if err != nil {
+		return err
+	}
+	return d.h.createOwnerRead(op, name, parts, data)
 }
 
 // Replace creates or replaces the file name with the content data and the

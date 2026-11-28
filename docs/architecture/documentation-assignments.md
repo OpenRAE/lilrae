@@ -2845,6 +2845,12 @@ Its reader routes are the architecture index and MkDocs preflight navigation.
 The note records the inspected revision and canonical source paths.
 Verify later edits against those owners and the current Go architecture model.
 
+## Issue #1751 source check
+
+[SSH design](issue-1751-go-ssh-design.md) is an Explanation.
+Its reader routes are the architecture index and MkDocs architecture navigation.
+The design records the Python SSH owners, Go architecture model, and conformance evidence.
+
 ## Non-Markdown source records
 
 | Path or scope | Reader purpose and treatment |

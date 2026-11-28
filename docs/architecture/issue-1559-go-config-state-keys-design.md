@@ -40,10 +40,10 @@ The front matter of that note is the design record of its packages.
    environment as a fallback.
 7. **Verification purpose is explicit.** The one verification path takes the
    roots, the time, the key usage, and the expected names from its caller.
-   Wazuh root aliases and provenance (Go port 19), the SOC names (08d), and
-   the exact issued leaf of the desktop check (Go port 22) stay separate
-   caller policies. Renewal eligibility is
-   not current validity. TLS handshakes stay in `internal/httpclient`.
+   The Wazuh root aliases and provenance belong to Go port 19.
+   Go port 08d owns the SOC names. Go port 22 owns the desktop-issued leaf check.
+   Verification gives separate answers for renewal eligibility and current validity.
+   TLS handshakes stay in `internal/httpclient`.
 8. **Wazuh moves to Go port 19.** The Wazuh certificate generator runs a
    container, and Wazuh is service-specific. Go port 19 (#1570) runs the
    generator, reclaims the old certificate directory, and passes the
@@ -62,6 +62,8 @@ The front matter of that note is the design record of its packages.
 11. **Native SSH keys.** The Python release runs `ssh-keygen -t ed25519`. 08e
     makes the same key type and file formats with `golang.org/x/crypto/ssh`,
     so it needs no process runner.
+    The [#1751 design](issue-1751-go-ssh-design.md)
+    records the SSH trust and file protection decisions.
 12. **PKCS#12 only for a caller.** The SOC CA writes a PKCS#12 keystore when
     a pack output asks for one. ADR-065 names no PKCS#12 module. 08d ports the
     keystore only if a current pack asks for it, and then records the module
@@ -93,10 +95,9 @@ flowchart LR
     client -- SSH session --> sshd
 ```
 
-The assets are the operator secrets in `.env`, the generated secrets, the CA
-private key, the service private keys, the SSH private keys, and the host key
-pins. ADR-029 classes each of them as an operator secret, except the public
-keys and pins.
+The assets include the operator secrets in `.env` and the generated secrets.
+They also include the CA, service, and SSH private keys, and the host key pins.
+ADR-029 classifies the public keys and pins as public. It classifies the other assets as operator secrets.
 
 | Threat | Mitigation |
 | --- | --- |

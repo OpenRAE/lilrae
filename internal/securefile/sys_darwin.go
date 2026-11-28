@@ -19,13 +19,18 @@ func statMode(st *unix.Stat_t) uint32 {
 // chmodLeaf sets the mode of the regular file leaf under parent. It needs no
 // access to the content of the file: fchmodat with AT_SYMLINK_NOFOLLOW
 // changes the entry itself and follows no link.
-func chmodLeaf(op, path string, parent int, leaf string, perm uint32) error {
+func chmodLeaf(op, path string, parent int, leaf string, perm uint32, requireOwner bool) error {
 	var st unix.Stat_t
 	if err := lstatat(parent, leaf, &st); err != nil {
 		return componentError(op, path, parent, leaf, err)
 	}
 	if err := regularEntry(op, path, statMode(&st)); err != nil {
 		return err
+	}
+	if requireOwner {
+		if err := checkOwnedLeaf(op, path, &st); err != nil {
+			return err
+		}
 	}
 	chmodErr := fchmodat(parent, leaf, perm, unix.AT_SYMLINK_NOFOLLOW)
 	var after unix.Stat_t

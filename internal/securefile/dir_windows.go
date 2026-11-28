@@ -286,7 +286,11 @@ func (h dirHandle) chmod(op, path string, parts []string, perm fs.FileMode) erro
 
 func (h dirHandle) restrictToOwner(op, path string, parts []string) error {
 	return h.withMetadata(op, path, parts, windows.READ_CONTROL|windows.WRITE_DAC, func(file *os.File) error {
-		return failure(op, path, setOwnerOnlyACL(windows.Handle(file.Fd())))
+		handle := windows.Handle(file.Fd())
+		if err := checkOwnedFile(handle); err != nil {
+			return &Error{Op: op, Path: path, Reason: ReasonNotPrivate, Err: err}
+		}
+		return failure(op, path, setOwnerOnlyACL(handle))
 	})
 }
 
@@ -334,25 +338,10 @@ func openEntry(op, path string, parent *os.Root, leaf string, access, dispositio
 		return nil, failure(op, path, err)
 	}
 	defer func() { err = errors.Join(err, failure(op, path, dir.Close())) }()
-	name, err := windows.NewNTUnicodeString(leaf)
+	file, err = openRelative(windows.Handle(dir.Fd()), leaf, access, disposition, nil)
 	if err != nil {
-		return nil, failure(op, path, err)
+		return nil, componentError(op, path, parent, leaf, err)
 	}
-	attrs := windows.OBJECT_ATTRIBUTES{
-		RootDirectory: windows.Handle(dir.Fd()),
-		ObjectName:    name,
-		Attributes:    windows.OBJ_CASE_INSENSITIVE,
-	}
-	attrs.Length = uint32(unsafe.Sizeof(attrs))
-	var handle windows.Handle
-	var status windows.IO_STATUS_BLOCK
-	err = windows.NtCreateFile(&handle, access|windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE, &attrs, &status, nil, 0,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, disposition,
-		windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
-	if err != nil {
-		return nil, componentError(op, path, parent, leaf, ntError(err))
-	}
-	file = os.NewFile(uintptr(handle), leaf)
 	info, err := file.Stat()
 	if err == nil && isLink(info) {
 		err = &Error{Op: op, Path: path, Reason: ReasonSymlink}
@@ -361,6 +350,29 @@ func openEntry(op, path string, parent *os.Root, leaf string, access, dispositio
 		return nil, errors.Join(failure(op, path, err), failure(op, path, file.Close()))
 	}
 	return file, nil
+}
+
+func openRelative(dir windows.Handle, leaf string, access, disposition uint32, security *windows.SECURITY_DESCRIPTOR) (*os.File, error) {
+	name, err := windows.NewNTUnicodeString(leaf)
+	if err != nil {
+		return nil, fmt.Errorf("encode native file name: %w", err)
+	}
+	attrs := windows.OBJECT_ATTRIBUTES{
+		RootDirectory:      dir,
+		ObjectName:         name,
+		Attributes:         windows.OBJ_CASE_INSENSITIVE,
+		SecurityDescriptor: security,
+	}
+	attrs.Length = uint32(unsafe.Sizeof(attrs))
+	var handle windows.Handle
+	var status windows.IO_STATUS_BLOCK
+	err = windows.NtCreateFile(&handle, access|windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE, &attrs, &status, nil, 0,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, disposition,
+		windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
+	if err != nil {
+		return nil, ntError(err)
+	}
+	return os.NewFile(uintptr(handle), leaf), nil
 }
 
 // ntError returns the Win32 error of an NTSTATUS, which the os package and
@@ -388,12 +400,25 @@ func regularInfo(op, path string, info fs.FileInfo) error {
 // current user read it, as `icacls <file> /inheritance:r /grant:r <user>:R`
 // does in core/ssh.py.
 func setOwnerOnlyACL(handle windows.Handle) error {
+	acl, err := currentUserACL(windows.FILE_GENERIC_READ)
+	if err != nil {
+		return err
+	}
+	err = windows.SetSecurityInfo(handle, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
+	if err != nil {
+		return fmt.Errorf("set owner-only DACL: %w", err)
+	}
+	return nil
+}
+
+func currentUserACL(access windows.ACCESS_MASK) (*windows.ACL, error) {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
-		return fmt.Errorf("GetTokenUser: %w", err)
+		return nil, fmt.Errorf("GetTokenUser: %w", err)
 	}
 	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
-		AccessPermissions: windows.FILE_GENERIC_READ,
+		AccessPermissions: access,
 		AccessMode:        windows.SET_ACCESS,
 		Inheritance:       windows.NO_INHERITANCE,
 		Trustee: windows.TRUSTEE{
@@ -403,14 +428,9 @@ func setOwnerOnlyACL(handle windows.Handle) error {
 		},
 	}}, nil)
 	if err != nil {
-		return fmt.Errorf("SetEntriesInAcl: %w", err)
+		return nil, fmt.Errorf("build current user DACL: %w", err)
 	}
-	err = windows.SetSecurityInfo(handle, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
-	if err != nil {
-		return fmt.Errorf("SetSecurityInfo: %w", err)
-	}
-	return nil
+	return acl, nil
 }
 
 func (h dirHandle) remove(op, path string, parts []string) (err error) {

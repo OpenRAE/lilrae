@@ -396,7 +396,7 @@ func TestALeafSwappedForALinkIsReplacedNotFollowed(t *testing.T) {
 	mkdir(t, root, "env")
 	parent, leaf := openParent(t, d, "env/node.env")
 	symlink(t, root, filepath.Join(root, "outside.txt"), "env/node.env")
-	if err := publish("replace", "env/node.env", parent, leaf, []byte("NEW=1\n"), 0o600); err != nil {
+	if err := publish("replace", "env/node.env", parent, leaf, []byte("NEW=1\n"), 0o600, fsync); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, root, "outside.txt"); got != "keep" {
@@ -418,7 +418,7 @@ func TestADirectorySwappedMidWriteKeepsTheWriteInTheOpenedOne(t *testing.T) {
 	parent, leaf := openParent(t, d, "env/node.env")
 	rename(t, root, "env", "moved")
 	symlink(t, root, "outside", "env")
-	if err := publish("replace", "env/node.env", parent, leaf, []byte("NEW=1\n"), 0o600); err != nil {
+	if err := publish("replace", "env/node.env", parent, leaf, []byte("NEW=1\n"), 0o600, fsync); err != nil {
 		t.Fatal(err)
 	}
 	if got := names(t, root, "outside"); len(got) != 0 {
@@ -452,7 +452,7 @@ func TestAFailedRenameRemovesTheTemporaryFile(t *testing.T) {
 	mkdir(t, root, "env")
 	parent, leaf := openParent(t, d, "env/node.env")
 	writeFile(t, root, "env/node.env/inside", "x")
-	err := publish("replace", "env/node.env", parent, leaf, []byte("NEW=1\n"), 0o600)
+	err := publish("replace", "env/node.env", parent, leaf, []byte("NEW=1\n"), 0o600, fsync)
 	if err == nil {
 		t.Fatal("publish() = nil, want the error of the rename onto a directory")
 	}
@@ -505,11 +505,40 @@ func TestAClosedDirNeverReachesAReusedDescriptor(t *testing.T) {
 	if err := sub.CreateOnce("planted", []byte("x")); err == nil {
 		t.Fatal("CreateOnce() through a closed Dir = nil, want an error")
 	}
+	if err := sub.CheckWriteOwner(); err == nil {
+		t.Fatal("CheckWriteOwner() through a closed Dir = nil, want an error")
+	}
 	if got := names(t, other, "."); len(got) != 1 {
 		t.Errorf("the other directory holds %q, want only its own file", got)
 	}
 	if got := names(t, root, "sub"); len(got) != 0 {
 		t.Errorf("the closed directory holds %q, want nothing", got)
+	}
+}
+
+func TestOwnerCheckRetainsTheDirectoryWhileClosing(t *testing.T) {
+	_, dir := newTree(t)
+	sub, err := dir.MakeSubdir("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := int(sub.h.f.Fd())
+	called := false
+	err = sub.h.checkDirectoryAccess(func(fd int) error {
+		called = true
+		if closeErr := sub.Close(); closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		if fd == original {
+			t.Fatal("the check used the released descriptor")
+		}
+		return checkUnixAccess(fd, groupOrOtherWrite, false)
+	})
+	if err != nil {
+		t.Fatalf("closed original interrupted the owner check: %v", err)
+	}
+	if !called {
+		t.Fatal("owner verification did not run")
 	}
 }
 
@@ -600,5 +629,18 @@ func TestIgnoringEINTR(t *testing.T) {
 	})
 	if fd != 7 || err != nil || calls != 2 {
 		t.Errorf("ignoringEINTR2() = %d, %v after %d calls, want 7, nil after 2", fd, err, calls)
+	}
+}
+
+func TestPublishReportsDurabilityFailureAfterReplacingTheFile(t *testing.T) {
+	root, d := newTree(t)
+	writeFile(t, root, "key", "old")
+	parent, leaf := openParent(t, d, "key")
+	err := publish("replace", "key", parent, leaf, []byte("new"), 0o600, func(int) error {
+		return unix.EIO
+	})
+	wantReason(t, err, ReasonDurability)
+	if got := readFile(t, root, "key"); got != "new" {
+		t.Fatalf("replacement not visible after sync failed: %q", got)
 	}
 }

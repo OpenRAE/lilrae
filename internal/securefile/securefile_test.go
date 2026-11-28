@@ -455,6 +455,15 @@ func TestCreateOnce(t *testing.T) {
 	wantReason(t, d.CreateOnce("a/./x", nil), ReasonDotComponent)
 }
 
+func TestProtectRefusesPrivateKeyWithAnotherHardLink(t *testing.T) {
+	root, d := newTree(t)
+	writeFile(t, root, "key", "secret")
+	if err := os.Link(filepath.Join(root, "key"), filepath.Join(root, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	wantReason(t, d.RestrictToOwner("key"), ReasonNotPrivate)
+}
+
 func TestReplace(t *testing.T) {
 	root, d := newTree(t)
 	for _, content := range []string{"first", "second"} {
@@ -707,4 +716,36 @@ func TestOpenRefusesADanglingLink(t *testing.T) {
 	wantReason(t, err, ReasonSymlink)
 	_, err = d.Subdir("dangling")
 	wantReason(t, err, ReasonSymlink)
+}
+
+func TestOpenOwnedChecksTheHandle(t *testing.T) {
+	root, dir := newTree(t)
+	if file, err := dir.OpenOwned("absent", false); err == nil || file != nil {
+		t.Fatal("accepted an absent file")
+	}
+	writeFile(t, root, "private", "fixture")
+	file, err := dir.OpenOwned("private", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, file)
+	if err := os.Link(filepath.Join(root, "private"), filepath.Join(root, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	if alias, openErr := dir.OpenOwned("alias", false); !IsReason(openErr, ReasonNotPrivate) || alias != nil {
+		t.Fatalf("accepted a file with another link: %v", openErr)
+	}
+}
+
+func TestCreateOwnerReadRejectsInvalidPath(t *testing.T) {
+	_, dir := newTree(t)
+	wantReason(t, dir.CreateOwnerRead("../key", nil), ReasonTraversal)
+	if err := dir.CreateOwnerRead("key", []byte("fixture")); err != nil {
+		t.Fatal(err)
+	}
+	file, err := dir.OpenOwned("key", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, file)
 }

@@ -119,7 +119,7 @@ components:
     packages: [internal/httpclient]
   - name: secure-file
     layer: foundation
-    responsibility: Resolves a trusted directory path, and opens, writes, and removes files below it without following links, with final file modes.
+    responsibility: Resolves a trusted directory path and manages files below it without following links, with explicit modes and owner access.
     packages: [internal/securefile]
     modules: [golang.org/x/sys]
   - name: file-lock
@@ -139,6 +139,24 @@ components:
     responsibility: Names the .aptl project state layout, finds the lifecycle project root, and takes the lifecycle locks.
     packages: [internal/projectstate]
     uses: [configuration, secure-file, file-lock]
+  - name: ssh-material
+    layer: core
+    responsibility: Generates SSH client keys, prepares public authorization files, and stores SSH server host key pins.
+    packages: [internal/sshkeys]
+    uses: [project-state, secure-file, file-lock]
+    modules: [golang.org/x/crypto]
+  - name: ssh-client
+    layer: adapters
+    responsibility: Connects to lab SSH servers for startup capture and verifies server identity for sessions.
+    packages: [internal/sshclient]
+    uses: [ssh-material]
+    modules: [golang.org/x/crypto]
+  - name: ssh-startup
+    layer: application
+    responsibility: Collects SSH host keys from admitted endpoints and publishes one startup snapshot.
+    packages: [internal/sshstartup]
+    uses: [ssh-material]
+    modules: [golang.org/x/crypto]
   - name: conformance-suite
     layer: tools
     responsibility: Runs the black-box contract cases against an installed lilrae binary.
