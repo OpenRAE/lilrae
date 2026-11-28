@@ -3174,6 +3174,7 @@ def _step_activate_operator_access(ctx: _LabStartContext) -> LabResult | None:
         accesses,
         operator_public_key=_operator_public_key(ctx),
         operator_key_path=ctx.ssh_key_path,
+        progress=ctx.progress,
     )
     for failure in failures:
         log.error("Operator access failed: %s", failure)

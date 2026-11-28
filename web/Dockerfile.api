@@ -53,5 +53,6 @@ EXPOSE 8400
 # single-worker by design (the launch-token, session, and terminal-ticket stores
 # are in-process); it exposes no --workers flag, so passing one crash-loops the
 # container. --api-only is deliberate: this container serves only the JSON API;
-# the sibling aptl-web-ui (Caddy) container serves the built GUI.
-CMD ["lilrae", "web", "serve", "--host", "0.0.0.0", "--port", "8400", "--api-only"]
+# the sibling aptl-web-ui (Caddy) container serves the built GUI. --verbose
+# keeps the API's INFO log lines; without it, lilrae logs only warnings and errors.
+CMD ["lilrae", "--verbose", "web", "serve", "--host", "0.0.0.0", "--port", "8400", "--api-only"]

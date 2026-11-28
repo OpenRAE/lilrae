@@ -7,6 +7,7 @@ output. The tree has one package for each layer and two adapters.
 
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 from types import ModuleType
 
@@ -54,6 +55,11 @@ def check() -> ModuleType:
     return module
 
 
+@pytest.fixture(autouse=True)
+def _no_base_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LILRAE_ARCHITECTURE_BASE", raising=False)
+
+
 def _table(**overrides: object) -> dict[str, object]:
     table: dict[str, object] = {
         "enrolled": [],
@@ -86,6 +92,14 @@ def _toml(table: dict[str, object]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _write(tmp_path: Path, files: dict[str, str], table: dict[str, object]) -> None:
+    for name, text in files.items():
+        path = tmp_path / "src" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(_toml(_table(**table)), encoding="utf-8")
+
+
 def _run(
     check: ModuleType,
     capsys: pytest.CaptureFixture[str],
@@ -93,12 +107,38 @@ def _run(
     changes: dict[str, str] | None = None,
     **table: object,
 ) -> tuple[int, str]:
-    for name, text in {**CLEAN, **(changes or {})}.items():
-        path = tmp_path / "src" / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    (tmp_path / "pyproject.toml").write_text(_toml(_table(**table)), encoding="utf-8")
+    _write(tmp_path, {**CLEAN, **(changes or {})}, table)
     status = check.main(["--root", str(tmp_path)])
+    captured = capsys.readouterr()
+    return status, captured.out + captured.err
+
+
+def _git(root: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", *args], cwd=root, check=True, capture_output=True, text=True
+    )
+    return result.stdout.strip()
+
+
+def _run_changed(
+    check: ModuleType,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    before: dict[str, str],
+    after: dict[str, str],
+    **table: object,
+) -> tuple[int, str]:
+    """Commit the clean tree with ``before``, stage ``after``, and check against that commit."""
+    _write(tmp_path, {**CLEAN, **before}, table)
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "ci")
+    _git(tmp_path, "config", "user.email", "ci@example.invalid")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _write(tmp_path, after, table)
+    _git(tmp_path, "add", "-A")
+    status = check.main(["--root", str(tmp_path), "--base", base])
     captured = capsys.readouterr()
     return status, captured.out + captured.err
 
@@ -352,3 +392,106 @@ def test_the_check_imports_no_project_code_and_prints_no_source_text(
     assert status == 1
     assert "demo.core.explodes -> demo.app.service (line 1)" in output
     assert "TOKEN-1510" not in output
+
+
+LEGACY = "from demo.store import disk\n\nNAME = disk.NAME\n"
+
+
+def test_a_new_violation_outside_enrolled_code_fails_against_a_base(
+    check: ModuleType, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    status, output = _run_changed(check, capsys, tmp_path, {}, {"demo/core/legacy.py": LEGACY})
+
+    assert status == 1
+    assert (
+        "src/demo/core/legacy.py:1: core code must not import adapters:store: demo.core.legacy -> demo.store.disk"
+        in output
+    )
+
+
+def test_an_old_violation_on_unchanged_lines_passes(
+    check: ModuleType, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    after = {"demo/core/legacy.py": LEGACY + "OTHER = 1\n"}
+
+    status, output = _run_changed(check, capsys, tmp_path, {"demo/core/legacy.py": LEGACY}, after)
+
+    assert status == 0, output
+    assert "1 changed files outside enrolled code, 0 findings on changed lines" in output
+
+
+def test_a_changed_line_in_a_multi_line_import_counts_for_the_whole_statement(
+    check: ModuleType, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    before = {"demo/core/legacy.py": "from demo import (\n    base,\n)\n\nNAME = base\n"}
+    after = {"demo/core/legacy.py": "from demo import (\n    base,\n    store,\n)\n\nNAME = (base, store)\n"}
+
+    status, output = _run_changed(check, capsys, tmp_path, before, after)
+
+    assert status == 1
+    assert "src/demo/core/legacy.py:1: core code must not import adapters:store: demo.core.legacy -> demo.store" in output
+
+
+def test_private_imports_typer_defaults_and_ruff_findings_count_on_changed_lines_only(
+    check: ModuleType, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    old = (
+        "from typing import Optional\n\nimport typer\n\nfrom json import _default_decoder\n\n\n"
+        "def run(name: Optional[str] = typer.Option(None)) -> None:\n    print(name, _default_decoder)\n"
+    )
+    before = {"demo/entry/old.py": old, "demo/entry/touched.py": old}
+    after = {"demo/entry/touched.py": old + "\n\ndef added(name: Optional[str] = typer.Option(None)) -> None:\n"
+             "    from json import _default_encoder\n\n    print(name, _default_encoder)\n"}
+
+    status, output = _run_changed(check, capsys, tmp_path, before, after, **{"ruff-select": ["UP"]})
+
+    assert status == 1
+    assert "src/demo/entry/touched.py:12: Typer parameter of added is not in the Annotated style" in output
+    assert "src/demo/entry/touched.py:13: imports private name _default_encoder from json" in output
+    assert "src/demo/entry/touched.py:12: UP045" in output
+    assert "touched.py:5:" not in output
+    assert "touched.py:8:" not in output
+    assert "old.py" not in output
+
+
+def test_enrolled_code_is_not_reported_twice_against_a_base(
+    check: ModuleType, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    status, output = _run_changed(
+        check, capsys, tmp_path, {}, {"demo/core/legacy.py": LEGACY}, enrolled=["demo.core.legacy"]
+    )
+
+    assert status == 1
+    assert "reached from 1 enrolled module(s)" in output
+    assert "src/demo/core/legacy.py:1:" not in output
+    assert "0 changed files outside enrolled code" in output
+
+
+def test_a_base_that_git_cannot_resolve_fails_visibly(
+    check: ModuleType, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    _write(tmp_path, CLEAN, {})
+    _git(tmp_path, "init", "-q")
+
+    assert check.main(["--root", str(tmp_path), "--base", "not-a-revision"]) == 2
+    assert "cannot diff against base revision not-a-revision" in capsys.readouterr().err
+
+
+def test_the_base_comes_from_the_environment(
+    check: ModuleType, capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(tmp_path, CLEAN, {})
+    _git(tmp_path, "init", "-q")
+    monkeypatch.setenv("LILRAE_ARCHITECTURE_BASE", "not-a-revision")
+
+    assert check.main(["--root", str(tmp_path)]) == 2
+    assert "not-a-revision" in capsys.readouterr().err
+
+
+def test_without_a_base_changed_lines_are_not_checked(
+    check: ModuleType, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    status, output = _run(check, capsys, tmp_path, {"demo/core/legacy.py": LEGACY})
+
+    assert status == 0, output
+    assert "no base revision" in output

@@ -16,7 +16,7 @@ import shutil
 import socket
 import subprocess
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING
 
 from aptl.core.deployment._operator_access_endpoints import (
@@ -64,20 +64,27 @@ _TRANSPORT_FAILURE_MARKERS = (
 )
 
 
-def _log_published_access(
+def report_published_access(
     accesses: Sequence["DeploymentOperatorAccess"],
+    progress: Callable[[str], None] | None,
 ) -> None:
-    """Record where each proven access is reachable from the operator's host."""
+    """Say where each proven access is reachable from the operator's host.
+
+    The port is the one host-port resolution selected, so a remap away from a
+    collision shows the port the operator must use, not the default. The line
+    is logged at INFO and also goes to ``progress`` when the caller passes it,
+    because the CLI hides INFO by default and the operator needs this port.
+    """
 
     for access in accesses:
-        endpoint = OPERATOR_ACCESS_ENDPOINTS[access.target_node]
-        log.info(
-            "Operator access %s (%s to %s) published on 127.0.0.1:%d",
-            access.access_id,
-            access.channel,
-            access.target_node,
-            resolved_host_port(endpoint),
+        line = (
+            f"Operator access {access.access_id} ({access.channel} to "
+            f"{access.target_node}) published on {_LOOPBACK}:"
+            f"{resolved_host_port(OPERATOR_ACCESS_ENDPOINTS[access.target_node])}"
         )
+        log.info("%s", line)
+        if progress is not None:
+            progress(line)
 
 
 def _prove_endpoints(

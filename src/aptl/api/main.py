@@ -1,5 +1,6 @@
 """FastAPI application factory for the APTL web API."""
 
+import logging
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -43,7 +44,11 @@ def resolve_spa_file(web_root: Path, full_path: str) -> Path:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    setup_logging()
+    # `lilrae web serve` sets the log level before it loads the app; keep it.
+    # A process that loads the app without the CLI, such as a uvicorn reload
+    # worker, has no handler yet and gets the API default.
+    if not logging.getLogger("aptl").handlers:
+        setup_logging()
     log.info("Creating APTL web API application")
 
     # logs CRITICAL and returns None when APTL_API_TOKEN is absent

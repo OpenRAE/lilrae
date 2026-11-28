@@ -131,6 +131,29 @@ snapshot with `timestamp`, `software`, `containers`, `wazuh_rules`, `networks`,
 `config_hashes`, `services`, and `ssh`. It exits with status 1 when the
 snapshot cannot be captured.
 
+## Logging
+
+The CLI writes log lines to standard error, never to standard output, so the
+`--json` object stays alone on standard output. By default it logs warnings and
+errors only. Pass `--verbose` before the command group to add INFO lines, or
+pass it twice to add DEBUG lines:
+
+```shell
+lilrae --verbose lab start
+lilrae --verbose --verbose lab start
+```
+
+`lilrae web serve` keeps this level for the web API. The `aptl-web-api`
+container passes `--verbose`, so it logs INFO lines. With `--reload`, a
+separate worker process loads the web API, and that worker logs DEBUG lines.
+
+Lines an operator needs at the default level are printed, not logged. Once
+`lilrae lab start` proves a declared operator SSH access, it prints
+`[lab start] Operator access <id> (<channel> to <node>) published on
+127.0.0.1:<port>`. The port is the one the start selected, so a port remapped
+away from a collision shows here. With `--json`, this line goes to standard
+error with the rest of the start progress.
+
 ## Destructive And Emergency Operations
 
 `lilrae lab reset` and `lilrae lab stop -v` are the supported full cleanup for one

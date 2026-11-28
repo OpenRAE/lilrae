@@ -16,15 +16,24 @@ checks the enrolled code for:
 * a Typer parameter that does not use the ``Annotated`` style;
 * a finding of the Ruff rules in ``ruff-select``.
 
+With a base revision (``--base`` or ``LILRAE_ARCHITECTURE_BASE``), the check
+also holds the changed lines of every other module to the same rules. It diffs
+the working tree against the merge base of the base revision and ``HEAD``. A
+layer finding counts when a changed line is in its import statement. Any other
+finding counts when its own line changed. Untracked files are not checked.
+
 grimp builds the import graph from the source text. The check imports no
 project code, and it reports module names, paths, lines, and rules only.
 
-Usage: ``python tools/check_architecture.py [--root PATH]``
+Usage: ``python tools/check_architecture.py [--root PATH] [--base REVISION]``
 """
 
 import argparse
 import ast
 import importlib
+import json
+import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -46,6 +55,8 @@ _MAY_IMPORT = {
 }
 _SETTINGS = frozenset({"enrolled", "extension-api", "layers", "ruff-select", "ruff-ignore"})
 _TYPER_PARAMETERS = frozenset({"Argument", "Option"})
+_BASE_VARIABLE = "LILRAE_ARCHITECTURE_BASE"
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
 class ConfigError(Exception):
@@ -344,10 +355,14 @@ def source_findings(root: Path, modules: Iterable[str], known: set[str]) -> Iter
     for module in sorted(modules):
         path = module_path(root, module)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        package = module if path.name == "__init__.py" else module.rpartition(".")[0]
         relative = path.relative_to(root)
-        for line, problem in sorted((*_private_imports(tree, package, known), *_typer_defaults(tree))):
+        for line, problem in _source_problems(tree, module, path, known):
             yield f"{relative}:{line}: {problem}"
+
+
+def _source_problems(tree: ast.Module, module: str, path: Path, known: set[str]) -> list[tuple[int, str]]:
+    package = module if path.name == "__init__.py" else module.rpartition(".")[0]
+    return sorted((*_private_imports(tree, package, known), *_typer_defaults(tree)))
 
 
 def _is_private(name: str) -> bool:
@@ -358,15 +373,15 @@ def _private_imports(tree: ast.Module, package: str, known: set[str]) -> Iterato
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                yield from _internal_module(alias.name, package, node.lineno)
+                yield from _internal_module(alias.name, package, alias.lineno)
         elif isinstance(node, ast.ImportFrom):
             base = _absolute(node, package)
             yield from _internal_module(base, package, node.lineno)
             for alias in node.names:
                 if f"{base}.{alias.name}" in known:
-                    yield from _internal_module(f"{base}.{alias.name}", package, node.lineno)
+                    yield from _internal_module(f"{base}.{alias.name}", package, alias.lineno)
                 elif _is_private(alias.name):
-                    yield node.lineno, f"imports private name {alias.name} from {base}"
+                    yield alias.lineno, f"imports private name {alias.name} from {base}"
 
 
 def _absolute(node: ast.ImportFrom, package: str) -> str:
@@ -409,36 +424,114 @@ def _is_typer_call(node: ast.expr | None, modules: set[str], functions: set[str]
     return isinstance(called, ast.Name) and called.id in functions
 
 
+def _ruff(root: Path, settings: Settings, paths: Iterable[str], output_format: str) -> subprocess.CompletedProcess[str]:
+    command = [sys.executable, "-m", "ruff", "check", "--no-fix", "--output-format", output_format]
+    command += ["--select", ",".join(settings.ruff_select)]
+    if settings.ruff_ignore:
+        command += ["--ignore", ",".join(settings.ruff_ignore)]
+    return subprocess.run([*command, "--", *paths], cwd=root, check=False, capture_output=True, text=True)
+
+
 def ruff_status(root: Path, settings: Settings) -> int:
     """Run the Ruff rules of ``settings`` on the enrolled files; return Ruff's status."""
     paths = []
     for name in settings.enrolled:
         path = module_path(root, name)
         paths.append(str((path.parent if path.name == "__init__.py" else path).relative_to(root)))
-    command = [sys.executable, "-m", "ruff", "check", "--no-fix", "--output-format", "concise"]
-    command += ["--select", ",".join(settings.ruff_select)]
-    if settings.ruff_ignore:
-        command += ["--ignore", ",".join(settings.ruff_ignore)]
-    result = subprocess.run([*command, "--", *paths], cwd=root, check=False, capture_output=True, text=True)
+    result = _ruff(root, settings, paths, "concise")
     print(result.stdout, end="")
     print(result.stderr, end="", file=sys.stderr)
     return result.returncode
 
 
-def check(root: Path) -> int:
-    """Run every check on the repository at ``root`` and return the exit status."""
-    try:
-        settings = load_settings(root)
-        graph = build_graph(root, settings.roots)
-        slots = assign_slots(graph, settings)
-    except ConfigError as error:
-        print(f"check_architecture: configuration error: {error}", file=sys.stderr)
-        return 2
-    print(f"check_architecture: the layer map assigns {len(slots)} modules.")
+def changed_lines(root: Path, base: str) -> dict[Path, frozenset[int]]:
+    """Return the changed lines of each Python file under ``src`` since the merge base with ``base``."""
+    command = ["git", "-c", "core.quotePath=false", "diff", "--merge-base", "--no-renames", "--no-ext-diff"]
+    command += ["--no-textconv", "--no-color", "--unified=0", "--src-prefix=a/", "--dst-prefix=b/", base, "--", "src"]
+    result = subprocess.run(command, cwd=root, check=False, capture_output=True, text=True)
+    if result.returncode:
+        raise ConfigError(f"cannot diff against base revision {base}: {result.stderr.strip()}")
+    lines: dict[Path, set[int]] = {}
+    current: set[int] | None = None
+    for text in result.stdout.splitlines():
+        if text.startswith("+++ "):
+            name = text.removeprefix("+++ ")
+            python = name.startswith("b/") and name.endswith(".py")
+            current = lines.setdefault(Path(name.removeprefix("b/")), set()) if python else None
+        elif current is not None and (hunk := _HUNK.match(text)):
+            start = int(hunk[1])
+            current.update(range(start, start + int(hunk[2] or 1)))
+    return {path: frozenset(numbers) for path, numbers in lines.items() if numbers}
+
+
+def _module_name(path: Path) -> str:
+    parts = path.relative_to("src").with_suffix("").parts
+    return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+
+
+def _layer_problems(
+    graph: grimp.ImportGraph, slots: Mapping[str, Slot], api: Iterable[str], module: str, tree: ast.Module
+) -> Iterator[tuple[int, int, str]]:
+    """Yield the first line, the last line, and the problem of each direct import that breaks a layer rule."""
+    origin = slots.get(module)
+    if origin is None:
+        return
+    statements = (node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom)))
+    ends = {node.lineno: node.end_lineno or node.lineno for node in statements}
+    for target in sorted(graph.find_modules_directly_imported_by(module)):
+        if may_import(origin, slots.get(target), target, api):
+            continue
+        for detail in graph.get_import_details(importer=module, imported=target):
+            line = detail["line_number"]
+            yield line, ends.get(line, line), f"{origin} code must not import {slots[target]}: {module} -> {target}"
+
+
+def changed_line_findings(
+    root: Path,
+    graph: grimp.ImportGraph,
+    slots: Mapping[str, Slot],
+    settings: Settings,
+    changed: Mapping[Path, frozenset[int]],
+) -> Iterator[str]:
+    """Report each layer, private import, and Typer finding on a changed line."""
+    known = set(graph.modules)
+    for path, lines in sorted(changed.items()):
+        module = _module_name(path)
+        if module not in known:
+            continue
+        tree = ast.parse((root / path).read_text(encoding="utf-8"), filename=str(path))
+        problems = [*_layer_problems(graph, slots, settings.extension_api, module, tree)]
+        problems += [(line, line, problem) for line, problem in _source_problems(tree, module, path, known)]
+        for start, end, problem in sorted(problems):
+            if not lines.isdisjoint(range(start, end + 1)):
+                yield f"{path}:{start}: {problem}"
+
+
+def ruff_changed_line_findings(
+    root: Path, settings: Settings, changed: Mapping[Path, frozenset[int]]
+) -> tuple[list[str], int]:
+    """Return the Ruff findings on changed lines and Ruff's status when Ruff itself failed."""
+    if not changed:
+        return [], 0
+    result = _ruff(root, settings, (str(path) for path in sorted(changed)), "json")
+    if result.returncode > 1:
+        print(result.stderr, end="", file=sys.stderr)
+        return [], result.returncode
+    findings = []
+    for item in json.loads(result.stdout or "[]"):
+        path = Path(item["filename"]).resolve().relative_to(root)
+        row = item["location"]["row"]
+        if row in changed.get(path, frozenset()):
+            findings.append(f"{path}:{row}: {item['code']} {item['message']}")
+    return findings, 0
+
+
+def _check_enrolled(root: Path, graph: grimp.ImportGraph, slots: Mapping[str, Slot], settings: Settings) -> bool:
+    """Run every check on enrolled code; return whether it failed."""
     sources = enrolled_modules(graph, settings)
     if not sources:
         print("check_architecture: no code is enrolled, so no module checks ran.")
-        return 0
+        return False
     findings = [
         *layer_findings(graph, slots, sources, settings.extension_api),
         *module_cycle_findings(graph, sources),
@@ -449,13 +542,60 @@ def check(root: Path) -> int:
         print(finding)
     status = ruff_status(root, settings)
     print(f"check_architecture: {len(sources)} enrolled modules, {len(findings)} findings, Ruff exit status {status}.")
-    return 1 if findings or status else 0
+    return bool(findings or status)
+
+
+def _check_changed(
+    root: Path,
+    graph: grimp.ImportGraph,
+    slots: Mapping[str, Slot],
+    settings: Settings,
+    changed: Mapping[Path, frozenset[int]] | None,
+) -> bool:
+    """Check the changed lines of the modules that are not enrolled; return whether they failed."""
+    if changed is None:
+        print(f"check_architecture: no base revision (--base or {_BASE_VARIABLE}), so changed lines were not checked.")
+        return False
+    enrolled = enrolled_modules(graph, settings)
+    others = {path: lines for path, lines in changed.items() if _module_name(path) not in enrolled}
+    findings = [*changed_line_findings(root, graph, slots, settings, others)]
+    ruff_findings, status = ruff_changed_line_findings(root, settings, others)
+    findings += ruff_findings
+    for finding in findings:
+        print(finding)
+    print(
+        f"check_architecture: {len(others)} changed files outside enrolled code, "
+        f"{len(findings)} findings on changed lines, Ruff exit status {status}."
+    )
+    return bool(findings or status)
+
+
+def check(root: Path, base: str | None = None) -> int:
+    """Run every check on the repository at ``root`` and return the exit status."""
+    try:
+        settings = load_settings(root)
+        graph = build_graph(root, settings.roots)
+        slots = assign_slots(graph, settings)
+        changed = changed_lines(root, base) if base else None
+    except ConfigError as error:
+        print(f"check_architecture: configuration error: {error}", file=sys.stderr)
+        return 2
+    print(f"check_architecture: the layer map assigns {len(slots)} modules.")
+    enrolled_failed = _check_enrolled(root, graph, slots, settings)
+    changed_failed = _check_changed(root, graph, slots, settings, changed)
+    return 1 if enrolled_failed or changed_failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check enrolled code against ADR-064.")
+    parser = argparse.ArgumentParser(description="Check code against ADR-064.")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    return check(parser.parse_args(argv).root.resolve())
+    parser.add_argument(
+        "--base",
+        default=os.environ.get(_BASE_VARIABLE) or None,
+        help=f"Also check the changed lines since this revision in every module (default: ${_BASE_VARIABLE}).",
+    )
+    args = parser.parse_args(argv)
+    return check(args.root.resolve(), args.base)
 
 
 if __name__ == "__main__":
