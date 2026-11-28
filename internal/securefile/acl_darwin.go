@@ -14,16 +14,17 @@ import (
 // Darwin's kauth_filesec layout holds a 44-byte header and up to 128
 // 24-byte access list entries. See sys/kauth.h.
 const (
-	darwinACLHeader = 44
-	darwinACEBytes  = 24
-	darwinMaxACEs   = 128
+	darwinACLHeader   = 44
+	darwinACEBytes    = 24
+	darwinMaxACEs     = 128
+	darwinMaxACLBytes = 3116 // Darwin's 44-byte header and 128 24-byte entries.
 )
 
 type darwinSecurity struct {
 	Size     uint32
 	Offset   int32
 	Length   uint32
-	Security [darwinACLHeader + darwinMaxACEs*darwinACEBytes]byte
+	Security [darwinMaxACLBytes]byte
 }
 
 // checkExtendedACL asks Darwin for the extended security of the retained file.
