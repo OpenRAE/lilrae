@@ -521,6 +521,8 @@ jobs:
               tests/test_hostenv.py
               tests/test_lab_init_cli.py
               tests/test_lifecycle_policy.py
+              tests/test_lifecycle_guard.py::test_missing_shared_lock_reports_unsupported_not_busy
+              tests/test_lifecycle_guard.py::test_missing_exclusive_lock_reports_unavailable_not_busy
               tests/test_session.py
               tests/test_sysreqs.py
               tests/test_version.py
