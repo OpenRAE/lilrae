@@ -1,22 +1,31 @@
-"""Tests for the APTL RAES orchestration adapter (issue #311)."""
+"""Tests for the APTL RAES orchestration adapter.
+
+The RAES runtime walks each workflow graph and dispatches one step at a time
+to ``AptlOrchestrator.dispatch_step``.
+"""
 
 from textwrap import dedent
 
-from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
-from raes_contracts.workflow import (
-    WorkflowExecutionState,
-    WorkflowHistoryEventType,
-    WorkflowStatus,
-    WorkflowStepLifecycle,
-    WorkflowStepOutcome,
+import pytest
+from raes_contracts.contracts.workflow_dispatch import WorkflowStepDispatch
+from raes_contracts.evaluation import EvaluationExecutionState, EvaluationResultStatus
+from raes_contracts.planning import (
+    ChangeAction,
+    OrchestrationOp,
+    OrchestrationPlan,
+    RuntimeDomain,
 )
+from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
+from raes_contracts.versions import WORKFLOW_DISPATCH_CONTRACTS
 from raes_processor.compiler import compile_runtime_model
 from raes_processor.planner import plan
-from raes_runtime.workflow_result_contracts import workflow_result_contract_diagnostics
 from raes.parser import parse_sdl
 
 from aptl.backends.raes_manifest import create_aptl_manifest
 from aptl.backends.raes_orchestrator import AptlOrchestrator
+
+_OBJECTIVE = "evaluation.objective.validate"
+_DIGEST = "sha256:" + "0" * 64
 
 _WORKFLOW_SCENARIO = dedent(
     """
@@ -84,234 +93,128 @@ _WORKFLOW_SCENARIO = dedent(
 )
 
 
-def _orchestration_plan():
+def _execution_plan():
     scenario = parse_sdl(_WORKFLOW_SCENARIO)
-    execution_plan = plan(compile_runtime_model(scenario), create_aptl_manifest())
-    return execution_plan.orchestration
+    return plan(compile_runtime_model(scenario), create_aptl_manifest())
 
 
-def test_start_registers_workflows_as_pending_with_pending_steps():
-    orchestrator = AptlOrchestrator()
-    result = orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
-
-    assert isinstance(result, ApplyResult)
-    assert result.success is True
-    assert result.snapshot.orchestration_results, (
-        "expected at least one workflow run recorded"
-    )
-
-    for payload in result.snapshot.orchestration_results.values():
-        state = WorkflowExecutionState.from_payload(payload)
-        # PENDING, not RUNNING: the run is registered but no step has executed,
-        # and the adapter never fabricates execution progress.
-        assert state.workflow_status == WorkflowStatus.PENDING
-        assert state.run_id
-        assert state.steps, "workflow must report its observable steps"
-        assert all(
-            step.lifecycle == WorkflowStepLifecycle.PENDING
-            for step in state.steps.values()
-        )
-    # No history events are invented for a not-yet-executed workflow.
-    assert result.snapshot.orchestration_history == {}
+def _dispatch(step_type="objective", **overrides):
+    fields = {
+        "dispatch_id": "dispatch-1",
+        "program_digest": _DIGEST,
+        "root_operation_id": "root-1",
+        "invocation_id": "invocation-1",
+        "workflow_address": "orchestration.workflow.response",
+        "branch_id": "main",
+        "step_name": "run",
+        "step_type": step_type,
+        "attempt": 1,
+        "predecessor_revision": 0,
+        "objective_address": _OBJECTIVE if step_type == "objective" else "",
+    }
+    fields.update(overrides)
+    return WorkflowStepDispatch(**fields)
 
 
-def test_start_output_is_workflow_contract_clean():
-    orchestrator = AptlOrchestrator()
-    result = orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
+def _evaluation(status, passed=None):
+    return EvaluationExecutionState(
+        resource_type="objective",
+        run_id="evaluation-run",
+        status=status,
+        observed_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+        passed=passed,
+    ).to_payload()
 
-    diagnostics = workflow_result_contract_diagnostics(result.snapshot)
-    assert diagnostics == [], [d.message for d in diagnostics]
+
+def _orchestrator(results=None):
+    return AptlOrchestrator(objective_results=lambda: dict(results or {}))
 
 
-def test_results_and_status_reflect_registered_workflows():
-    orchestrator = AptlOrchestrator()
-    assert orchestrator.results() == {}
-    assert orchestrator.history() == {}
-
-    orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
-
-    assert orchestrator.results()
-    assert orchestrator.history() == {}
-    assert orchestrator.status()["registered_workflows"] == sorted(
-        orchestrator.results()
+def _op(address, *, resource_type="event", action=ChangeAction.CREATE):
+    return OrchestrationOp(
+        action=action,
+        address=address,
+        resource_type=resource_type,
+        payload={"name": address},
     )
 
 
-def test_drive_workflows_reports_real_execution_state():
-    orchestrator = AptlOrchestrator()
-    orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
+def test_manifest_declares_runtime_workflow_step_dispatch():
+    manifest = create_aptl_manifest()
 
-    diagnostics = orchestrator.drive_workflows(
-        objective_outcomes={
-            "evaluation.objective.validate": WorkflowStepOutcome.SUCCEEDED,
-        }
-    )
-    assert diagnostics == []
+    assert set(WORKFLOW_DISPATCH_CONTRACTS) <= set(manifest.supported_contract_versions)
+    codes = {d.code for d in _execution_plan().diagnostics}
+    assert "orchestrator.step-dispatch-unsupported" not in codes
 
-    payload = next(iter(orchestrator.results().values()))
-    state = WorkflowExecutionState.from_payload(payload)
-    assert state.workflow_status == WorkflowStatus.SUCCEEDED
-    history = next(iter(orchestrator.history().values()))
-    assert history[0]["event_type"] == WorkflowHistoryEventType.WORKFLOW_STARTED.value
-    assert any(
-        event["event_type"] == WorkflowHistoryEventType.WORKFLOW_COMPLETED.value
-        for event in history
+
+@pytest.mark.parametrize(("passed", "outcome"), [(True, "succeeded"), (False, "failed")])
+def test_objective_step_reports_the_ready_evaluation_result(passed, outcome):
+    request = _dispatch()
+    orchestrator = _orchestrator(
+        {_OBJECTIVE: _evaluation(EvaluationResultStatus.READY, passed)}
     )
 
+    response = orchestrator.dispatch_step(request)
 
-def test_drive_workflows_output_is_workflow_contract_clean():
-    orchestrator = AptlOrchestrator()
-    started = orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
-    orchestrator.drive_workflows(
-        objective_outcomes={
-            "evaluation.objective.validate": WorkflowStepOutcome.SUCCEEDED,
-        }
+    assert response.outcome == outcome
+    response.require_dispatch(request)
+
+
+def test_control_step_reports_no_outcome_and_echoes_observations():
+    request = _dispatch(
+        "decision",
+        step_name="choose",
+        observation_addresses=(_OBJECTIVE,),
+        observation_digests={_OBJECTIVE: _DIGEST},
     )
 
-    snapshot = started.snapshot.with_entries(
-        started.snapshot.entries,
-        orchestration_results=orchestrator.results(),
-        orchestration_history=orchestrator.history(),
-    )
-    diagnostics = workflow_result_contract_diagnostics(snapshot)
-    assert diagnostics == [], [d.message for d in diagnostics]
+    response = _orchestrator().dispatch_step(request)
+
+    assert response.outcome is None
+    assert response.observations == {_OBJECTIVE: _DIGEST}
+    response.require_dispatch(request)
 
 
-def test_drive_workflows_resolves_outcomes_from_evaluation_results():
-    orchestrator = AptlOrchestrator()
-    orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
+@pytest.mark.parametrize(
+    "results",
+    [
+        {},
+        {_OBJECTIVE: _evaluation(EvaluationResultStatus.RUNNING)},
+        {_OBJECTIVE: _evaluation(EvaluationResultStatus.FAILED)},
+    ],
+    ids=["missing", "running", "evaluation-failed"],
+)
+def test_objective_step_without_a_ready_result_is_an_error(results):
+    orchestrator = _orchestrator(results)
+    request = _dispatch()
 
-    diagnostics = orchestrator.drive_workflows(
-        evaluation_results={
-            "evaluation.objective.validate": {"outcome": "succeeded"},
-        }
-    )
-
-    assert diagnostics == []
-    state = WorkflowExecutionState.from_payload(
-        next(iter(orchestrator.results().values()))
-    )
-    assert state.workflow_status == WorkflowStatus.SUCCEEDED
+    with pytest.raises(ValueError, match="evaluation result|ready pass or fail"):
+        orchestrator.dispatch_step(request)
 
 
-def test_drive_workflows_skips_already_terminal_runs():
-    orchestrator = AptlOrchestrator()
-    orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
-    orchestrator.drive_workflows(
-        objective_outcomes={
-            "evaluation.objective.validate": WorkflowStepOutcome.SUCCEEDED,
-        }
-    )
-    first = dict(orchestrator.results())
-
-    diagnostics = orchestrator.drive_workflows(
-        objective_outcomes={
-            "evaluation.objective.validate": WorkflowStepOutcome.FAILED,
-        }
+def test_governed_step_is_refused():
+    orchestrator = _orchestrator(
+        {_OBJECTIVE: _evaluation(EvaluationResultStatus.READY, True)}
     )
 
-    assert diagnostics == []
-    assert orchestrator.results() == first
+    request = _dispatch(execution_mode="objective")
+
+    with pytest.raises(ValueError, match="does not run objective workflow step"):
+        orchestrator.dispatch_step(request)
 
 
-def test_drive_workflows_persists_run_archive_artifacts(tmp_path):
-    from aptl.core.runstore import LocalRunStore
+def test_start_refuses_workflow_resources():
+    result = _orchestrator().start(_execution_plan().orchestration, RuntimeSnapshot())
 
-    orchestrator = AptlOrchestrator()
-    orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
-    store = LocalRunStore(tmp_path / "runs")
-    run_id = "run-514"
-    store.create_run(run_id)
-
-    orchestrator.drive_workflows(
-        objective_outcomes={
-            "evaluation.objective.validate": WorkflowStepOutcome.SUCCEEDED,
-        },
-        run_store=store,
-        run_id=run_id,
-    )
-
-    address = next(iter(orchestrator.results()))
-    safe_address = address.replace("/", "_")
-    archive = tmp_path / "runs" / run_id / "orchestration" / safe_address
-    assert (archive / "result.json").is_file()
-    assert (archive / "history.jsonl").is_file()
-
-
-def test_persisted_history_is_the_portable_event_stream(tmp_path):
-    """The archive must hold the events, not the shape of one.
-
-    ``append_jsonl`` takes a *list* of records and redacts each one, so handing
-    it a single event mapping iterated that mapping and wrote one JSON string
-    per key — a ``history.jsonl`` of ``"event_type"``, ``"timestamp"``, ...
-    with every fact gone. The file existed, which is exactly why a presence
-    check never saw it (issue #993).
-    """
-
-    import json
-
-    from raes_contracts.workflow import WorkflowHistoryEvent
-
-    from aptl.core.runstore import LocalRunStore
-
-    orchestrator = AptlOrchestrator()
-    orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
-    store = LocalRunStore(tmp_path / "runs")
-    run_id = "run-993"
-    store.create_run(run_id)
-
-    orchestrator.drive_workflows(
-        objective_outcomes={
-            "evaluation.objective.validate": WorkflowStepOutcome.SUCCEEDED,
-        },
-        run_store=store,
-        run_id=run_id,
-    )
-
-    address = next(iter(orchestrator.results()))
-    history_path = (
-        tmp_path
-        / "runs"
-        / run_id
-        / "orchestration"
-        / address.replace("/", "_")
-        / "history.jsonl"
-    )
-    lines = [
-        line for line in history_path.read_text(encoding="utf-8").splitlines() if line
+    assert result.success is False
+    assert [d.code for d in result.diagnostics] == [
+        "aptl.orchestrator.workflow-not-dispatched"
     ]
-    persisted = [json.loads(line) for line in lines]
-
-    assert persisted == orchestrator.history()[address]
-    for event in persisted:
-        assert isinstance(event, dict)
-        WorkflowHistoryEvent.from_payload(event)
-    assert any(
-        event["event_type"] == WorkflowHistoryEventType.WORKFLOW_COMPLETED.value
-        for event in persisted
-    )
 
 
-def test_drive_workflows_reports_drive_failure():
-    orchestrator = AptlOrchestrator()
-    orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
-    address = next(iter(orchestrator._workflow_payloads))
-    orchestrator._workflow_payloads[address] = {"name": "broken"}
-
-    diagnostics = orchestrator.drive_workflows(
-        objective_outcomes={
-            "evaluation.objective.validate": WorkflowStepOutcome.SUCCEEDED,
-        }
-    )
-
-    assert len(diagnostics) == 1
-    assert diagnostics[0].code == "aptl.orchestrator.workflow-drive-failed"
-
-
-def test_start_preserves_existing_provisioning_entries():
-    from raes_contracts.planning import RuntimeDomain
-    from raes_contracts.runtime_state import SnapshotEntry
-
+def test_start_installs_resources_and_keeps_runtime_workflow_records():
+    workflow = "orchestration.workflow.response"
     base = RuntimeSnapshot(
         entries={
             "provision.node.vm": SnapshotEntry(
@@ -320,107 +223,83 @@ def test_start_preserves_existing_provisioning_entries():
                 resource_type="node",
                 payload={"name": "vm"},
             )
-        }
+        },
+        orchestration_results={workflow: {"workflow_status": "running"}},
+        orchestration_history={workflow: [{"event_type": "workflow_started"}]},
     )
-    orchestrator = AptlOrchestrator()
-    result = orchestrator.start(_orchestration_plan(), base)
+    address = "orchestration.event.kickoff"
 
+    result = _orchestrator().start(
+        OrchestrationPlan(resources={}, operations=[_op(address)]), base
+    )
+
+    assert isinstance(result, ApplyResult)
+    assert result.success is True
+    assert result.changed_addresses == [address]
+    assert result.snapshot.entries[address].domain == RuntimeDomain.ORCHESTRATION
     assert "provision.node.vm" in result.snapshot.entries
-    assert any(
-        entry.domain == RuntimeDomain.ORCHESTRATION
-        for entry in result.snapshot.entries.values()
-    )
-
-
-def test_stop_clears_orchestration_state():
-    orchestrator = AptlOrchestrator()
-    started = orchestrator.start(_orchestration_plan(), RuntimeSnapshot())
-
-    stopped = orchestrator.stop(started.snapshot)
-
-    assert stopped.success is True
-    assert stopped.snapshot.orchestration_results == {}
-    assert stopped.snapshot.orchestration_history == {}
-    assert orchestrator.results() == {}
-    assert orchestrator.history() == {}
-
-
-def test_start_rejects_non_orchestration_plan():
-    orchestrator = AptlOrchestrator()
-    result = orchestrator.start(object(), RuntimeSnapshot())
-
-    assert result.success is False
-    assert any(d.code == "aptl.orchestrator.invalid-plan" for d in result.diagnostics)
-
-
-def _workflow_op(address, payload, *, action=None):
-    from raes_contracts.planning import ChangeAction, OrchestrationOp
-
-    return OrchestrationOp(
-        action=action or ChangeAction.CREATE,
-        address=address,
-        resource_type="workflow",
-        payload=payload,
-    )
-
-
-def test_start_fails_closed_on_workflow_missing_result_contract():
-    from raes_contracts.planning import OrchestrationPlan
-
-    op = _workflow_op("orchestration.workflow.broken", {"name": "broken"})
-    result = AptlOrchestrator().start(
-        OrchestrationPlan(resources={}, operations=[op]), RuntimeSnapshot()
-    )
-
-    assert result.success is False
-    assert any(
-        d.code == "aptl.orchestrator.workflow-contract-missing"
-        for d in result.diagnostics
-    )
-
-
-def test_start_fails_closed_on_invalid_result_contract():
-    from raes_contracts.planning import OrchestrationPlan
-
-    op = _workflow_op(
-        "orchestration.workflow.broken",
-        {"name": "broken", "result_contract": {"observable_steps": "not-a-dict"}},
-    )
-    result = AptlOrchestrator().start(
-        OrchestrationPlan(resources={}, operations=[op]), RuntimeSnapshot()
-    )
-
-    assert result.success is False
-    assert any(
-        d.code == "aptl.orchestrator.workflow-contract-invalid"
-        for d in result.diagnostics
-    )
+    assert result.snapshot.orchestration_results == base.orchestration_results
+    assert result.snapshot.orchestration_history == base.orchestration_history
 
 
 def test_start_handles_delete_operation():
-    from raes_contracts.planning import ChangeAction, OrchestrationPlan, RuntimeDomain
-    from raes_contracts.runtime_state import SnapshotEntry
-
-    address = "orchestration.workflow.gone"
+    address = "orchestration.event.gone"
     base = RuntimeSnapshot(
         entries={
             address: SnapshotEntry(
                 address=address,
                 domain=RuntimeDomain.ORCHESTRATION,
-                resource_type="workflow",
-                payload={"name": "gone"},
+                resource_type="event",
+                payload={"name": address},
             )
-        },
-        orchestration_results={address: {"workflow_status": "running"}},
-        orchestration_history={address: [{"event_type": "workflow_started"}]},
+        }
     )
-    op = _workflow_op(address, {"name": "gone"}, action=ChangeAction.DELETE)
 
-    result = AptlOrchestrator().start(
-        OrchestrationPlan(resources={}, operations=[op]), base
+    result = _orchestrator().start(
+        OrchestrationPlan(
+            resources={}, operations=[_op(address, action=ChangeAction.DELETE)]
+        ),
+        base,
     )
 
     assert result.success is True
     assert address not in result.snapshot.entries
-    assert address not in result.snapshot.orchestration_results
-    assert address not in result.snapshot.orchestration_history
+    assert result.changed_addresses == [address]
+
+
+def test_start_rejects_non_orchestration_plan():
+    result = _orchestrator().start(object(), RuntimeSnapshot())
+
+    assert result.success is False
+    assert [d.code for d in result.diagnostics] == ["aptl.orchestrator.invalid-plan"]
+
+
+def test_runtime_owns_workflow_results_and_history():
+    orchestrator = _orchestrator()
+
+    assert orchestrator.results() == {}
+    assert orchestrator.history() == {}
+    assert orchestrator.status() == {"backend": "aptl"}
+
+
+def test_stop_clears_orchestration_state():
+    address = "orchestration.event.kickoff"
+    base = RuntimeSnapshot(
+        entries={
+            address: SnapshotEntry(
+                address=address,
+                domain=RuntimeDomain.ORCHESTRATION,
+                resource_type="event",
+                payload={"name": address},
+            )
+        },
+        orchestration_results={"orchestration.workflow.response": {"x": 1}},
+    )
+
+    stopped = _orchestrator().stop(base)
+
+    assert stopped.success is True
+    assert stopped.snapshot.entries == {}
+    assert stopped.snapshot.orchestration_results == {}
+    assert stopped.snapshot.orchestration_history == {}
+    assert stopped.changed_addresses == [address]

@@ -1,56 +1,50 @@
 """APTL RAES orchestration adapter.
 
-APTL's full remote-control-plane backend includes this orchestration component
-for the workflow surface first introduced by SCN-010 follow-on #311. APTL's
-scenario runtime engine (RTE-001) drives scenario steps with state-machine
-semantics; this adapter exposes that drive surface through the *portable* RAES
-contracts ``workflow-result-envelope-v1`` and
-``workflow-history-event-stream-v1`` rather than APTL-native run-archive shapes.
+This module is the RAES ``Orchestrator`` component on APTL's
+``RuntimeTarget``. The RAES runtime owns workflow execution: it walks each
+workflow graph, records the portable ``workflow-result-envelope-v1`` and
+``workflow-history-event-stream-v1`` state, and dispatches one step at a time
+to ``dispatch_step()``.
 
-The adapter is the RAES ``Orchestrator`` component published on APTL's
-``RuntimeTarget``. ``start()`` loads a RAES ``OrchestrationPlan`` into runtime
-state: it registers every orchestration resource as a RAES ``SnapshotEntry``
-and, for each workflow, records a truthful ``WorkflowExecutionState`` — the run
-is ``PENDING`` (registered and awaiting execution) with every observable step in
-the ``pending`` lifecycle and no history events, because no step has executed
-yet. ``drive_workflows()`` advances registered runs through RTE-001 using
-compiled workflow metadata and portable evaluation outcomes, producing real
-``RUNNING`` → terminal transitions and ``WorkflowHistoryEvent`` streams.
-``stop()`` clears orchestration state.
+``start()`` installs the non-workflow orchestration resources as RAES
+``SnapshotEntry`` records. It keeps the workflow results and history that the
+runtime already recorded. ``dispatch_step()`` runs one step:
 
-The RAES ``WorkflowExecutionState`` / ``WorkflowHistoryEvent`` dataclasses are
-the public DTOs — APTL's internal ``aptl.core.runtime`` and run-archive models
-are never the published workflow schema. Workflow interpretation is workflow-address
-driven; nothing here hardcodes TechVault, a profile, a compose profile, or a
-workflow address.
+- A control step (decision, parallel, join, end, and so on) has no backend
+  work, so its response has no outcome.
+- A scripted objective step reports the evaluator's current result for its
+  objective. A ready result that passed is ``succeeded``; a ready result that
+  did not pass is ``failed``. Any other result is an error, because APTL
+  cannot report an outcome that it has not observed.
+- APTL does not run governed (non-scripted) steps, so it refuses them.
+
+``stop()`` clears orchestration state. Nothing here hardcodes a scenario, a
+profile, a compose profile, or a workflow address.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 from raes_backend_protocols.capabilities import BackendManifest
+from raes_contracts.contracts.workflow_dispatch import (
+    WorkflowStepDispatch,
+    WorkflowStepResponse,
+)
 from raes_contracts.diagnostics import Diagnostic, Severity
+from raes_contracts.evaluation import EvaluationExecutionState, EvaluationResultStatus
 from raes_contracts.planning import ChangeAction, OrchestrationPlan, RuntimeDomain
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
-from raes_contracts.workflow import (
-    WorkflowExecutionState,
-    WorkflowResultContract,
-    WorkflowStatus,
-    WorkflowStepOutcome,
-)
 
-from aptl.core.runtime.workflow_engine import WorkflowEngine
 from aptl.core.trial_readiness import TrialReadinessGate
 from aptl.utils.redaction import redact
 
-if TYPE_CHECKING:
-    from aptl.core.runstore import RunStorageBackend
-
 ORCHESTRATION_ADDRESS = "runtime.apply.orchestration"
 _WORKFLOW_RESOURCE_TYPE = "workflow"
+_EXECUTABLE_STEP_TYPES = frozenset({"objective", "retry"})
+
+ObjectiveResults = Callable[[], Mapping[str, Mapping[str, object]]]
 
 
 def _orchestration_diagnostic(code: str, address: str, message: str) -> Diagnostic:
@@ -64,107 +58,47 @@ def _orchestration_diagnostic(code: str, address: str, message: str) -> Diagnost
     )
 
 
-def _utc_now() -> str:
-    """Return the current UTC instant as an ISO-8601 ``...Z`` string."""
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _register_workflow(
-    workflow_address: str,
-    payload: dict[str, object],
-    registered_at: str,
-    engine: WorkflowEngine,
-) -> list[Diagnostic]:
-    """Record the truthful initial (``PENDING``) portable state for a run."""
-    result_contract_payload = payload.get("result_contract")
-    if not isinstance(result_contract_payload, dict):
-        return [
-            _orchestration_diagnostic(
-                "aptl.orchestrator.workflow-contract-missing",
-                workflow_address,
-                "RAES workflow resource is missing its compiled result_contract.",
-            )
-        ]
-    try:
-        WorkflowResultContract.from_mapping(result_contract_payload)
-    except (TypeError, ValueError) as exc:
-        return [
-            _orchestration_diagnostic(
-                "aptl.orchestrator.workflow-contract-invalid",
-                workflow_address,
-                f"RAES workflow result_contract is invalid: {exc}",
-            )
-        ]
-
-    engine.register_pending(workflow_address, payload, registered_at)
-    return []
-
-
-def _objective_outcomes_from_evaluation(
-    evaluation_results: dict[str, dict[str, object]],
-) -> dict[str, WorkflowStepOutcome]:
-    """Map portable evaluation envelopes to workflow objective outcomes when present."""
-    outcomes: dict[str, WorkflowStepOutcome] = {}
-    for address, payload in evaluation_results.items():
-        if not isinstance(payload, dict):
-            continue
-        raw_outcome = payload.get("outcome")
-        if raw_outcome == "succeeded":
-            outcomes[address] = WorkflowStepOutcome.SUCCEEDED
-        elif raw_outcome == "failed":
-            outcomes[address] = WorkflowStepOutcome.FAILED
-        elif raw_outcome == "exhausted":
-            outcomes[address] = WorkflowStepOutcome.EXHAUSTED
-    return outcomes
+def _no_objective_results() -> Mapping[str, Mapping[str, object]]:
+    """Return no evaluation results for an orchestrator without an evaluator."""
+    return {}
 
 
 @dataclass
 class AptlOrchestrator(object):
     """Orchestration component of APTL's ``full-remote-control-plane`` target."""
 
-    _engine: WorkflowEngine = field(default_factory=WorkflowEngine, init=False)
-    _workflow_payloads: dict[str, dict[str, object]] = field(
-        default_factory=dict, init=False
-    )
-    _results: dict[str, dict[str, object]] = field(default_factory=dict, init=False)
-    _history: dict[str, list[dict[str, object]]] = field(
-        default_factory=dict, init=False
+    objective_results: ObjectiveResults = field(
+        default=_no_objective_results, repr=False
     )
     reporting_manifest: BackendManifest | None = field(default=None, repr=False)
     readiness: TrialReadinessGate | None = field(default=None, repr=False)
 
     def start(self, plan: object, snapshot: object) -> ApplyResult:
-        """Load a RAES orchestration plan and register its workflows."""
+        """Install the non-workflow resources of a RAES orchestration plan."""
         if self.readiness is not None:
             self.readiness.require_live()
         working_snapshot = (
             snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
         )
         if not isinstance(plan, OrchestrationPlan):
-            return ApplyResult(
-                success=False,
-                snapshot=working_snapshot,
-                diagnostics=[
-                    _orchestration_diagnostic(
-                        "aptl.orchestrator.invalid-plan",
-                        ORCHESTRATION_ADDRESS,
-                        "APTL orchestrator expected a RAES OrchestrationPlan.",
-                    )
-                ],
+            return self._refused(
+                working_snapshot,
+                "aptl.orchestrator.invalid-plan",
+                "APTL orchestrator expected a RAES OrchestrationPlan.",
+            )
+        if any(op.resource_type == _WORKFLOW_RESOURCE_TYPE for op in plan.operations):
+            return self._refused(
+                working_snapshot,
+                "aptl.orchestrator.workflow-not-dispatched",
+                "Workflow steps require RAES runtime dispatch.",
             )
 
         entries = dict(working_snapshot.entries)
-        diagnostics: list[Diagnostic] = []
         changed: list[str] = []
-        registered_at = _utc_now()
-        self._workflow_payloads = {}
-
         for op in plan.actionable_operations:
+            changed.append(op.address)
             if op.action == ChangeAction.DELETE:
                 entries.pop(op.address, None)
-                self._workflow_payloads.pop(op.address, None)
-                self._engine.discard(op.address)
-                changed.append(op.address)
                 continue
             entries[op.address] = SnapshotEntry(
                 address=op.address,
@@ -175,33 +109,10 @@ class AptlOrchestrator(object):
                 refresh_dependencies=op.refresh_dependencies,
                 status="ready",
             )
-            changed.append(op.address)
-            if op.resource_type == _WORKFLOW_RESOURCE_TYPE:
-                if isinstance(op.payload, dict):
-                    self._workflow_payloads[op.address] = dict(op.payload)
-                workflow_diagnostics = _register_workflow(
-                    op.address,
-                    op.payload,
-                    registered_at,
-                    self._engine,
-                )
-                diagnostics.extend(workflow_diagnostics)
 
-        if diagnostics:
-            return ApplyResult(
-                success=False,
-                snapshot=working_snapshot,
-                diagnostics=diagnostics,
-            )
-
-        self._sync_from_engine()
         result = ApplyResult(
             success=True,
-            snapshot=working_snapshot.with_entries(
-                entries,
-                orchestration_results=self._results,
-                orchestration_history=self._history,
-            ),
+            snapshot=working_snapshot.with_entries(entries),
             changed_addresses=changed,
         )
         from aptl.backends.lilrae_materialization_reporting import (
@@ -216,67 +127,42 @@ class AptlOrchestrator(object):
             self.reporting_manifest or create_aptl_manifest(),
         )
 
-    def drive_workflows(
-        self,
-        *,
-        evaluation_results: dict[str, dict[str, object]] | None = None,
-        objective_outcomes: dict[str, WorkflowStepOutcome] | None = None,
-        run_store: RunStorageBackend | None = None,
-        run_id: str | None = None,
-    ) -> list[Diagnostic]:
-        """Advance registered workflows through RTE-001 execution."""
-        resolved_outcomes = dict(objective_outcomes or {})
-        resolved_outcomes.update(
-            _objective_outcomes_from_evaluation(evaluation_results or {})
-        )
-        diagnostics: list[Diagnostic] = []
-        for address, payload in self._workflow_payloads.items():
-            current = self._engine.get(address)
-            if current is None:
-                continue
-            state = WorkflowExecutionState.from_payload(current.result)
-            if state.workflow_status != WorkflowStatus.PENDING:
-                continue
-            try:
-                self._engine.drive(
-                    address, payload, objective_outcomes=resolved_outcomes
-                )
-            except ValueError as exc:
-                diagnostics.append(
-                    _orchestration_diagnostic(
-                        "aptl.orchestrator.workflow-drive-failed",
-                        address,
-                        str(exc),
+    def dispatch_step(self, request: WorkflowStepDispatch) -> WorkflowStepResponse:
+        """Run only this step; the RAES runtime selects every successor."""
+        outcome = None
+        if request.step_type in _EXECUTABLE_STEP_TYPES:
+            if request.execution_mode != "scripted":
+                raise ValueError(
+                    redact(
+                        f"APTL does not run {request.execution_mode} workflow step "
+                        f"'{request.step_name}'."
                     )
                 )
-                continue
-            if run_store is not None and run_id is not None:
-                record = self._engine.get(address)
-                if record is not None:
-                    _persist_workflow_run(run_store, run_id, address, record)
+            outcome = self._objective_outcome(request)
+        return WorkflowStepResponse(
+            dispatch_id=request.dispatch_id,
+            dispatch_digest=request.digest,
+            outcome=outcome,
+            observations=dict(request.observation_digests),
+        )
 
-        self._sync_from_engine()
-        return diagnostics
-
-    def status(self) -> dict[str, object]:
+    @staticmethod
+    def status() -> dict[str, object]:
         """Return current orchestration status."""
-        return {
-            "backend": "aptl",
-            "registered_workflows": sorted(self._results),
-        }
+        return {"backend": "aptl"}
 
-    def results(self) -> dict[str, dict[str, object]]:
-        """Return the most recent workflow execution state envelopes."""
-        return {address: dict(result) for address, result in self._results.items()}
+    @staticmethod
+    def results() -> dict[str, dict[str, object]]:
+        """Return no workflow results; the RAES runtime records them."""
+        return {}
 
-    def history(self) -> dict[str, list[dict[str, object]]]:
-        """Return the workflow execution history event streams."""
-        return {
-            address: [dict(event) for event in events]
-            for address, events in self._history.items()
-        }
+    @staticmethod
+    def history() -> dict[str, list[dict[str, object]]]:
+        """Return no workflow history; the RAES runtime records it."""
+        return {}
 
-    def stop(self, snapshot: object) -> ApplyResult:
+    @staticmethod
+    def stop(snapshot: object) -> ApplyResult:
         """Stop orchestration and clear orchestration state."""
         working_snapshot = (
             snapshot if isinstance(snapshot, RuntimeSnapshot) else RuntimeSnapshot()
@@ -287,10 +173,6 @@ class AptlOrchestrator(object):
             if entry.domain != RuntimeDomain.ORCHESTRATION
         }
         changed = sorted(set(working_snapshot.entries) - set(retained_entries))
-        self._results = {}
-        self._history = {}
-        self._workflow_payloads = {}
-        self._engine = WorkflowEngine()
         return ApplyResult(
             success=True,
             snapshot=working_snapshot.with_entries(
@@ -301,36 +183,35 @@ class AptlOrchestrator(object):
             changed_addresses=changed,
         )
 
-    def _sync_from_engine(self) -> None:
-        results, history = self._engine.export()
-        self._results = results
-        self._history = history
+    def _objective_outcome(self, request: WorkflowStepDispatch) -> str:
+        """Report the evaluator's ready result for the step's objective."""
+        payload = self.objective_results().get(request.objective_address)
+        if payload is None:
+            raise ValueError(
+                redact(
+                    f"Workflow step '{request.step_name}' has no evaluation result "
+                    f"for objective '{request.objective_address}'."
+                )
+            )
+        observed = EvaluationExecutionState.from_payload(payload)
+        if observed.status is not EvaluationResultStatus.READY or not isinstance(
+            observed.passed, bool
+        ):
+            raise ValueError(
+                redact(
+                    f"Workflow step '{request.step_name}' objective "
+                    f"'{request.objective_address}' has no ready pass or fail result."
+                )
+            )
+        return "succeeded" if observed.passed else "failed"
 
-
-def _persist_workflow_run(
-    run_store: RunStorageBackend,
-    run_id: str,
-    workflow_address: str,
-    record: object,
-) -> None:
-    """Write workflow result and history artifacts into the run archive."""
-    from aptl.core.runtime.workflow_engine import WorkflowRunRecord
-
-    if not isinstance(record, WorkflowRunRecord):
-        return
-    safe_address = workflow_address.replace("/", "_")
-    run_store.write_json(
-        run_id,
-        f"orchestration/{safe_address}/result.json",
-        record.result,
-    )
-    if record.history:
-        # ``append_jsonl`` takes the whole batch of records and redacts each
-        # one. Passing a single event mapping iterated that mapping instead,
-        # persisting one JSON string per key — a history file that existed and
-        # parsed but held no event (issue #993).
-        run_store.append_jsonl(
-            run_id,
-            f"orchestration/{safe_address}/history.jsonl",
-            list(record.history),
+    @staticmethod
+    def _refused(snapshot: RuntimeSnapshot, code: str, message: str) -> ApplyResult:
+        """Return a failed apply that leaves the snapshot unchanged."""
+        return ApplyResult(
+            success=False,
+            snapshot=snapshot,
+            diagnostics=[
+                _orchestration_diagnostic(code, ORCHESTRATION_ADDRESS, message)
+            ],
         )

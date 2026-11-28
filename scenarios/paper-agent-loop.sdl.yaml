@@ -769,26 +769,8 @@ objectives:
       - participant-observation-recorded
       - wazuh-evidence-recorded
       - boundary-checks-recorded
-    window:
-      workflows:
-      - paper-handoff
-      steps:
-      - paper-handoff.probe
     description: 'Demonstrate authored SDL to processor to runtime/backend handoff with a
       bounded participant-visible portal observation, Wazuh evaluator evidence, policy provenance,
       and negative observation-boundary evidence.
 
       '
-workflows:
-  paper-handoff:
-    description: 'Single-step control graph for the reference paper handoff demonstration.
-
-      '
-    start: probe
-    steps:
-      probe:
-        type: objective
-        objective: demonstrate-handoff
-        on_success: finish
-      finish:
-        type: end

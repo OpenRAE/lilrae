@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from raes.runtime_configuration import GeneratedArtifactValueSource
+    from raes_contracts.generated_artifact_value import GeneratedArtifactValueSource
     from aptl.core.deployment.realization import (
         DeploymentGeneratedArtifactEnvironmentConsumer,
         DeploymentGeneratedArtifactRealization,

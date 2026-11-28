@@ -344,7 +344,7 @@ def check_run_archive_manifest(
                 "workflow-result-envelope-v1",
                 "workflow-history-event-stream-v1",
             ],
-            "execution_state_integration": "aptl.core.runtime.workflow_engine",
+            "execution_state_integration": "raes_runtime.workflow_execution",
         },
         "participant_runtime_surfaces": {
             "profile": "full-remote-control-plane",

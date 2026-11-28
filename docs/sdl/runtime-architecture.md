@@ -27,6 +27,7 @@ Compose or process arguments, or persist them in run records. Instantiation
 failures stop before backend side effects and return bounded, value-free
 remediation. The backend does not render the upstream exception.
 
-APTL still keeps `aptl.core.runtime.workflow_engine` as an implementation
-helper for the RAES orchestrator's workflow result/history records. It is not a
-scenario parser, compiler, planner, or schema authority.
+The RAES runtime runs workflows. It walks each workflow graph and records the
+workflow results and history. It sends each step to
+`AptlOrchestrator.dispatch_step`. APTL reports a scripted objective step from
+the evaluator's current result for that objective.

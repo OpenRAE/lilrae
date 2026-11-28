@@ -31,6 +31,7 @@ PROJECT_ROOT = Path(__file__).parents[2]
 SCENARIO = PROJECT_ROOT / "scenarios/bounded-participant-agency-techvault.sdl.yaml"
 SOURCE_SHA256 = "cdd16c1bb18c0e281030137719bf88f7a8df9c7f0b6288de28e4355501942252"
 COMPILED_SHA256S = frozenset({
+    "1144e47676a9cae1438133d7e5304ef7442251a37258bd39525ae0a2ba329ef6",
     "31539407a07892bd106d502b95aea256c97ed107eef411c45b298ca3a3c2a3a5",
     "eface167c3a5e49932f03daf23aa39011c6cb88b8634258926d6044b9c12b446",
     "f0f54b78bfd217e9a280dba220fb1762e731d47fa610538bc128dfeb347a57bb",
@@ -264,12 +265,15 @@ def test_episode_initialization_is_lifecycle_only() -> None:
     assert control_plane.snapshot.participant_behavior_history == {}
 
 
-def test_requalified_freeze_changes_only_absent_node_identity_values() -> None:
+def test_requalified_freeze_changes_only_empty_or_absent_values() -> None:
     import rfc8785
 
     scenario = parse_sdl_file(SCENARIO)
     model = compile_runtime_model(instantiate_scenario(scenario, {}))
     artifact = json.loads(compiled_runtime_model_bytes(model))
+    # raes 12.0.0 adds these two fields, and the freeze declares neither.
+    assert artifact["runtime_model"].pop("participant_episode_policies") == {}
+    assert artifact["runtime_model"].pop("safe_states") == []
     deployments = artifact["runtime_model"]["node_deployments"]
     assert set(deployments) == {
         "provision.node." + name

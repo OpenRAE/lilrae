@@ -84,12 +84,15 @@ def reporting_runtime(
     from aptl.backends.raes_evaluator import AptlEvaluator
     from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
 
+    evaluator = AptlEvaluator(reporting_manifest=manifest)
     target = RuntimeTarget(
         name=manifest.name,
         manifest=manifest,
         provisioner=provisioner,
-        orchestrator=AptlOrchestrator(reporting_manifest=manifest),
-        evaluator=AptlEvaluator(reporting_manifest=manifest),
+        orchestrator=AptlOrchestrator(
+            objective_results=evaluator.results, reporting_manifest=manifest
+        ),
+        evaluator=evaluator,
         participant_runtime=AptlParticipantRuntime(deployment_backend=native),
     )
     archive = RunMaterializationArchive(tmp_path / "archive")
@@ -356,8 +359,7 @@ def test_product_manager_accepts_protected_archive_owner(tmp_path):
         assert child.address in result.snapshot.entries
 
 
-def test_evaluation_and_workflow_phases_describe_accepted_descendants(tmp_path):
-    extra = """
+_OBJECTIVE_SDL = """
 entities:
   blue: {role: blue}
 propositions:
@@ -378,21 +380,38 @@ objectives:
   validate:
     owner: blue
     success: {assertions: [health]}
-workflows:
+"""
+
+
+def test_evaluation_phase_describes_accepted_descendants(tmp_path):
+    manager, _, _, child, plan, _ = reporting_runtime(
+        tmp_path, extra_sdl=_OBJECTIVE_SDL
+    )
+    with manager:
+        result = manager.apply(plan)
+        assert result.success, result.diagnostics
+        assert child.address in result.snapshot.entries
+        assert result.snapshot.evaluation_results
+        assert len(result.snapshot.materialization_attestations) == 2
+
+
+def test_workflow_on_an_unevaluated_objective_fails_the_apply(tmp_path):
+    workflow = """workflows:
   execution:
     start: run
     steps:
       run: {type: objective, objective: validate, on_success: finish}
       finish: {type: end}
 """
-    manager, _, _, child, plan, _ = reporting_runtime(tmp_path, extra_sdl=extra)
+    manager, _, _, _, plan, _ = reporting_runtime(
+        tmp_path, extra_sdl=_OBJECTIVE_SDL + workflow
+    )
     with manager:
         result = manager.apply(plan)
-        assert result.success, result.diagnostics
-        assert child.address in result.snapshot.entries
-        assert result.snapshot.evaluation_results
-        assert result.snapshot.orchestration_results
-        assert len(result.snapshot.materialization_attestations) == 3
+        assert not result.success
+        assert [d.address for d in result.diagnostics] == [
+            "runtime.apply.orchestrator"
+        ]
 
 
 def test_start_handoff_archives_and_returns_refreshed_inventory(tmp_path):

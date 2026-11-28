@@ -69,6 +69,7 @@ from raes_contracts.vocabulary import (
 )
 
 from raes_contracts.manifest_authority import BACKEND_SUPPORTED_CONTRACT_IDS
+from raes_contracts.versions import WORKFLOW_DISPATCH_CONTRACTS
 
 from aptl.backends._raes_participant_manifest import (
     participant_delivery_manifest_options,
@@ -134,6 +135,9 @@ _BASE_SUPPORTED_CONTRACT_VERSIONS = frozenset(
         "realization-envelope-v1",
         "workflow-result-envelope-v1",
         "workflow-history-event-stream-v1",
+        # The RAES runtime walks the workflow graph and dispatches each step
+        # to AptlOrchestrator.dispatch_step.
+        *WORKFLOW_DISPATCH_CONTRACTS,
         "evaluation-result-envelope-v1",
         "evaluation-history-event-stream-v1",
         "participant-episode-state-envelope-v1",
@@ -158,14 +162,14 @@ _SUPPORTED_CONTRACT_VERSIONS = _BASE_SUPPORTED_CONTRACT_VERSIONS | (
     _CURRENT_PARTICIPANT_CONTRACT_VERSIONS & frozenset(BACKEND_SUPPORTED_CONTRACT_IDS)
 )
 
-# Orchestrator capability declaration. APTL's RTE-001 runtime engine drives
-# workflows with objective, branching (`if` -> decision), parallel
-# (-> parallel-barrier), and `on-error` (-> failure-transitions) control flow,
-# with step-outcome predicates (-> outcome-matching). Those are the workflow
-# control features APTL can faithfully realize and report through the portable
-# workflow result/history contracts, so the manifest declares exactly that set
-# — not the switch/retry/call/cancellation/timeouts/compensation features APTL
-# does not drive (scenarios using those get an explicit planner diagnostic).
+# Orchestrator capability declaration. The RAES runtime walks the workflow
+# graph and dispatches each step to APTL. APTL reports objective steps from the
+# evaluator's objective results. The manifest declares objective, branching
+# (`if` -> decision), parallel (-> parallel-barrier), and `on-error`
+# (-> failure-transitions) control flow, with step-outcome predicates
+# (-> outcome-matching). It does not declare switch, retry, call, cancellation,
+# timeouts, or compensation, so scenarios that use them get a planner
+# diagnostic.
 _ORCHESTRATOR = OrchestratorCapabilities(
     name="aptl-rte-orchestrator",
     supported_sections=frozenset({"workflows"}),

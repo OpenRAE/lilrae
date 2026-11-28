@@ -255,17 +255,6 @@
       "retirement": "Retain while the existing public API, authored profile or receipt remains supported. Changes require an explicit ownership review."
     },
     {
-      "path": "src/aptl/backends/raes_orchestrator.py",
-      "owner": "LilRAE original-scenario compatibility",
-      "symbol": "<module>",
-      "kind": "pack identifier",
-      "line_digest": "sha256:949e1af8601dc9834a98920da5e290bbf6dd0064676bfdb7d9665fa0c4c3510a",
-      "count": 1,
-      "purpose": "Historical original-scenario API, asset identity, or architecture reference retained at an established public owner; selection remains explicit.",
-      "allowed_use": "Only this exact reviewed source line and occurrence count, supporting original-scenario contracts; never an implicit selector for another pack.",
-      "retirement": "Retain while the existing public API, authored profile or receipt remains supported. Changes require an explicit ownership review."
-    },
-    {
       "path": "src/aptl/backends/raes_participant_actions.py",
       "owner": "LilRAE original-scenario compatibility",
       "symbol": "<module>",

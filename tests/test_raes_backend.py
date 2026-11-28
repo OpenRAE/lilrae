@@ -21,6 +21,7 @@ from raes_contracts.planning import (
     RuntimeDomain,
 )
 from raes_contracts.runtime_state import ApplyResult, RuntimeSnapshot
+from raes_runtime.workflow_execution import nonworkflow_projection
 
 from aptl.core.config import AptlConfig, ScenarioSourceConfig
 from aptl.core.deployment._compose_realization_networks import _concrete_network_name
@@ -530,11 +531,11 @@ def _drive_plan_through_target(
         if not result.success:
             return result
         working = result.snapshot
-    if (
-        execution_plan.orchestration.actionable_operations
-        and target.orchestrator is not None
-    ):
-        result = target.orchestrator.start(execution_plan.orchestration, working)
+    # RAES 12 installs only non-workflow resources through ``start`` and
+    # dispatches workflow steps itself; this double does not dispatch steps.
+    orchestration = nonworkflow_projection(execution_plan.orchestration)
+    if orchestration.actionable_operations and target.orchestrator is not None:
+        result = target.orchestrator.start(orchestration, working)
         if not result.success:
             return result
         working = result.snapshot
@@ -2133,55 +2134,6 @@ def _workflow_and_evaluation_execution_plan():
     return raes_plan(compile_runtime_model(scenario), create_aptl_manifest())
 
 
-def _workflow_orchestration_plan():
-    """Compile a minimal workflow scenario into its RAES orchestration plan."""
-    return _workflow_and_evaluation_execution_plan().orchestration
-
-
-def test_start_raes_scenario_submits_orchestration_for_workflow_scenario(
-    mocker, tmp_path
-):
-    """A scenario carrying workflows routes orchestration through the runtime
-    manager's apply (not just provisioning), and the lab still starts.
-
-    Scenario start no longer submits phases through a hand-rolled
-    ``RuntimeControlPlane`` loop; it applies through RAES's own
-    ``RuntimeManager.apply`` (issue #578). ``AptlOrchestrator.start`` is spied
-    on the real orchestrator component so this proves the orchestration plan
-    actually reached it, not just that provisioning succeeded.
-    """
-    from aptl.backends import raes
-    from aptl.backends.raes_orchestrator import AptlOrchestrator
-
-    _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
-    orchestration = _workflow_orchestration_plan()
-    assert (
-        orchestration.actionable_operations
-    )  # guard: the plan really carries workflows
-
-    orchestrator_start = mocker.spy(AptlOrchestrator, "start")
-
-    class FakeRuntimeManager(_FakeRuntimeManager):
-        def plan(self, parsed_scenario, *, parameters=None, artifact_availability=None):
-            return _FakeExecutionPlan(
-                _plan_for_nodes("victim"), orchestration=orchestration
-            )
-
-    _patch_runtime(mocker, FakeRuntimeManager)
-    backend = MagicMock()
-    backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"})
-
-    result = raes.start_raes_scenario(tmp_path, config, backend)
-
-    assert result.lab_result.success is True
-    # The orchestration block actually ran: without it, AptlOrchestrator.start
-    # would never be called even though provisioning still succeeds.
-    orchestrator_start.assert_called_once()
-    assert orchestrator_start.call_args.args[1] is orchestration
-
-
 def test_start_raes_scenario_fails_when_provisioning_backend_fails(mocker, tmp_path):
     """A deployment-backend failure surfaces as a failed runtime-manager apply."""
     from aptl.backends import raes
@@ -2207,21 +2159,40 @@ def test_start_raes_scenario_fails_when_provisioning_backend_fails(mocker, tmp_p
 def test_start_raes_scenario_fails_when_orchestration_fails(mocker, tmp_path):
     """An orchestration-phase failure (provisioning already applied) surfaces as
     a failed lab start, not a silent success."""
+    from raes_contracts.diagnostics import Diagnostic
     from raes_contracts.planning import ChangeAction, OrchestrationOp, OrchestrationPlan
 
     from aptl.backends import raes
+    from aptl.backends.raes_orchestrator import AptlOrchestrator
 
     _write_compose(tmp_path, {"victim": ["victim"]})
     mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
-    # A workflow op with no compiled result_contract makes AptlOrchestrator.start
-    # fail closed, which the runtime-manager apply reports as a failed phase.
+    # AptlOrchestrator.start fails, and the runtime-manager apply reports the
+    # failed phase.
+    mocker.patch.object(
+        AptlOrchestrator,
+        "start",
+        autospec=True,
+        side_effect=lambda _self, _plan, snapshot: ApplyResult(
+            success=False,
+            snapshot=snapshot,
+            diagnostics=[
+                Diagnostic(
+                    code="test.orchestration-failed",
+                    domain="orchestration",
+                    address="runtime.apply.orchestration",
+                    message="orchestration failed",
+                )
+            ],
+        ),
+    )
     bad_orchestration = OrchestrationPlan(
         resources={},
         operations=[
             OrchestrationOp(
                 action=ChangeAction.CREATE,
-                address="orchestration.workflow.bad",
-                resource_type="workflow",
+                address="orchestration.event.bad",
+                resource_type="event",
                 payload={"name": "bad"},
             )
         ],
@@ -2291,69 +2262,6 @@ def test_start_raes_scenario_submits_evaluation_for_objective_scenario(
     assert result.lab_result.success is True, result.lab_result.error
     evaluator_start.assert_called_once()
     assert evaluator_start.call_args.args[1] is evaluation
-
-
-def test_start_raes_scenario_drives_workflows_after_registration(mocker, tmp_path):
-    """After orchestration registers workflows, lab start invokes drive_workflows."""
-    from aptl.backends import raes
-    from aptl.backends.raes_orchestrator import AptlOrchestrator
-
-    _write_compose(tmp_path, {"victim": ["victim"]})
-    mocker.patch("aptl.backends.raes.parse_sdl_file", return_value=Scenario(name="test", version="1.0"))
-    orchestration = _workflow_orchestration_plan()
-    drive_calls: list[dict[str, object]] = []
-
-    class RecordingOrchestrator(AptlOrchestrator):
-        def drive_workflows(self, **kwargs):
-            drive_calls.append(kwargs)
-            return super().drive_workflows(**kwargs)
-
-    class FakeRuntimeManager(_FakeRuntimeManager):
-        def plan(self, parsed_scenario, *, parameters=None, artifact_availability=None):
-            return _FakeExecutionPlan(
-                _plan_for_nodes("victim"),
-                orchestration=orchestration,
-            )
-
-    def fake_create_target(
-        *,
-        project_dir,
-        config,
-        backend,
-        bundle,
-        options=None,
-    ):
-        from aptl.backends.raes_participant_runtime import AptlParticipantRuntime
-
-        target = raes.RuntimeTarget(
-            name=raes.APTL_RAES_TARGET_NAME,
-            manifest=raes.create_aptl_manifest(),
-            provisioner=raes.AptlProvisioner(
-                project_dir=project_dir,
-                bundle=bundle,
-                config=config,
-                deployment_backend=backend,
-                artifact_availability=options.artifact_availability,
-                capture_plan=options.capture_plan,
-                observability_scope=options.observability_scope,
-            ),
-            orchestrator=RecordingOrchestrator(),
-            evaluator=raes.AptlEvaluator(),
-            participant_runtime=AptlParticipantRuntime(deployment_backend=backend),
-        )
-        return target
-
-    _patch_runtime(mocker, FakeRuntimeManager)
-    mocker.patch("aptl.backends.raes.create_aptl_runtime_target", fake_create_target)
-    backend = MagicMock()
-    backend.realize.return_value = LabResult(success=True, message="ok")
-    config = AptlConfig(lab={"name": "test"}, containers={'profiles': ['wazuh', 'victim', 'kali', 'enterprise', 'soc', 'fileshare', 'dns']}, scenario={"source": "project-tree", "identity": "fixture-operational"})
-
-    result = raes.start_raes_scenario(tmp_path, config, backend)
-
-    assert result.lab_result.success is True, result.lab_result.error
-    assert drive_calls
-    assert drive_calls[0]["evaluation_results"] == {}
 
 
 def test_apply_reports_a_realization_error_instead_of_raising(mocker, tmp_path):
@@ -4019,108 +3927,54 @@ def test_raes_backend_does_not_import_legacy_sdl_parser():
     assert "ScenarioDefinition" not in source
 
 
-def test_drive_workflows_receives_threaded_run_store_and_run_id(tmp_path):
-    """_drive_orchestrator_workflows threads its run_store/run_id args into
-    AptlOrchestrator.drive_workflows (GAP 2/4): a real run store + run_id, not
-    None.
 
-    ``_apply_provisioning_and_orchestration`` (the old hand-rolled control-plane
-    submission helper) is gone; scenario start now applies through RAES's own
-    ``RuntimeManager.apply`` and threads run_store/run_id via
-    ``_drive_orchestrator_workflows`` instead (issue #578).
-    """
-    from unittest.mock import MagicMock as _MagicMock
+def test_archive_workflow_runs_writes_runtime_records_under_run_dir(tmp_path):
+    """The RAES runtime's workflow result and history land in the run archive."""
+    import json
 
-    from aptl.backends.raes import AptlOrchestrator, _drive_orchestrator_workflows
-    from aptl.core.runstore import LocalRunStore
-
-    store = LocalRunStore(tmp_path / "runs")
-    run_id = "run_20260101T000000Z"
-
-    mock_orchestrator = _MagicMock(spec=AptlOrchestrator)
-    mock_orchestrator.results.return_value = {"wf1": {"status": "PENDING"}}
-    mock_orchestrator.drive_workflows.return_value = []
-
-    failure = _drive_orchestrator_workflows(
-        mock_orchestrator, {}, run_store=store, run_id=run_id
-    )
-
-    mock_orchestrator.drive_workflows.assert_called_once_with(
-        evaluation_results={},
-        run_store=store,
-        run_id=run_id,
-    )
-    assert failure is None
-
-
-def test_drive_workflows_persists_workflow_result_under_run_dir(tmp_path):
-    """A real AptlOrchestrator with a registered workflow persists its result
-    and history under the run dir when run_store + run_id are threaded."""
     from raes_contracts.workflow import WorkflowExecutionState, WorkflowStatus
 
-    from aptl.backends.raes_orchestrator import AptlOrchestrator
+    from aptl.backends._raes_apply_helpers import _archive_workflow_runs
     from aptl.core.runstore import LocalRunStore
-    from aptl.core.runtime.workflow_engine import WorkflowRunRecord
 
     store = LocalRunStore(tmp_path / "runs")
     run_id = "run_20260101T000000Z"
     store.create_run(run_id)
-
-    orchestrator = AptlOrchestrator()
-    address = "exercise.workflow.demo"
-    safe_address = address.replace("/", "_")
-
-    # Register a workflow payload and a PENDING engine record, then drive.
-    orchestrator._workflow_payloads = {address: {"steps": []}}
-
-    pending_payload = WorkflowExecutionState(
-        workflow_status=WorkflowStatus.PENDING,
-        run_id="wf-run-1",
-        started_at="2026-01-01T00:00:00Z",
-        updated_at="2026-01-01T00:00:00Z",
-    ).to_payload()
-    done_payload = WorkflowExecutionState(
+    address = "orchestration.workflow.demo"
+    result = WorkflowExecutionState(
         workflow_status=WorkflowStatus.SUCCEEDED,
         run_id="wf-run-1",
         started_at="2026-01-01T00:00:00Z",
         updated_at="2026-01-01T00:00:01Z",
         terminal_reason="completed",
     ).to_payload()
-
-    record_pending = WorkflowRunRecord(
-        result=pending_payload,
-        history=[{"event": "registered"}],
-    )
-    record_done = WorkflowRunRecord(
-        result=done_payload,
-        history=[{"event": "registered"}, {"event": "completed"}],
+    history = [{"event_type": "workflow_started"}, {"event_type": "workflow_completed"}]
+    snapshot = RuntimeSnapshot(
+        orchestration_results={address: result},
+        orchestration_history={address: history},
     )
 
-    class _FakeEngine:
-        def __init__(self):
-            self._calls = 0
+    _archive_workflow_runs(snapshot, store, run_id)
 
-        def get(self, addr):
-            del addr
-            # First read returns PENDING (drive precondition); reads after
-            # drive() return the completed record persisted to the run store.
-            self._calls += 1
-            return record_pending if self._calls == 1 else record_done
+    run_dir = store.get_run_path(run_id) / "orchestration" / address
+    assert json.loads((run_dir / "result.json").read_text()) == result
+    events = [
+        json.loads(line)
+        for line in (run_dir / "history.jsonl").read_text().splitlines()
+    ]
+    assert events == history
 
-        def drive(self, addr, payload, *, objective_outcomes):
-            del addr, payload, objective_outcomes
 
-    orchestrator._engine = _FakeEngine()
-    orchestrator._sync_from_engine = lambda: None
+def test_archive_workflow_runs_needs_a_run_store_and_run_id():
+    store = MagicMock()
+    snapshot = RuntimeSnapshot(orchestration_results={"orchestration.workflow.x": {}})
 
-    diagnostics = orchestrator.drive_workflows(run_store=store, run_id=run_id)
+    from aptl.backends._raes_apply_helpers import _archive_workflow_runs
 
-    assert diagnostics == []
-    run_dir = store.get_run_path(run_id)
-    result_path = run_dir / "orchestration" / safe_address / "result.json"
-    history_path = run_dir / "orchestration" / safe_address / "history.jsonl"
-    assert result_path.exists()
-    assert history_path.exists()
+    _archive_workflow_runs(snapshot, store, None)
+    _archive_workflow_runs(snapshot, None, "run-1")
+
+    store.write_json.assert_not_called()
 
 
 def _apply_disclosure_scenario(tmp_path, backend, execution_plan=None):

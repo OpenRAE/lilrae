@@ -24,8 +24,8 @@ from aptl.backends.raes_observability_scope import (
 from aptl.core.experiment.errors import AdmissionRejection
 
 from aptl.backends._raes_apply_helpers import (
+    _archive_workflow_runs,
     _blocked_plan_outcome,
-    _drive_orchestrator_workflows,
     _with_backend_failure_diagnostics,
 )
 from aptl.backends._raes_scenario_resolution import (
@@ -55,7 +55,6 @@ from aptl.backends._raes_start_run import (
     refresh_materialized_inventory,
 )
 from aptl.backends.raes_execution_helpers import (
-    evaluation_results as collect_evaluation_results,
     interpret_realization,
     runtime_selection_evidence,
 )
@@ -460,7 +459,7 @@ def _apply_execution_plan(
     run_id: str | None = None,
     runtime_options: Mapping[str, object] | None = None,
 ) -> tuple[LabResult | None, RuntimeSnapshot, RuntimeManager]:
-    """Apply the plan through RAES's own runtime manager, then drive workflows.
+    """Apply the plan through RAES's own runtime manager.
 
     ``RuntimeManager.apply`` is the only path that threads the compiled
     ``realization_requirements`` and the provisioning plan into the backend call
@@ -504,13 +503,8 @@ def _apply_execution_plan(
             snapshot,
             manager,
         )
-    evaluation_results = collect_evaluation_results(target, execution_plan)
-    failure = _drive_orchestrator_workflows(
-        target.orchestrator,
-        evaluation_results,
-        run_store=run_store,
-        run_id=run_id,
-    )
-    if failure is None and source is not None:
+    _archive_workflow_runs(snapshot, run_store, run_id)
+    failure = None
+    if source is not None:
         failure, snapshot = refresh_materialized_inventory(manager, execution_plan)
     return failure, snapshot, manager

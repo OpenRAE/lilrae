@@ -22,6 +22,9 @@ BOUNDED_PARTICIPANT_AGENCY_COMPILED_SHA256S = frozenset(
         "f0f54b78bfd217e9a280dba220fb1762e731d47fa610538bc128dfeb347a57bb",
         # raes 10.5.0 adds only an empty descriptor_profile_bindings field.
         "eface167c3a5e49932f03daf23aa39011c6cb88b8634258926d6044b9c12b446",
+        # raes 12.0.0 adds only empty participant_episode_policies and
+        # safe_states fields.
+        "1144e47676a9cae1438133d7e5304ef7442251a37258bd39525ae0a2ba329ef6",
     }
 )
 
